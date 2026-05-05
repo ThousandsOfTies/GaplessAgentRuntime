@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -237,16 +238,6 @@ static void handle_i2c_rdwr(fuse_req_t req, struct fuse_file_info *fi,
             if (out_lens[i] > 0) {
                 memcpy(out + out_pos, out_bufs[i], out_lens[i]);
                 out_pos += out_lens[i];
-            }
-        }
-        /* Build out iov pointing into original msg bufs (user space ptr) */
-        struct iovec out_iov[42];
-        int out_iov_cnt = 0;
-        for (uint32_t i = 0; i < nmsgs; i++) {
-            if (out_lens[i] > 0) {
-                out_iov[out_iov_cnt].iov_base = (void *)(uintptr_t)msgs[i].buf;
-                out_iov[out_iov_cnt].iov_len  = out_lens[i];
-                out_iov_cnt++;
             }
         }
         fuse_reply_ioctl(req, 0, out, out_pos);
