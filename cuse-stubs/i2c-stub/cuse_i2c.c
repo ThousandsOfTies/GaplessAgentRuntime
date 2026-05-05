@@ -305,38 +305,41 @@ static const struct cuse_lowlevel_ops i2c_clops = {
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
 
-struct options {
-    const char *devname;
-};
-
-#define OPT(t, p) { t, offsetof(struct options, p), 1 }
-
-static const struct fuse_opt opts[] = {
-    OPT("--devname=%s", devname),
-    FUSE_OPT_END
-};
-
 int main(int argc, char *argv[]) {
-    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-    struct options opt = { .devname = "i2c-1" };
+    const char *devname = "i2c-1";
 
-    if (fuse_opt_parse(&args, &opt, opts, NULL) == -1)
-        return 1;
+    /* Parse --devname= manually to avoid fuse_opt_parse heap issues */
+    char **fuse_argv = malloc((argc + 1) * sizeof(char *));
+    if (!fuse_argv) return 1;
+    int fuse_argc = 0;
+    fuse_argv[fuse_argc++] = argv[0];
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--devname=", 10) == 0) {
+            devname = argv[i] + 10;
+        } else {
+            fuse_argv[fuse_argc++] = argv[i];
+        }
+    }
+    fuse_argv[fuse_argc] = NULL;
+
+    struct fuse_args args = FUSE_ARGS_INIT(fuse_argc, fuse_argv);
 
     vl53l0x_sim_init();
 
     char dev_name_buf[64];
-    snprintf(dev_name_buf, sizeof(dev_name_buf), "DEVNAME=%s", opt.devname);
+    snprintf(dev_name_buf, sizeof(dev_name_buf), "DEVNAME=%s", devname);
     const char *dev_info_argv[] = { dev_name_buf };
 
     struct cuse_info ci = {
-        .dev_major      = 0,   /* auto-assign */
+        .dev_major      = 0,
         .dev_minor      = 0,
         .dev_info_argc  = 1,
         .dev_info_argv  = dev_info_argv,
         .flags          = CUSE_UNRESTRICTED_IOCTL,
     };
 
-    fprintf(stderr, "[cuse_i2c] starting /dev/%s stub\n", opt.devname);
-    return cuse_lowlevel_main(args.argc, args.argv, &ci, &i2c_clops, NULL);
+    fprintf(stderr, "[cuse_i2c] starting /dev/%s stub\n", devname);
+    int ret = cuse_lowlevel_main(args.argc, args.argv, &ci, &i2c_clops, NULL);
+    free(fuse_argv);
+    return ret;
 }
