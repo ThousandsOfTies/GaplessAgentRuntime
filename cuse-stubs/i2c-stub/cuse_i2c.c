@@ -15,8 +15,8 @@
 
 #define FUSE_USE_VERSION 31
 
-#include <cuse_lowlevel.h>
-#include <fuse_opt.h>
+#include <fuse3/cuse_lowlevel.h>
+#include <fuse3/fuse_opt.h>
 
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>

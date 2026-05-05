@@ -1,5 +1,5 @@
 CC       = gcc
-CFLAGS   = -Wall -Wextra -O2 -D_FILE_OFFSET_BITS=64
+CFLAGS   = -Wall -Wextra -O2 -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse3
 LDFLAGS  = -lfuse3 -lpthread
 
 # Cross-compile for aarch64 (from Codespaces x86_64):
