@@ -12,6 +12,7 @@
  */
 
 #define _GNU_SOURCE
+#include <sys/mman.h>   /* memfd_create */
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -69,7 +70,8 @@ static void bridge_send(const char *json_line) {
         fprintf(stderr, "[gpio_shim] bridge not available: %s\n", json_line);
         return;
     }
-    write(s, json_line, strlen(json_line));
+    if (write(s, json_line, strlen(json_line)) < 0)
+        fprintf(stderr, "[gpio_shim] bridge_send failed\n");
 }
 
 /* Query button state synchronously (request-response) */
@@ -80,7 +82,7 @@ static int bridge_get_button(int line) {
     char req[128];
     snprintf(req, sizeof(req),
              "{\"req\":\"get\",\"device\":\"gpio\",\"line\":%d}\n", line);
-    write(s, req, strlen(req));
+    if (write(s, req, strlen(req)) < 0) return 0;
 
     char resp[128] = {0};
     int n = read(s, resp, sizeof(resp) - 1);
