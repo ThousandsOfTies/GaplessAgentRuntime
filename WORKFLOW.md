@@ -45,10 +45,8 @@ sequenceDiagram
     rect rgb(20, 60, 40)
         Note over Dev,GH: 【開発環境起動】開発開始時
         Dev->>Win: gh codespace list で名前確認
-        Dev->>Win: gh codespace start -c <name>
-        Win->>GH: Codespace VM 起動
-        Dev->>Win: gh codespace ssh -c <name>
-        Win->>GH: SSH 接続
+        Dev->>Win: gh codespace ssh --codespace <name>
+        Win->>GH: Codespace VM 起動 + SSH 接続
         GH-->>Dev: Codespaces ターミナル ready
         Dev->>GH: git pull
         Note over GH: 初回のみ: cat > ~/.ssh/vibecode-graviton.pem<br/>bash setup_ssh.sh <EC2_IP>
@@ -120,8 +118,7 @@ sequenceDiagram
 | EC2 起動 | Windows PS | `.\ec2.ps1 start` |
 | EC2 停止 | Windows PS | `.\ec2.ps1 stop` |
 | EC2 状態確認 | Windows PS | `.\ec2.ps1 status` |
-| Codespaces 起動 | Windows PS | `gh codespace start -c <name>` |
-| Codespaces SSH | Windows PS | `gh codespace ssh -c <name>` |
+| Codespaces SSH (起動も兼ねる) | Windows PS | `gh codespace ssh --codespace <name>` |
 | クロスコンパイル | Codespaces | `cd cuse-stubs && make cross` |
 | デプロイ | Codespaces | `make deploy EC2=vibecode-graviton` |
 | ブリッジ起動 | EC2 | `~/venv/bin/python3 ~/web-bridge/bridge.py` |
