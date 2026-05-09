@@ -18,6 +18,9 @@
 * `cuse-stubs` を用いたI2C/GPIOスタブの仕組み。
 * EC2上でのWebブリッジ起動方法と、Antigravity（ブラウザ）でのVirtual Hardware Panelの使い方。
 
+### 🔌 [4. 実機の配線 (04_HARDWARE_WIRING.md)](docs/04_HARDWARE_WIRING.md)
+* RasPi5 とブレッドボードを使った LED / ボタン / I2C / SPI モジュールの配線図。
+
 ---
 
 ## クイックスタート概要
