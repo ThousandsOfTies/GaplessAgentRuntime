@@ -134,6 +134,13 @@ def handle_stub_message(raw: str, loop) -> str | None:
         val  = int(state["gpio"]["buttons"].get(line, False))
         return json.dumps({"value": val}) + "\n"
 
+    elif msg.get("req") == "get" and device == "rfid":
+        rfid = state["spi"]["mfrc522"]
+        return json.dumps({
+            "present": bool(rfid.get("present")),
+            "uid":     rfid.get("uid") or "00:00:00:00",
+        }) + "\n"
+
     elif event == "register":
         print(f"[bridge] register {device} line={msg.get('line')} dir={msg.get('dir')}")
 

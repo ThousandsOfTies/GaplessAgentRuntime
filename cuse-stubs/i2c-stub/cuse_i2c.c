@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "vl53l0x_sim.h"
+#include "ssd1306_sim.h"
 
 /* ------------------------------------------------------------------ */
 /* Per-open-file state                                                  */
@@ -50,15 +51,17 @@ typedef struct {
     uint16_t addr;
     uint8_t  (*read_reg)(uint8_t reg);
     void     (*write_reg)(uint8_t reg, uint8_t val);
+    void     (*write_buf)(const uint8_t *buf, size_t len);  /* transaction-level (overrides write_reg) */
 } sim_device_t;
 
 static const sim_device_t sim_devices[] = {
-    { VL53L0X_ADDR, vl53l0x_sim_read_reg, vl53l0x_sim_write_reg },
-    { 0, NULL, NULL }
+    { VL53L0X_ADDR,    vl53l0x_sim_read_reg, vl53l0x_sim_write_reg, NULL },
+    { SSD1306_SIM_ADDR, NULL,                NULL,                  ssd1306_sim_write },
+    { 0, NULL, NULL, NULL }
 };
 
 static const sim_device_t *find_device(uint16_t addr) {
-    for (int i = 0; sim_devices[i].read_reg != NULL; i++) {
+    for (int i = 0; sim_devices[i].addr != 0; i++) {
         if (sim_devices[i].addr == addr) return &sim_devices[i];
     }
     return NULL;
@@ -90,7 +93,7 @@ static void i2c_read(fuse_req_t req, size_t size, off_t off,
     i2c_session_t *s = (i2c_session_t *)(uintptr_t)fi->fh;
     const sim_device_t *dev = find_device(s->slave_addr);
 
-    if (!dev) { fuse_reply_err(req, ENXIO); return; }
+    if (!dev || !dev->read_reg) { fuse_reply_err(req, ENXIO); return; }
 
     uint8_t *buf = malloc(size);
     if (!buf) { fuse_reply_err(req, ENOMEM); return; }
@@ -110,12 +113,16 @@ static void i2c_write(fuse_req_t req, const char *buf, size_t size, off_t off,
 
     if (!dev || size == 0) { fuse_reply_err(req, ENXIO); return; }
 
-    /* First byte is register address */
-    s->reg_ptr = (uint8_t)buf[0];
-    s->reg_ptr_set = 1;
-
-    for (size_t i = 1; i < size; i++) {
-        dev->write_reg((uint8_t)(s->reg_ptr + (i - 1)), (uint8_t)buf[i]);
+    if (dev->write_buf) {
+        /* Transaction-level write (e.g. SSD1306) */
+        dev->write_buf((const uint8_t *)buf, size);
+    } else if (dev->write_reg) {
+        /* Register-pointer style: first byte = register address */
+        s->reg_ptr = (uint8_t)buf[0];
+        s->reg_ptr_set = 1;
+        for (size_t i = 1; i < size; i++) {
+            dev->write_reg((uint8_t)(s->reg_ptr + (i - 1)), (uint8_t)buf[i]);
+        }
     }
     fuse_reply_write(req, size);
 }
@@ -209,21 +216,25 @@ static void handle_i2c_rdwr(fuse_req_t req, struct fuse_file_info *fi,
             /* Read message */
             out_lens[i] = len;
             have_out = 1;
-            if (dev) {
+            if (dev && dev->read_reg) {
                 for (int j = 0; j < len; j++) {
                     out_bufs[i][j] = dev->read_reg((uint8_t)(s->reg_ptr + j));
                 }
             } else {
                 memset(out_bufs[i], 0xFF, len);
             }
-            cursor += len; /* skip (no input data for read msgs) */
+            cursor += len;
         } else {
-            /* Write message: first byte is register pointer */
+            /* Write message */
             out_lens[i] = 0;
             if (len > 0 && dev) {
-                s->reg_ptr = cursor[0];
-                for (int j = 1; j < len; j++) {
-                    dev->write_reg((uint8_t)(s->reg_ptr + (j - 1)), cursor[j]);
+                if (dev->write_buf) {
+                    dev->write_buf(cursor, len);
+                } else if (dev->write_reg) {
+                    s->reg_ptr = cursor[0];
+                    for (int j = 1; j < len; j++) {
+                        dev->write_reg((uint8_t)(s->reg_ptr + (j - 1)), cursor[j]);
+                    }
                 }
             }
             cursor += len;
@@ -325,6 +336,7 @@ int main(int argc, char *argv[]) {
     struct fuse_args args = FUSE_ARGS_INIT(fuse_argc, fuse_argv);
 
     vl53l0x_sim_init();
+    ssd1306_sim_init();
 
     char dev_name_buf[64];
     snprintf(dev_name_buf, sizeof(dev_name_buf), "DEVNAME=%s", devname);

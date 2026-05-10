@@ -8,7 +8,7 @@ LDFLAGS  = -lfuse3 -lpthread
 # Native (on EC2 arm64 / RasPi5):
 #   make
 
-SRCS = cuse_i2c.c vl53l0x_sim.c
+SRCS = cuse_i2c.c vl53l0x_sim.c ssd1306_sim.c
 BIN  = cuse_i2c
 
 $(BIN): $(SRCS)
