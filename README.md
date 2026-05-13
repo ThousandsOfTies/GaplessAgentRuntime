@@ -1,17 +1,21 @@
-# ExperimentalDevEnv
+# AgentCockpit
 
-組み込みソフトウェア開発の「完全クラウド化」と「シームレスな実機デプロイ」を実現するためのPoC（概念実証）サンドボックスです。
+**AI が最後まで動かせる開発コックピット。**
 
-このリポジトリは、**「実機がなくてもクラウド上でハードウェア込みのテストができ、実機が手に入った際も同じバイナリをそのまま流し込める」**という開発体験を目指して設計され、**EC2 シミュレーション・RasPi5 実機の両方で同一バイナリの動作を実証済み**です。
+AgentCockpit は、開発者が手順を覚えて個別に操作する環境ではなく、**VSCode Free 上で AI への指示、AI の作業、ビルド、デプロイ、仮想 H/W 操作、ログ観察、シミュレータ UI、実機検証までを一貫して扱うための環境定義**です。
+
+現在の実証対象は組み込み Linux 開発です。EC2 Graviton 上に仮想 GPIO/I2C/SPI を用意し、RasPi5 実機と同じ ARM64 バイナリを動かします。これにより、AI は実機がなくてもハードウェア込みの検証を進められ、実機が手に入った際も同じバイナリをそのまま流し込めます。
+
+> 旧リポジトリ名は `ExperimentalDevEnv` です。
 
 ## ドキュメント ナビゲーション
 
 ### 📖 [1. アーキテクチャコンセプト (01_ARCHITECTURE.md)](docs/01_ARCHITECTURE.md)
-* なぜ「クラウド化」なのか？
-* Codespaces (ビルド) + EC2 Graviton (シミュレーション) + SSH/scp (デプロイ) の全体像と設計思想。
+* なぜ「AI が働きやすい環境定義」なのか？
+* Human Intent → AI Agent → Cloud/Device という役割分担と、Codespaces + EC2 Graviton + RasPi5 の全体像。
 
 ### 🔄 [2. 開発ワークフローとシーケンス (02_WORKFLOW.md)](docs/02_WORKFLOW.md)
-* 開発者がコードを書いてから、シミュレータや実機で動かすまでの具体的なシーケンス図。
+* 人間が AI に指示してから、AI がシミュレータや実機で動かすまでの具体的なシーケンス図。
 * コマンドリファレンス。
 
 ### 🛠️ [3. ハードウェアシミュレーション設定 (03_SIMULATION_SETUP.md)](docs/03_SIMULATION_SETUP.md)
@@ -29,6 +33,10 @@
 * Software Defined Vehicle (SDV) 等の最新トレンドとの比較。
 * クラウドネイティブ組み込み開発における本アプローチの優位性と意義。
 
+### 🤖 [7. AI エージェント操作ガイド (07_AI_AGENT_OPERATIONS.md)](docs/07_AI_AGENT_OPERATIONS.md)
+* VSCode Free 上で AI がビルド、デプロイ、実行、仮想 H/W 操作、ログ確認を行うための Make ターゲット。
+* `panel-button` / `panel-rfid` / `sim-logs` など、ブラウザ操作を AI が実行しやすいコマンドとして定義。
+
 ---
 
 ## クイックスタート概要
@@ -37,13 +45,18 @@
 
 ```powershell
 # Windows
-.\ec2.ps1 start                                 # EC2 起動
+C:\VibeCode\ec2.ps1 start                       # EC2 起動
 ```
 ```bash
 # Codespaces
-cd /workspaces/ExperimentalDevEnv
+cd /workspaces/AgentCockpit
 make cross                                       # ビルド (aarch64)
 make deploy-ec2 EC2=vibecode-graviton            # scp で転送
+make sim-start EC2=vibecode-graviton              # bridge / CUSE / app を起動
+make panel-button EC2=vibecode-graviton LINE=17   # 仮想ボタン操作
+make panel-rfid EC2=vibecode-graviton             # 仮想RFIDタップ
+make sim-test EC2=vibecode-graviton               # 代表シナリオ実行
+make sim-logs EC2=vibecode-graviton               # ログ確認
 ```
 ```bash
 # EC2 (3 つのターミナル)
@@ -57,7 +70,7 @@ Antigravity から EC2 に Remote SSH → PORTS タブで 8080 を Simple Browse
 
 ```powershell
 # Windows
-.\raspi.ps1 deploy                               # Codespaces → Windows → adb push
+C:\VibeCode\raspi.ps1 deploy                     # Codespaces → Windows → adb push
 adb shell
 ```
 ```bash

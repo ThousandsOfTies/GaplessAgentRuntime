@@ -1,10 +1,11 @@
-# ExperimentalDevEnv — Claude 指示プロンプト
+# AgentCockpit — Claude 指示プロンプト
 
 ## プロジェクト概要
 
-組み込み H/W シミュレーション開発環境。
+AI が最後まで動かせる組み込み開発コックピット。
 Codespaces でクロスコンパイルし、EC2（シミュレーション）または RasPi5（実機）で動かす。
 同じバイナリ (`sensor_demo`) が両環境で動作することを実証済み。
+人間は意図を指示し、AI はビルド、デプロイ、実行、仮想 H/W 操作、ログ確認を進める。
 
 ---
 
@@ -13,7 +14,7 @@ Codespaces でクロスコンパイルし、EC2（シミュレーション）ま
 ### EC2（シミュレーション環境）
 - インスタンスID: `i-031e0e5f5f1325ddc`、リージョン: `ap-southeast-2`
 - SSH Host名: `vibecode-graviton`（`~/.ssh/config` で管理）
-- 起動: Windows PowerShell で `.\ec2.ps1 start`（`c:\VibeCode\ec2.ps1`）
+- 起動: Windows PowerShell で `C:\VibeCode\ec2.ps1 start`
 
 ### RasPi5（実機）
 - IP: `192.168.0.21`（ローカルネットワーク）
@@ -31,7 +32,7 @@ Codespaces でクロスコンパイルし、EC2（シミュレーション）ま
 
 ```bash
 gh codespace ssh --codespace glowing-capybara-5j6g4594j75c44j -- \
-  "cd /workspaces/ExperimentalDevEnv && make cross && make deploy-ec2 EC2=vibecode-graviton"
+  "cd /workspaces/AgentCockpit && make cross && make deploy-ec2 EC2=vibecode-graviton"
 ```
 
 経路: Codespaces → scp → EC2（クラウド同士で直接転送）
@@ -41,11 +42,11 @@ gh codespace ssh --codespace glowing-capybara-5j6g4594j75c44j -- \
 1. Codespaces でビルド:
    ```bash
    gh codespace ssh --codespace glowing-capybara-5j6g4594j75c44j -- \
-     "cd /workspaces/ExperimentalDevEnv && make cross"
+     "cd /workspaces/AgentCockpit && make cross"
    ```
 2. Windows で取得・転送:
    ```powershell
-   .\raspi.ps1 deploy
+   C:\VibeCode\raspi.ps1 deploy
    ```
    経路: Codespaces → gh codespace cp → Windows → adb push → RasPi5
 
@@ -71,6 +72,21 @@ LD_PRELOAD="$HOME/gpio_shim.so $HOME/spi_shim.so" ~/sensor_demo
 
 Antigravity で Remote SSH → vibecode-graviton → PORTS タブ 8080 を Simple Browser で開く。
 
+### AI/CLI から EC2 シミュレーションを操作
+
+```bash
+make sim-start EC2=vibecode-graviton
+make panel-button EC2=vibecode-graviton LINE=17
+make panel-rfid EC2=vibecode-graviton UID=04:AB:CD:EF:01:23
+make sim-state EC2=vibecode-graviton
+make sim-logs EC2=vibecode-graviton
+make sim-test EC2=vibecode-graviton
+make diagnose EC2=vibecode-graviton
+make sim-stop EC2=vibecode-graviton
+```
+
+詳細: `docs/07_AI_AGENT_OPERATIONS.md`
+
 ### RasPi5 で実機実行
 
 ```powershell
@@ -86,9 +102,9 @@ adb shell
 ## EC2 の起動・停止
 
 ```powershell
-.\ec2.ps1 start   # 起動 + SSH config 自動更新 + リポジトリ自動 pull
-.\ec2.ps1 stop    # 停止
-.\ec2.ps1 status  # 状態確認
+C:\VibeCode\ec2.ps1 start   # 起動 + SSH config 自動更新 + リポジトリ自動 pull
+C:\VibeCode\ec2.ps1 stop    # 停止
+C:\VibeCode\ec2.ps1 status  # 状態確認
 ```
 
 ---

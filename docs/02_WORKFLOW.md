@@ -40,13 +40,13 @@ sequenceDiagram
     rect rgb(50, 30, 70)
         Note over Dev,GH: 【開発・編集・ビルド】
         Dev->>GH: ソース編集 (app/, cuse-stubs/)
-        Dev->>GH: cd /workspaces/ExperimentalDevEnv && make cross
+        Dev->>GH: cd /workspaces/AgentCockpit && make cross
         GH-->>Dev: aarch64 バイナリ生成<br/>(sensor_demo, gpio_shim.so, spi_shim.so, cuse_i2c, ...)
     end
 
     rect rgb(70, 40, 20)
         Note over Dev,EC2: 【EC2】起動 + デプロイ
-        Dev->>Win: .\ec2.ps1 start
+        Dev->>Win: C:\VibeCode\ec2.ps1 start
         Win->>EC2: 起動 + IP 取得 + SSH config 更新 + 自動 git pull
         Dev->>GH: make deploy-ec2 EC2=vibecode-graviton
         GH->>EC2: scp sensor_demo / shims / cuse_i2c / web-bridge/
@@ -77,7 +77,7 @@ sequenceDiagram
 
     rect rgb(20, 50, 60)
         Note over Dev,RPi: 【RasPi5】デプロイ
-        Dev->>Win: .\raspi.ps1 deploy
+        Dev->>Win: C:\VibeCode\raspi.ps1 deploy
         Win->>GH: gh codespace cp で取得
         Win->>RPi: adb push sensor_demo / shims / cuse_i2c / ...
     end
@@ -109,16 +109,22 @@ sequenceDiagram
 | AWS CLI インストール | Windows PS | `winget install Amazon.AWSCLI` |
 | AWS CLI 認証設定 | Windows PS | `aws configure` |
 | ADB (PlatformTools) インストール | Windows PS | `winget install Google.PlatformTools` |
-| EC2 起動 | Windows PS | `.\ec2.ps1 start` |
-| EC2 停止 | Windows PS | `.\ec2.ps1 stop` |
-| EC2 状態確認 | Windows PS | `.\ec2.ps1 status` |
+| EC2 起動 | Windows PS | `C:\VibeCode\ec2.ps1 start` |
+| EC2 停止 | Windows PS | `C:\VibeCode\ec2.ps1 stop` |
+| EC2 状態確認 | Windows PS | `C:\VibeCode\ec2.ps1 status` |
 | Codespaces SSH | Windows PS | `gh codespace ssh --codespace <name>` |
 | クロスコンパイル | Codespaces | `make cross` |
 | EC2 へデプロイ | Codespaces | `make deploy-ec2 EC2=vibecode-graviton` |
-| RasPi5 へデプロイ | Windows PS | `.\raspi.ps1 deploy` |
+| RasPi5 へデプロイ | Windows PS | `C:\VibeCode\raspi.ps1 deploy` |
 | EC2 シェル | Windows PS | `ssh vibecode-graviton` |
 | RasPi5 シェル | Windows PS | `adb shell` |
 | ブリッジ起動 | EC2 | `~/venv/bin/python3 ~/web-bridge/bridge.py` |
 | I2C スタブ起動 | EC2 | `sudo ~/cuse_i2c -f --devname=i2c-1` |
 | アプリ実行 (EC2) | EC2 | `LD_PRELOAD="~/gpio_shim.so ~/spi_shim.so" ~/sensor_demo` |
 | アプリ実行 (RasPi5) | RasPi5 | `~/sensor_demo` |
+| EC2 シミュレータ一括起動 | Codespaces | `make sim-start EC2=vibecode-graviton` |
+| EC2 ログ確認 | Codespaces | `make sim-logs EC2=vibecode-graviton` |
+| 仮想ボタン押下 | Codespaces | `make panel-button EC2=vibecode-graviton LINE=17` |
+| 仮想RFIDタップ | Codespaces | `make panel-rfid EC2=vibecode-graviton` |
+| 代表シナリオ実行 | Codespaces | `make sim-test EC2=vibecode-graviton` |
+| 仮想H/W状態取得 | Codespaces | `make sim-state EC2=vibecode-graviton` |

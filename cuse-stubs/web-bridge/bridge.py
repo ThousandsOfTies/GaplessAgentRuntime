@@ -55,6 +55,37 @@ async def broadcast(msg: dict):
         await asyncio.gather(*[c.send(data) for c in ws_clients],
                              return_exceptions=True)
 
+
+# ------------------------------------------------------------------ #
+# Virtual hardware actions                                             #
+# ------------------------------------------------------------------ #
+
+async def set_button(line: int, value: bool):
+    state["gpio"]["buttons"][line] = value
+    await broadcast({"type": "button", "line": line, "value": value})
+
+
+async def press_button(line: int, duration_ms: int):
+    await set_button(line, True)
+    if duration_ms:
+        await asyncio.sleep(duration_ms / 1000)
+        await set_button(line, False)
+
+
+async def tap_rfid(uid: str):
+    state["spi"]["mfrc522"] = {"uid": uid, "present": True}
+    await broadcast({"type": "rfid", "uid": uid, "present": True})
+
+
+async def remove_rfid():
+    state["spi"]["mfrc522"] = {"uid": None, "present": False}
+    await broadcast({"type": "rfid", "uid": None, "present": False})
+
+
+async def set_range(mm: int):
+    state["i2c"]["vl53l0x"]["range_mm"] = mm
+    await broadcast({"type": "range", "value": mm})
+
 # ------------------------------------------------------------------ #
 # WebSocket handler (browser ↔ bridge)                                 #
 # ------------------------------------------------------------------ #
@@ -70,22 +101,18 @@ async def ws_handler(websocket):
             if mtype == "button":
                 line = msg["line"]
                 val  = bool(msg["value"])
-                state["gpio"]["buttons"][line] = val
-                await broadcast({"type": "button", "line": line, "value": val})
+                await set_button(line, val)
 
             elif mtype == "rfid_tap":
                 uid = msg.get("uid", "04:AB:CD:EF:01:23")
-                state["spi"]["mfrc522"] = {"uid": uid, "present": True}
-                await broadcast({"type": "rfid", "uid": uid, "present": True})
+                await tap_rfid(uid)
 
             elif mtype == "rfid_remove":
-                state["spi"]["mfrc522"] = {"uid": None, "present": False}
-                await broadcast({"type": "rfid", "uid": None, "present": False})
+                await remove_rfid()
 
             elif mtype == "range_set":
                 mm = int(msg.get("value", 300))
-                state["i2c"]["vl53l0x"]["range_mm"] = mm
-                await broadcast({"type": "range", "value": mm})
+                await set_range(mm)
 
     except websockets.ConnectionClosed:
         pass
@@ -197,6 +224,56 @@ async def http_handler(request):
     ct = content_types.get(fpath.suffix, "application/octet-stream")
     return web.Response(body=fpath.read_bytes(), content_type=ct)
 
+
+def _parse_json_or_query(request, body: dict | None = None) -> dict:
+    data = dict(request.query)
+    if body:
+        data.update(body)
+    return data
+
+
+async def api_state(request):
+    return web.json_response(state)
+
+
+async def api_button(request):
+    body = await request.json() if request.can_read_body else {}
+    data = _parse_json_or_query(request, body)
+    line = int(data.get("line", 17))
+    value = bool(int(data.get("value", 1)))
+    await set_button(line, value)
+    return web.json_response({"ok": True, "line": line, "value": value})
+
+
+async def api_button_press(request):
+    body = await request.json() if request.can_read_body else {}
+    data = _parse_json_or_query(request, body)
+    line = int(data.get("line", 17))
+    duration_ms = max(0, int(data.get("duration_ms", 150)))
+    await press_button(line, duration_ms)
+    return web.json_response({"ok": True, "line": line, "duration_ms": duration_ms})
+
+
+async def api_rfid_tap(request):
+    body = await request.json() if request.can_read_body else {}
+    data = _parse_json_or_query(request, body)
+    uid = data.get("uid", "04:AB:CD:EF:01:23")
+    await tap_rfid(uid)
+    return web.json_response({"ok": True, "uid": uid, "present": True})
+
+
+async def api_rfid_remove(request):
+    await remove_rfid()
+    return web.json_response({"ok": True, "present": False})
+
+
+async def api_range(request):
+    body = await request.json() if request.can_read_body else {}
+    data = _parse_json_or_query(request, body)
+    mm = int(data.get("value", 300))
+    await set_range(mm)
+    return web.json_response({"ok": True, "value": mm})
+
 # ------------------------------------------------------------------ #
 # Main                                                                  #
 # ------------------------------------------------------------------ #
@@ -213,6 +290,12 @@ async def main():
 
     # HTTP server
     app = web.Application()
+    app.router.add_route("GET",  "/api/state", api_state)
+    app.router.add_route("POST", "/api/button", api_button)
+    app.router.add_route("POST", "/api/button/press", api_button_press)
+    app.router.add_route("POST", "/api/rfid/tap", api_rfid_tap)
+    app.router.add_route("POST", "/api/rfid/remove", api_rfid_remove)
+    app.router.add_route("POST", "/api/range", api_range)
     app.router.add_route("GET", "/{path_info:.*}", http_handler)
     runner = web.AppRunner(app)
     await runner.setup()

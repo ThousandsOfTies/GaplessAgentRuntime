@@ -99,7 +99,7 @@ ssh vibecode-graviton 'tail -f /tmp/sensor.log'
 
 Antigravity から EC2 に Remote SSH 接続している場合、ポートは自動的にフォワードされます。
 
-1. **Open Folder → `/home/ubuntu/ExperimentalDevEnv`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
+1. **Open Folder → `/home/ubuntu/AgentCockpit`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
 2. **PORTS タブ**で `8080` の行を右クリック → "Open in Simple Browser"
 3. HTML パネルが開き、各デバイスの状態がリアルタイム表示される
 

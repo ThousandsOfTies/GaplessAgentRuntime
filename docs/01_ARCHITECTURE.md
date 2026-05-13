@@ -1,42 +1,57 @@
-# アーキテクチャ コンセプト
+# AgentCockpit アーキテクチャ
 
-本PoC環境は、**「組み込みソフトウェア開発から『実機依存』と『環境構築の煩雑さ』を排除する」**ことを目的としています。
+AgentCockpit は、**「人間の意図」と「実装・実行・実機操作」の間で AI エージェントが動く**ための開発環境です。
 
-これを実現するために、以下の3つのコア・アーキテクチャを採用しています。
+従来の開発環境は、人間が IDE、ターミナル、SSH、実機、ログ、ブラウザパネルを行き来して操作することを前提にしています。AgentCockpit では、人間は「何を実現したいか」を伝えるだけで、AIがすべての作業を自動で実施し目的を達成することができる環境を目指します。
 
----
+現在のPoCでは、組み込みLinux開発を題材に、**AI がビルド、デプロイ、仮想H/W操作、ログ観察、実機デプロイまで進められること**を実証しています。
 
-## 1. クラウドIDEとクロスコンパイル (GitHub Codespaces)
-
-ローカルPCのOSや環境に依存せず、ブラウザまたはVSCode互換エディタ（Antigravity等）から直接 GitHub Codespaces に接続します。
-
-* **メリット**: 開発環境のセットアップが数秒で完了し、チーム全員が完全に同一のツールチェーン（`aarch64-linux-gnu-gcc` 等）を使用できます。
+これを実現するために、以下の4つのコア・アーキテクチャを採用しています。
 
 ---
 
-## 2. クラウド・ハードウェア・シミュレーション (AWS EC2 Graviton)
+## 1. 統合開発環境
 
-実機（Raspberry Pi 5など）と同じ **ARM64 (aarch64)** アーキテクチャである AWS EC2 Graviton インスタンスを利用します。
+AgentCockpitでは、VSCodeおよびその互換エディタのAntigravityを、開発者と AI エージェントが共有する統合開発環境として使用します。
 
-* **完全なバイナリ互換**: EC2上でクロスコンパイルされたバイナリを動かし、それが正常に動作すれば、実機でもそのまま動きます。
-* **CUSEスタブと LD_PRELOAD**: 物理的なGPIOピンやI2Cデバイスが存在しないクラウド上で、`CUSE`（Character device in Userspace）や共有ライブラリのフックを用いてハードウェアをエミュレートします。
+ここにすべての情報と操作インタフェースを集約することで**AI が開発作業の最初から最後までを自分で実行できる状態**を実現します。
+
+役割分担は次のように変わります。
+
+| 役割 | Before: 従来の開発環境 | After: AgentCockpit |
+|---|---|---|
+| 人間 | SSH接続、データ入力、実機/シミュレータ操作、ログ収集、結果確認、次の手順判断 | AI Agentへの指示、結果の確認、判断 |
+| AI Agent | ソフトウェア作成、部分的なコード修正支援 | ソフトウェア作成、SSH接続、デプロイ、データ入力、仮想H/W操作、ログ収集、診断、結果整理 |
+
+この役割変更を実現するために、AgentCockpit では Make ターゲット、HTTP API、ログ、状態取得を整備し、ビルド、デプロイ、シミュレータ起動、仮想ボタン押下、RFID タップ、ログ確認、診断までを AI が実行できる形にします。
+
+---
+
+## 2. クラウド開発環境 (GitHub Codespaces)
+
+AgentCockpit では、開発環境として GitHub Codespaces を採用しています。
+
+Codespaces により、ローカルPCのOSやインストール済みツールに依存せず、セットアップ済みの開発環境を瞬時に起動できます。開発環境を IaC 的に定義しておくことで、チームメンバ全員に同じ依存関係、同じツールチェーン、同じコマンド体系を提供できます。
+
+AgentCockpit では、その標準化された作業場に AI Agent も参加します。AI は人間のローカルPC固有の環境に依存せず、チームで共有された開発環境の中でビルド、デプロイ、実行、観察を行います。
+
+---
+
+## 3. シミュレーション環境 (AWS EC2 Graviton)
+
+AgentCockpit では、シミュレーション環境としてAWS EC2 Gravitonインスタンスを利用します。
+
+EC2 Gravitonは実機（Raspberry Pi 5など）と同じ **ARM64 (aarch64)** アーキテクチャであるため、バイナリファイル自体の動作保証を実現します。
+
+GPIOやI2Cなどの物理デバイスが存在しない環境でハードウェアをエミュレートするため、`CUSE`（Character device in Userspace）や共有ライブラリのフックを用いてGPIOやI2Cデバイスをエミュレートします。
 * **Virtual Hardware Panel**: エミュレートされたハードウェアの挙動（LEDの点灯、ボタンの押下、センサー値の変化）は、WebSocket経由でブラウザ上のパネルに同期され、視覚的にテストが可能です。
+* **共通の仮想H/W操作層**: Virtual Hardware Panel は WebSocket、AI/CI は HTTP API から操作できますが、どちらも bridge 内の同じ仮想H/W操作ロジックを通ります。UI変更やAPI追加によるメンテ漏れを防ぎつつ、`/api/button/press`、`/api/rfid/tap`、`/api/state` などで機械的な操作・観察も可能にします。
+* **シナリオ自動試験**: 仮想ボタン押下、RFIDタップ、センサー値変更、状態確認を JSON シナリオとして定義し、AI や CI が同じ手順を再現可能なテストとして実行できます。
 
 ---
 
-## 3. SSH/scp によるデプロイ
+## 4. 実機接続環境
 
-シンプルかつ確実な SSH/scp でファイル転送とシェルアクセスを統一します。
+AgentCockpit では、AI が実機へ到達するための接続経路として SSH/scp と adb に対応します。
 
-* **EC2（シミュレータ）**: `make deploy EC2=vibecode-graviton` で scp 転送、`ssh vibecode-graviton` でシェルアクセス。
-* **RasPi5（実機）**: `make deploy EC2=pi@raspberrypi KEY=~/.ssh/raspi.pem` で scp 転送、`ssh pi@raspberrypi` でシェルアクセス。
-
-**結果として、ターゲットが EC2 か RasPi5 かを問わず、同じ `make deploy` コマンドでデプロイできます。**
-
-```bash
-# EC2 へ
-make deploy EC2=vibecode-graviton
-
-# RasPi5 へ
-make deploy EC2=pi@raspberrypi KEY=~/.ssh/raspi.pem
-```
+ネットワーク越しに到達できる環境では SSH/scp を使い、作業PCが複数のネットワークインターフェースを自由に使えない場合でも、USB-C を用いた adb で実機アクセスを実現します。
