@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+import subprocess
+
+
+ROOT = Path(__file__).resolve().parents[1]
+VENV = ROOT / ".venv"
+VENV_PYTHON = VENV / "bin" / "python"
+
+
+def main() -> int:
+    if os.environ.get("AGP_VENV") != str(VENV) and os.environ.get("VIRTUAL_ENV") != str(VENV):
+        if not VENV_PYTHON.exists():
+            result = subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=False)
+            if result.returncode != 0 and not VENV_PYTHON.exists():
+                result = subprocess.run(
+                    [sys.executable, "-m", "venv", "--without-pip", str(VENV)],
+                    check=False,
+                )
+            if result.returncode != 0 and not VENV_PYTHON.exists():
+                return result.returncode
+
+        env = os.environ.copy()
+        env["AGP_VENV"] = str(VENV)
+        return subprocess.run([str(VENV_PYTHON), __file__, *sys.argv[1:]], env=env).returncode
+
+    sys.path.insert(0, str(ROOT))
+
+    from agp.cli import main as cli_main
+
+    return cli_main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

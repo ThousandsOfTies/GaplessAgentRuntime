@@ -16,12 +16,40 @@ DURATION_MS ?= 150
 UID ?= 04:AB:CD:EF:01:23
 RANGE_MM ?= 300
 SCENARIO ?= scenarios/sensor_demo_rfid.json
+VSCODE_EXT_NAME = agentcockpit-terminal-bridge
+VSCODE_EXT_VERSION = 0.0.1
+VSCODE_EXT_SRC = tools/vscode-agentcockpit
+VSCODE_EXT_DEST ?= $(HOME)/.vscode-server/extensions/$(VSCODE_EXT_NAME)-$(VSCODE_EXT_VERSION)
+MCP_SERVER = $(CURDIR)/tools/agentcockpit-mcp/server.py
 
 SSH_DST = $(if $(KEY),ubuntu@$(EC2),$(EC2))
 SSH     = ssh $(if $(KEY),-i $(KEY),)
 SCP     = scp $(if $(KEY),-i $(KEY),)
 
-.PHONY: cross native clean deploy-ec2 sim-start sim-stop sim-test sim-scenario sim-logs sim-state panel-button panel-rfid panel-rfid-remove panel-range diagnose
+.PHONY: venv install-vscode-extension mcp-config cross native clean deploy-ec2 sim-start sim-stop sim-test sim-scenario sim-logs sim-state panel-button panel-rfid panel-rfid-remove panel-range diagnose
+
+venv:
+	python3 -m venv --without-pip .venv
+	ln -sf $(CURDIR)/scripts/agp .venv/bin/agp
+	@echo "Run: source .venv/bin/activate"
+	@echo "Then: agp init"
+
+install-vscode-extension:
+	mkdir -p $(dir $(VSCODE_EXT_DEST))
+	rm -rf $(VSCODE_EXT_DEST)
+	cp -R $(VSCODE_EXT_SRC) $(VSCODE_EXT_DEST)
+	@echo "Installed AgentCockpit VSCode extension to $(VSCODE_EXT_DEST)"
+	@echo "Reload VSCode window to activate it."
+
+mcp-config:
+	@printf '{\n'
+	@printf '  "mcpServers": {\n'
+	@printf '    "agentcockpit": {\n'
+	@printf '      "command": "python3",\n'
+	@printf '      "args": ["%s"]\n' "$(MCP_SERVER)"
+	@printf '    }\n'
+	@printf '  }\n'
+	@printf '}\n'
 
 cross:
 	$(MAKE) -C cuse-stubs cross

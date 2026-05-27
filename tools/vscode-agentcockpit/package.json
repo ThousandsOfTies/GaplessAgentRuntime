@@ -1,0 +1,26 @@
+{
+  "name": "agentcockpit-terminal-bridge",
+  "displayName": "AgentCockpit Terminal Bridge",
+  "description": "Runs AgentCockpit terminal requests in a visible VSCode integrated terminal.",
+  "version": "0.0.1",
+  "publisher": "agentcockpit",
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:agentcockpit.runAgpInit"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentcockpit.runAgpInit",
+        "title": "AgentCockpit: Run AGP Init"
+      }
+    ]
+  }
+}

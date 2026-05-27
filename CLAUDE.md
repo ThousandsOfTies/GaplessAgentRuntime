@@ -7,6 +7,15 @@ Codespaces でクロスコンパイルし、EC2（シミュレーション）ま
 同じバイナリ (`sensor_demo`) が両環境で動作することを実証済み。
 人間は意図を指示し、AI はビルド、デプロイ、実行、仮想 H/W 操作、ログ確認を進める。
 
+## 現在の重点作業
+
+`agp init` と Agent Terminal Bridge を整備中。
+
+- `agp init` は開発環境 / シミュレート環境 / 実機環境の状態をカテゴリ単位で確認する。
+- AI から VSCode integrated terminal へ直接 sudo 入力を橋渡しするため、`tools/vscode-agentcockpit/` に VSCode extension プロトタイプを置いている。
+- 次の作業者はまず `docs/09_AGENT_TERMINAL_BRIDGE.md` を読むこと。
+- 方針: Extension Development Host を通常 UX に使わない。ローカルインストール導線と MCP server を追加して、AI と人間が同じ VSCode terminal 上で協業できるようにする。
+
 ---
 
 ## ターゲット構成

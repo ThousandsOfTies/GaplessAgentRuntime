@@ -1,0 +1,123 @@
+# 開発環境方針メモ
+
+AgentCockpit の開発環境は、Windows ネイティブに全てを合わせるのではなく、Linux 前提の開発・ビルド環境を標準化します。
+
+目的は、開発スクリプトをシンプルに保ちつつ、ビルド負荷を作業 PC だけに抱え込ませないことです。
+
+---
+
+## 基本方針
+
+```text
+標準開発環境: WSL2 Ubuntu
+クラウド開発環境: GitHub Codespaces + devcontainer
+Windows ネイティブ: 管理操作・接続・軽い確認
+公式判定: GitHub Actions / CI
+```
+
+Windows は引き続き重要な入口ですが、ビルド、テスト、クロスコンパイル、デプロイ補助などの開発者向けスクリプトは Linux 環境での実行を前提にします。
+
+これにより、PowerShell / Bash 差分、パス表現、環境変数、Unix コマンド互換などを吸収するためだけのメンテナンスを増やさない方針とします。
+
+---
+
+## WSL2 の位置づけ
+
+WSL2 Ubuntu は、日常的な編集、ローカル確認、軽量なビルド作業の標準環境です。
+
+Microsoft が Windows 上に標準提供している Linux 実行環境を使うことで、Windows PC を前提にしながらも、開発ツールチェーンは Linux に寄せられます。
+
+主な役割:
+
+- 日常的なソース編集
+- Makefile / Bash 前提の開発コマンド実行
+- 軽量なビルドとローカル検証
+- Codespaces と近い実行環境での作業
+
+---
+
+## Codespaces の位置づけ
+
+GitHub Codespaces は、作業 PC の計算資源を節約し、環境一致性を高めるためのクラウド開発環境です。
+
+特に、クロスコンパイル、重いビルド、検証、外部 PC からの作業、AI エージェントによる自律作業に向いています。
+
+主な役割:
+
+- 重いビルドやクロスコンパイルの実行
+- 開発環境の再現性確保
+- 作業 PC の CPU / RAM 負荷の分離
+- VS Code / AI エージェントからの一貫した作業環境
+- EC2 Graviton や RasPi5 へのデプロイ起点
+
+Codespaces を使う場合、Remote-SSH で Codespace に入る必要はありません。通常は VS Code / GitHub Codespaces の接続機能、または `gh codespace ssh` を使います。
+
+---
+
+## devcontainer の位置づけ
+
+devcontainer は、Codespaces の環境定義として使います。
+
+このリポジトリには `.devcontainer/devcontainer.json` を置き、必要な OS、ツール、VS Code 拡張、初期セットアップをリポジトリ側で管理します。
+
+主なメリット:
+
+- Node / C / cross compiler などのバージョン差分を減らせる
+- Codespaces 起動時に必要ツールを自動セットアップできる
+- 新しい PC や外部環境でも同じ開発環境を再現しやすい
+- WSL2 側の環境設計とも揃えやすい
+
+devcontainer は「全員に必須の魔法の箱」ではなく、Linux 前提の開発環境を再現可能にするための設定ファイルとして扱います。
+
+---
+
+## Windows ネイティブの位置づけ
+
+Windows ネイティブ環境は、管理操作、接続、実機連携の入口として扱います。
+
+例:
+
+- `ec2.ps1` による EC2 起動・停止
+- `raspi.ps1` による RasPi5 連携
+- GitHub CLI / AWS CLI / ADB などの操作
+- VS Code / Antigravity からの接続
+- ブラウザや Simple Browser での確認
+
+一方で、開発スクリプト全体を Windows ネイティブで完全対応することは主目的にしません。
+
+Windows ネイティブ開発を第一級にすると、`rm`, `cp`, `export`, `/tmp`, Bash 構文、パス区切り、改行コードなどの差分を吸収するために、スクリプトとドキュメントが複雑化します。
+
+AgentCockpit では、そのコストをプロダクト本体や検証環境の整備に回す方針です。
+
+---
+
+## 役割分担
+
+| 環境 | 役割 | 優先度 |
+|---|---|---|
+| WSL2 Ubuntu | 日常開発、軽量ビルド、Linux 前提スクリプト実行 | 標準 |
+| GitHub Codespaces | 重いビルド、環境再現、AI エージェント作業、外部 PC からの作業 | 標準オプション |
+| devcontainer | Codespaces の環境定義、再現性の確保 | 維持 |
+| Windows ネイティブ | 管理操作、接続、実機連携、軽い確認 | 補助 |
+| GitHub Actions / CI | 正式なビルド・テスト・デプロイ判定 | 公式 |
+
+---
+
+## 運用ルール
+
+- 開発・ビルド・検証コマンドは Linux 環境で動くことを優先する。
+- Windows ネイティブ対応のためだけに npm scripts / Makefile を過度に分岐させない。
+- Codespaces と WSL2 で同じ手順に近づける。
+- devcontainer は必要最小限から始め、実際に必要になったツールだけ追加する。
+- 秘密情報はリポジトリに置かず、GitHub Codespaces secrets / GitHub Actions secrets / ローカル環境変数で扱う。
+- 最終的な正規判定は CI に置く。
+
+---
+
+## 判断メモ
+
+この方針は、Windows を無視するためのものではありません。
+
+エンタープライズ向けであるほど、作業 PC、クラウド開発環境、CI、実機検証環境の役割を分ける価値があります。
+
+AgentCockpit では、Windows を操作の入口として活かしながら、開発・ビルドの複雑さは WSL2 / Codespaces 側に寄せます。これにより、開発スクリプトをシンプルに保ち、ビルド負荷のスケール先を確保し、AI エージェントが再現しやすい環境を提供します。
