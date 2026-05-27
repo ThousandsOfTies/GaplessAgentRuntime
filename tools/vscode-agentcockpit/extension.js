@@ -29,18 +29,11 @@ function activate(context) {
   watcher.onDidCreate((uri) => processRequest(uri));
   watcher.onDidChange((uri) => processRequest(uri));
 
-  for (const folder of vscode.workspace.workspaceFolders || []) {
-    const requestDir = path.join(folder.uri.fsPath, ".agp", "terminal-requests");
-    if (!fs.existsSync(requestDir)) {
-      continue;
+  vscode.workspace.findFiles(REQUEST_GLOB).then((uris) => {
+    for (const uri of uris) {
+      processRequest(uri);
     }
-
-    for (const fileName of fs.readdirSync(requestDir)) {
-      if (fileName.endsWith(".json")) {
-        processRequest(vscode.Uri.file(path.join(requestDir, fileName)));
-      }
-    }
-  }
+  });
 }
 
 function deactivate() {}
