@@ -11,25 +11,33 @@ class GitHubCodespacesEnvironment(DevEnvironment):
     display_name = "GitHub Codespaces"
     description = "GitHub CLI を使って Codespaces に接続します"
     display_order = 10
-    required_commands = ("gh",)
+    required_commands = ("gh", "sshfs")
 
     @classmethod
     def install_hint(cls, missing: list[str]) -> str:
-        if "gh" not in missing:
+        supported_missing = [
+            command
+            for command in missing
+            if command in ("gh", "sshfs")
+        ]
+        if not supported_missing:
             return super().install_hint(missing)
 
+        missing_text = ", ".join(supported_missing)
         if _is_wsl_or_linux():
+            install_command = "sudo apt-get install -y " + " ".join(supported_missing)
             return (
-                "不足: gh\n"
-                "Debian/Ubuntu/WSL では GitHub CLI の apt リポジトリを追加して "
-                "`sudo apt install gh` を実行してください。"
+                f"不足: {missing_text}\n"
+                "Debian/Ubuntu/WSL では次のコマンドを実行してください。\n"
+                f"`sudo apt-get update && {install_command}`"
             )
 
-        return "不足: gh\nGitHub CLI をインストールしてください。"
+        return f"不足: {missing_text}\nGitHub CLI / sshfs をインストールしてください。"
 
     @classmethod
     def install_dependencies(cls, missing: list[str]) -> int:
-        if "gh" not in missing:
+        installable = [command for command in missing if command in ("gh", "sshfs")]
+        if not installable:
             print(cls.install_hint(missing))
             return 1
 
@@ -40,23 +48,23 @@ class GitHubCodespacesEnvironment(DevEnvironment):
         sudo_block_reason = cls.sudo_block_reason()
         if sudo_block_reason:
             cls.print_user_terminal_handoff(
-                "GitHub CLI のインストールには sudo が必要です。",
+                "GitHub Codespaces 連携ツールのインストールには sudo が必要です。",
                 [
                     "sudo apt-get update",
-                    "sudo apt-get install -y gh",
+                    "sudo apt-get install -y " + " ".join(installable),
                 ],
                 reason=sudo_block_reason,
             )
             return 1
 
-        print("GitHub CLI を apt-get でインストールします。")
+        print("GitHub Codespaces 連携ツールを apt-get でインストールします。")
         print("sudo のパスワードを求められたら、このターミナルで入力してください。")
 
         update_result = cls.run_subprocess(["sudo", "apt-get", "update"])
         if update_result != 0:
             return update_result
 
-        return cls.run_subprocess(["sudo", "apt-get", "install", "-y", "gh"])
+        return cls.run_subprocess(["sudo", "apt-get", "install", "-y", *installable])
 
     @classmethod
     def login(cls) -> int:

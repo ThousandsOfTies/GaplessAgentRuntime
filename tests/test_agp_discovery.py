@@ -90,6 +90,86 @@ class AgpDiscoveryTest(unittest.TestCase):
             commands,
         )
 
+    def test_github_codespaces_installs_sshfs_with_apt_get(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_run_subprocess(argv: list[str]) -> int:
+            commands.append(argv)
+            return 0
+
+        with (
+            mock.patch(
+                "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                return_value=True,
+            ),
+            mock.patch(
+                "agp.environments.registry.development.github_codespaces.shutil.which",
+                return_value="/usr/bin/apt-get",
+            ),
+            mock.patch.object(
+                GitHubCodespacesEnvironment,
+                "sudo_block_reason",
+                return_value=None,
+            ),
+            mock.patch.object(
+                GitHubCodespacesEnvironment,
+                "run_subprocess",
+                side_effect=fake_run_subprocess,
+            ),
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = GitHubCodespacesEnvironment.install_dependencies(["sshfs"])
+
+        self.assertEqual(0, result)
+        self.assertEqual(
+            [
+                ["sudo", "apt-get", "update"],
+                ["sudo", "apt-get", "install", "-y", "sshfs"],
+            ],
+            commands,
+        )
+
+    def test_github_codespaces_installs_gh_and_sshfs_together(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_run_subprocess(argv: list[str]) -> int:
+            commands.append(argv)
+            return 0
+
+        with (
+            mock.patch(
+                "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                return_value=True,
+            ),
+            mock.patch(
+                "agp.environments.registry.development.github_codespaces.shutil.which",
+                return_value="/usr/bin/apt-get",
+            ),
+            mock.patch.object(
+                GitHubCodespacesEnvironment,
+                "sudo_block_reason",
+                return_value=None,
+            ),
+            mock.patch.object(
+                GitHubCodespacesEnvironment,
+                "run_subprocess",
+                side_effect=fake_run_subprocess,
+            ),
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = GitHubCodespacesEnvironment.install_dependencies(
+                    ["gh", "sshfs"]
+                )
+
+        self.assertEqual(0, result)
+        self.assertEqual(
+            [
+                ["sudo", "apt-get", "update"],
+                ["sudo", "apt-get", "install", "-y", "gh", "sshfs"],
+            ],
+            commands,
+        )
+
     def test_aws_ssm_installs_aws_cli_and_session_manager_plugin(self) -> None:
         commands: list[list[str]] = []
 
