@@ -13,5 +13,6 @@ id_ed25519*
 __pycache__/
 *.pyc
 tools/vscode-agentcockpit-*.vsix
+app/sensor_demo
 cuse-stubs/i2c-stub/cuse_i2c
 cuse-stubs/test/vl53l0x_read

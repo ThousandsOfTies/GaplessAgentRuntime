@@ -8,7 +8,7 @@ const processedRequests = new Set();
 
 function activate(context) {
   context.subscriptions.push(
-    vscode.commands.registerCommand("agentcockpit.runAgpInit", () => {
+    vscode.commands.registerCommand("agentcockpit.runAgpSetup", () => {
       const folder = workspaceFolder();
       if (!folder) {
         vscode.window.showErrorMessage("AgentCockpit workspace folder was not found.");
@@ -18,7 +18,7 @@ function activate(context) {
       runInTerminal({
         title: "AgentCockpit",
         cwd: folder.fsPath,
-        command: "source .venv/bin/activate && agp init",
+        command: ".venv/bin/agp setup",
       });
     })
   );

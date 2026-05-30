@@ -8,13 +8,13 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
-from agp.environments.base import DevEnvironment
-from agp.environments.discovery import discover_environment_providers
-from agp.environments.registry.device.adb_usb import AdbUsbEnvironment
-from agp.environments.registry.development.github_codespaces import (
+from scripts.agp_lib.environments.base import DevEnvironment
+from scripts.agp_lib.environments.discovery import discover_environment_providers
+from scripts.agp_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
+from scripts.agp_lib.environments.registry.development.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
-from agp.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
+from scripts.agp_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 
 
 class AgpDiscoveryTest(unittest.TestCase):
@@ -60,11 +60,11 @@ class AgpDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.agp_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "agp.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.agp_lib.environments.registry.development.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -99,11 +99,11 @@ class AgpDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.agp_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "agp.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.agp_lib.environments.registry.development.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -138,11 +138,11 @@ class AgpDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.agp_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "agp.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.agp_lib.environments.registry.development.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -179,15 +179,15 @@ class AgpDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "agp.environments.registry.simulation.aws_ssm.platform.system",
+                "scripts.agp_lib.environments.registry.simulation.aws_ssm.platform.system",
                 return_value="Linux",
             ),
             mock.patch(
-                "agp.environments.registry.simulation.aws_ssm.platform.machine",
+                "scripts.agp_lib.environments.registry.simulation.aws_ssm.platform.machine",
                 return_value="x86_64",
             ),
             mock.patch(
-                "agp.environments.registry.simulation.aws_ssm.shutil.which",
+                "scripts.agp_lib.environments.registry.simulation.aws_ssm.shutil.which",
                 return_value="/usr/bin/tool",
             ),
             mock.patch.object(
@@ -244,11 +244,11 @@ class AgpDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "agp.environments.registry.device.adb_usb.platform.system",
+                "scripts.agp_lib.environments.registry.device.adb_usb.platform.system",
                 return_value="Linux",
             ),
             mock.patch(
-                "agp.environments.registry.device.adb_usb.shutil.which",
+                "scripts.agp_lib.environments.registry.device.adb_usb.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -279,11 +279,11 @@ class AgpDiscoveryTest(unittest.TestCase):
             tmp_path = Path(tmp)
             with (
                 mock.patch(
-                    "agp.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                    "scripts.agp_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
                     return_value=True,
                 ),
                 mock.patch(
-                    "agp.environments.registry.development.github_codespaces.shutil.which",
+                    "scripts.agp_lib.environments.registry.development.github_codespaces.shutil.which",
                     return_value="/usr/bin/apt-get",
                 ),
                 mock.patch.object(
@@ -291,7 +291,7 @@ class AgpDiscoveryTest(unittest.TestCase):
                     "sudo_block_reason",
                     return_value="sudo: The no new privileges flag is set",
                 ),
-                mock.patch("agp.environments.base.Path.cwd", return_value=tmp_path),
+                mock.patch("scripts.agp_lib.environments.base.Path.cwd", return_value=tmp_path),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):

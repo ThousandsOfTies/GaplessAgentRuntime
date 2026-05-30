@@ -15,7 +15,7 @@ Windows ネイティブ: 管理操作・接続・軽い確認
 公式判定: GitHub Actions / CI
 ```
 
-Windows は引き続き重要な入口ですが、ビルド、テスト、クロスコンパイル、デプロイ補助などの開発者向けスクリプトは Linux 環境での実行を前提にします。
+Windows は引き続き重要な入口ですが、ビルド、テスト、ARM バイナリ生成、デプロイ補助などの開発者向けスクリプトは Linux 環境での実行を前提にします。
 
 これにより、PowerShell / Bash 差分、パス表現、環境変数、Unix コマンド互換などを吸収するためだけのメンテナンスを増やさない方針とします。
 
@@ -40,11 +40,11 @@ Microsoft が Windows 上に標準提供している Linux 実行環境を使う
 
 GitHub Codespaces は、作業 PC の計算資源を節約し、環境一致性を高めるためのクラウド開発環境です。
 
-特に、クロスコンパイル、重いビルド、検証、外部 PC からの作業、AI エージェントによる自律作業に向いています。
+特に、ARM ビルド、重いビルド、検証、外部 PC からの作業、AI エージェントによる自律作業に向いています。
 
 主な役割:
 
-- 重いビルドやクロスコンパイルの実行
+- 重いビルドや ARM バイナリ生成の実行
 - 開発環境の再現性確保
 - 作業 PC の CPU / RAM 負荷の分離
 - VS Code / AI エージェントからの一貫した作業環境
@@ -97,6 +97,35 @@ AI の実作業:
 
 `sshfs` は「リモート作業をローカル VS Code から見えるようにするための UX 改善」として扱い、ビルド環境そのものの正規経路にはしない。
 
+Codespace を作り直した後は、WSL2 側で次のセットアップを実行する。
+
+```bash
+agp code start
+```
+
+このコマンドは `~/.config/codespace-dev/env` に現在の接続先を書き込み、`~/.ssh/codespaces`、`sshfs` マウント、VS Code の `Codespaces` ターミナルプロファイルを同じ接続先に揃える。`gh codespace list` が 1 件なら `--codespace` は省略できる。
+
+WSL2 側の Codespace 表示を止める場合は、次を実行する。
+
+```bash
+agp code stop
+```
+
+`agp code stop` は SSHFS mount を unmount し、VS Code の `Codespaces` ターミナルプロファイルを削除する。`~/.ssh/codespaces` と `~/.config/codespace-dev/env` は再接続用の cache として保持する。
+
+EC2 の Virtual Hardware Panel を WSL2/VS Code から見る場合は、WSL2 側で次を実行する。
+
+```bash
+make port-forward EC2=vibecode-graviton
+```
+
+これにより、EC2 上の `8080` / `8765` が WSL2 の `127.0.0.1:8080` / `127.0.0.1:8765` に転送される。停止と状態確認は次を使う。
+
+```bash
+make port-forward-status
+make port-forward-stop
+```
+
 ---
 
 ## devcontainer の位置づけ
@@ -107,7 +136,7 @@ devcontainer は、Codespaces の環境定義として使います。
 
 主なメリット:
 
-- Node / C / cross compiler などのバージョン差分を減らせる
+- Node / C / ARM toolchain などのバージョン差分を減らせる
 - Codespaces 起動時に必要ツールを自動セットアップできる
 - 新しい PC や外部環境でも同じ開発環境を再現しやすい
 - WSL2 側の環境設計とも揃えやすい

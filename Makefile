@@ -1,16 +1,5 @@
-# Top-level Makefile
-#
-# クロスコンパイル (Codespaces x86_64 → arm64):
-#   make cross
-#
-# ネイティブビルド:
-#   make native
-#
-# EC2 デプロイ:
-#   make deploy-ec2 EC2=vibecode-graviton
+# AgentCockpit WSL hub commands.
 
-CC_CROSS  = aarch64-linux-gnu-gcc
-CC_NATIVE = gcc
 LINE ?= 17
 DURATION_MS ?= 150
 UID ?= 04:AB:CD:EF:01:23
@@ -26,68 +15,45 @@ SSH_DST = $(if $(KEY),ubuntu@$(EC2),$(EC2))
 SSH     = ssh $(if $(KEY),-i $(KEY),)
 SCP     = scp $(if $(KEY),-i $(KEY),)
 
-.PHONY: venv install-vscode-extension mcp-config cross native clean deploy-ec2 sim-start sim-stop sim-test sim-scenario sim-logs sim-state panel-button panel-rfid panel-rfid-remove panel-range diagnose
+.PHONY: agp init start port-forward port-forward-stop port-forward-status sim-test sim-scenario panel-button panel-rfid panel-rfid-remove panel-range
 
-venv:
+agp:
+	$(error make agp は廃止しました。初期構築は make init、日常開始は make start を使ってください)
+
+init:
 	python3 -m venv --without-pip .venv
 	ln -sf $(CURDIR)/scripts/agp .venv/bin/agp
-	@echo "Run: source .venv/bin/activate"
-	@echo "Then: agp init"
-
-install-vscode-extension:
 	mkdir -p $(dir $(VSCODE_EXT_DEST))
 	rm -rf $(VSCODE_EXT_DEST)
 	cp -R $(VSCODE_EXT_SRC) $(VSCODE_EXT_DEST)
 	@echo "Installed AgentCockpit VSCode extension to $(VSCODE_EXT_DEST)"
-	@echo "Reload VSCode window to activate it."
+	mkdir -p .agp
+	@{ \
+	  printf '{\n'; \
+	  printf '  "mcpServers": {\n'; \
+	  printf '    "agentcockpit": {\n'; \
+	  printf '      "command": "python3",\n'; \
+	  printf '      "args": ["%s"]\n' "$(MCP_SERVER)"; \
+	  printf '    }\n'; \
+	  printf '  }\n'; \
+	  printf '}\n'; \
+	} > .agp/mcp-config.json
+	@echo "Wrote MCP config to .agp/mcp-config.json"
+	@echo "Run: make start"
+	@echo "Reload VSCode window to activate the terminal bridge extension."
 
-mcp-config:
-	@printf '{\n'
-	@printf '  "mcpServers": {\n'
-	@printf '    "agentcockpit": {\n'
-	@printf '      "command": "python3",\n'
-	@printf '      "args": ["%s"]\n' "$(MCP_SERVER)"
-	@printf '    }\n'
-	@printf '  }\n'
-	@printf '}\n'
+start:
+	@test -x .venv/bin/agp || { echo "Run 'make init' first."; exit 1; }
+	.venv/bin/agp setup
 
-cross:
-	$(MAKE) -C cuse-stubs cross
-	$(MAKE) -C app CC=$(CC_CROSS)
+port-forward:
+	tools/forward_ec2_ports.sh --host $(or $(EC2),vibecode-graviton)
 
-native:
-	$(MAKE) -C cuse-stubs native
-	$(MAKE) -C app CC=$(CC_NATIVE)
+port-forward-stop:
+	tools/forward_ec2_ports.sh --host $(or $(EC2),vibecode-graviton) --stop
 
-clean:
-	$(MAKE) -C cuse-stubs clean
-	$(MAKE) -C app clean
-
-deploy-ec2:
-ifndef EC2
-	$(error EC2 変数を指定してください: make deploy-ec2 EC2=vibecode-graviton)
-endif
-	$(MAKE) -C cuse-stubs deploy EC2=$(EC2) KEY=$(KEY)
-	$(SCP) app/sensor_demo $(SSH_DST):~/
-	@echo "App deploy complete"
-
-sim-start:
-ifndef EC2
-	$(error EC2 変数を指定してください: make sim-start EC2=vibecode-graviton)
-endif
-	$(SSH) $(SSH_DST) 'setsid bash -c "nohup ~/venv/bin/python3 ~/web-bridge/bridge.py > /tmp/bridge.log 2>&1 &" < /dev/null'
-	@sleep 2
-	$(SSH) $(SSH_DST) 'setsid bash -c "sudo nohup ~/cuse_i2c -f --devname=i2c-1 > /tmp/cuse.log 2>&1 &" < /dev/null'
-	@sleep 3
-	$(SSH) $(SSH_DST) 'sudo chmod 666 /dev/i2c-1; setsid bash -c "LD_PRELOAD=\"$$HOME/gpio_shim.so $$HOME/spi_shim.so\" nohup ~/sensor_demo > /tmp/sensor.log 2>&1 &" < /dev/null'
-	@echo "Simulation started. Open http://$(EC2):8080 or use the forwarded port."
-
-sim-stop:
-ifndef EC2
-	$(error EC2 変数を指定してください: make sim-stop EC2=vibecode-graviton)
-endif
-	-$(SSH) $(SSH_DST) 'pkill -f sensor_demo; pkill -f cuse_i2c; pkill -f bridge.py'
-	@echo "Simulation processes stopped."
+port-forward-status:
+	tools/forward_ec2_ports.sh --host $(or $(EC2),vibecode-graviton) --status
 
 sim-test:
 ifndef EC2
@@ -97,8 +63,8 @@ endif
 	@sleep 1
 	$(MAKE) panel-rfid EC2=$(EC2) KEY=$(KEY) UID=$(UID)
 	@sleep 1
-	$(MAKE) sim-state EC2=$(EC2) KEY=$(KEY)
-	$(MAKE) sim-logs EC2=$(EC2) KEY=$(KEY)
+	scripts/agp sim state --host $(EC2)
+	scripts/agp sim log --host $(EC2)
 
 sim-scenario:
 ifndef EC2
@@ -107,18 +73,6 @@ endif
 	$(SSH) $(SSH_DST) 'mkdir -p ~/agentcockpit-scenarios'
 	$(SCP) scripts/run_scenario.py $(SCENARIO) $(SSH_DST):~/agentcockpit-scenarios/
 	$(SSH) $(SSH_DST) 'python3 ~/agentcockpit-scenarios/run_scenario.py ~/agentcockpit-scenarios/$(notdir $(SCENARIO)) --base-url http://127.0.0.1:8080'
-
-sim-logs:
-ifndef EC2
-	$(error EC2 変数を指定してください: make sim-logs EC2=vibecode-graviton)
-endif
-	$(SSH) $(SSH_DST) 'echo "--- sensor.log ---"; tail -n 80 /tmp/sensor.log 2>/dev/null; echo "--- bridge.log ---"; tail -n 80 /tmp/bridge.log 2>/dev/null; echo "--- cuse.log ---"; tail -n 80 /tmp/cuse.log 2>/dev/null'
-
-sim-state:
-ifndef EC2
-	$(error EC2 変数を指定してください: make sim-state EC2=vibecode-graviton)
-endif
-	$(SSH) $(SSH_DST) 'curl -s http://127.0.0.1:8080/api/state'
 
 panel-button:
 ifndef EC2
@@ -143,9 +97,3 @@ ifndef EC2
 	$(error EC2 変数を指定してください: make panel-range EC2=vibecode-graviton RANGE_MM=300)
 endif
 	$(SSH) $(SSH_DST) 'curl -s -X POST "http://127.0.0.1:8080/api/range?value=$(RANGE_MM)"'
-
-diagnose:
-ifndef EC2
-	$(error EC2 変数を指定してください: make diagnose EC2=vibecode-graviton)
-endif
-	$(SSH) $(SSH_DST) 'echo "--- processes ---"; pgrep -af "bridge.py|cuse_i2c|sensor_demo" || true; echo "--- devices ---"; ls -l /dev/i2c-1 /dev/gpiochip0 /dev/spidev0.0 2>/dev/null || true; echo "--- api ---"; curl -s http://127.0.0.1:8080/api/state || true'

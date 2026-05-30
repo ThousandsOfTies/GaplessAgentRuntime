@@ -9,7 +9,7 @@ AI と VSCode terminal を直接つなぐのではなく、明示的な橋を置
 
 ```text
 AI / Codex
-  -> agp init / setup command を裏で実行
+  -> agp setup command を裏で実行
   -> sudo/auth が必要なら agp terminal run
   -> .agp/terminal-requests/*.json
   -> AgentCockpit VSCode Extension
@@ -19,7 +19,7 @@ AI / Codex
 
 ## 現状
 
-- `agp init` はカテゴリ単位で状態を表示する。
+- `agp setup` はカテゴリ単位で状態を表示する。
   - 開発環境
   - シミュレート環境
   - 実機環境
@@ -28,13 +28,13 @@ AI / Codex
 - `.agp/` は git 管理しない。
 - `agp terminal run` は `.agp/terminal-requests/*.json` を作る。
 - provider が sudo/auth handoff を必要とした場合は、visible terminal request も作る。
-- `agp init` は VSCode Terminal Bridge の導入状況を表示する。
+- `agp setup` は VSCode Terminal Bridge の導入状況を表示する。
 - `tools/vscode-agentcockpit/` に最小 VSCode extension プロトタイプがある。
   - `.agp/terminal-requests/*.json` を監視する。
   - 要求を受けたら VSCode integrated terminal を作成する。
   - コマンドは `sendText()` で terminal に送る。
   - terminal 出力の捕捉や追加入力送信は行わない。AI は裏で状態確認して復帰する。
-  - `AgentCockpit: Run AGP Init` コマンドも提供する。
+  - `AgentCockpit: Run AGP Setup` コマンドも提供する。
 
 ## 使い方
 
@@ -44,24 +44,24 @@ AI の振る舞いルールは [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLAB
 ### VSCode extension のローカルインストール
 
 ```bash
-make install-vscode-extension
+make init
 ```
 
 その後、VSCode window を reload する。
 
 ### Agent / MCP から visible terminal に投げる
 
-MCP 設定例は次で出力できる。
+MCP 設定例は `make init` で生成される。
 
 ```bash
-make mcp-config
+.agp/mcp-config.json
 ```
 
 MCP tool `run_in_visible_terminal` は以下の request を作る。
 
 ```json
 {
-  "command": "source .venv/bin/activate && agp init",
+  "command": ".venv/bin/agp setup",
   "cwd": "/home/user/Yurufuwa/AgentCockpit",
   "title": "AgentCockpit"
 }
@@ -70,7 +70,7 @@ MCP tool `run_in_visible_terminal` は以下の request を作る。
 MCP を使わず CLI から同じ request を作る場合:
 
 ```bash
-agp terminal run --title AgentCockpit --command "source .venv/bin/activate && agp init"
+agp terminal run --title AgentCockpit --command ".venv/bin/agp setup"
 ```
 
 ## 残りの作業
@@ -84,14 +84,14 @@ agp terminal run --title AgentCockpit --command "source .venv/bin/activate && ag
 
 実行結果は terminal から読まず、AI が裏で状態確認コマンドを実行して判断する。
 
-### 2. agp init への統合を育てる
+### 2. agp setup への統合を育てる
 
-`agp init` は VSCode Terminal Bridge の有無を確認する。
+`agp setup` は VSCode Terminal Bridge の有無を確認する。
 
 導入済みなら、AI は sudo が必要な処理を `agp terminal run` 経由で visible terminal に流せる。
-未導入の場合は、TTY 実行時に `make install-vscode-extension` を呼び出して導入できる。
+未導入の場合は、TTY 実行時に `agp setup` から直接導入できる。まとめて整える場合は `make init` を実行する。
 
-次は `agp init` から MCP 設定の存在確認まで出せると、初回セットアップの見通しがよくなる。
+MCP 設定は `make init` が `.agp/mcp-config.json` に生成する。
 
 ## 作らないもの
 
@@ -104,7 +104,7 @@ agp terminal run --title AgentCockpit --command "source .venv/bin/activate && ag
 ## 次のAIへの作業指針
 
 1. まず `python3 -m unittest discover -s tests` を通す。
-2. `make install-vscode-extension` を実行し、VSCode window を reload する。
-3. MCP 設定に `make mcp-config` の出力を登録する。
+2. `make init` を実行し、VSCode window を reload する。
+3. MCP 設定に `.agp/mcp-config.json` の内容を登録する。
 4. `run_in_visible_terminal` で visible terminal にコマンドが流れるところを確認する。
-5. handoff 後は `agp init --no-install` や `which ... --version` を裏で実行して復帰する。
+5. handoff 後は `agp setup --no-install` や `which ... --version` を裏で実行して復帰する。

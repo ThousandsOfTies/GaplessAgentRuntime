@@ -12,14 +12,14 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:agentcockpit.runAgpInit"
+    "onCommand:agentcockpit.runAgpSetup"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "agentcockpit.runAgpInit",
-        "title": "AgentCockpit: Run AGP Init"
+        "command": "agentcockpit.runAgpSetup",
+        "title": "AgentCockpit: Run AGP Setup"
       }
     ]
   }

@@ -3,7 +3,7 @@ CFLAGS = -Wall -O2
 BIN    = sensor_demo
 OBJS   = sensor_demo.o ssd1306.o ssd1306_font.o mfrc522.o
 
-# Cross-compile: make CC=aarch64-linux-gnu-gcc
+# ARM build from this subdirectory: make CC=aarch64-linux-gnu-gcc
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^

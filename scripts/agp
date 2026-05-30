@@ -30,7 +30,7 @@ def main() -> int:
 
     sys.path.insert(0, str(ROOT))
 
-    from agp.cli import main as cli_main
+    from scripts.agp_lib.cli import main as cli_main
 
     return cli_main()
 
