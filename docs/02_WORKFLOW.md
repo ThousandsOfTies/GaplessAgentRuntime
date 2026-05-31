@@ -42,22 +42,22 @@ sequenceDiagram
 
     rect rgb(50, 30, 70)
         Note over Dev,GH: 【開発・編集・ビルド】
-        Dev->>GH: ソース編集 (embedded-poc-app/app/, agp-tools/cuse-stubs/)
-        Dev->>GH: cd /workspaces/agp-build-env/repos/embedded-poc-app && make
-        GH-->>Dev: aarch64 バイナリ生成<br/>(sensor_demo, gpio_shim.so, spi_shim.so, cuse_i2c, ...)
+        Dev->>GH: ソース編集 (target repo)
+        Dev->>GH: target software ごとの README / build script に従ってビルド
+        GH-->>Dev: aarch64 バイナリ生成<br/>(target software ごとの成果物)
     end
 
     rect rgb(70, 40, 20)
         Note over Dev,EC2: 【EC2】起動 + デプロイ
         Dev->>Win: C:\VibeCode\ec2.ps1 start
         Win->>EC2: 起動 + IP 取得 + SSH config 更新 + 自動 git pull
-        Dev->>GH: make (embedded-poc-app / agp-tools)
+        Dev->>GH: target software ごとのビルド
         GH->>Win: 成果物を WSL hub にコピー
         Win->>EC2: scp sensor_demo / shims / cuse_i2c / web-bridge/
     end
 
     rect rgb(40, 60, 30)
-        Note over Dev,EC2: 【EC2】simulation device runtime 起動
+        Note over Dev,EC2: 【runtime host】simulation runtime 起動
         Dev->>EC2: ssh vibecode-graviton (①)
         Dev->>EC2: ~/venv/bin/python3 ~/web-bridge/bridge.py
         EC2-->>Dev: [bridge] :8080 / :8765 / /tmp/hw_sim.sock
@@ -122,7 +122,7 @@ sequenceDiagram
 | EC2 停止 | Windows PS | `C:\VibeCode\ec2.ps1 stop` |
 | EC2 状態確認 | Windows PS | `C:\VibeCode\ec2.ps1 status` |
 | Codespaces SSH | Windows PS | `gh codespace ssh --codespace <name>` |
-| ARM64 ビルド | Codespaces / repo 内 | `make` |
+| ARM64 ビルド | Codespaces / repo 内 | target software ごとの README / build script に従う |
 | EC2 へデプロイ | WSL hub | Codespace 成果物を WSL にコピーし、WSL から `scp` |
 | RasPi5 へデプロイ | Windows PS | `C:\VibeCode\raspi.ps1 deploy` |
 | EC2 シェル | Windows PS | `ssh vibecode-graviton` |
@@ -131,7 +131,7 @@ sequenceDiagram
 | I2C スタブ起動 | EC2 | `sudo ~/cuse_i2c -f --devname=i2c-1` |
 | アプリ実行 (EC2) | EC2 | `./start.sh` |
 | アプリ実行 (RasPi5) | RasPi5 | `~/sensor_demo` |
-| EC2 simulation device runtime 起動 | WSL hub | `agp sim start` |
+| simulation runtime 起動 | WSL hub | `agp sim start` |
 | EC2 ログ確認 | WSL hub | `agp sim log` |
 | 仮想ボタン押下 | Codespaces | `make panel-button EC2=vibecode-graviton LINE=17` |
 | 仮想RFIDタップ | Codespaces | `make panel-rfid EC2=vibecode-graviton` |

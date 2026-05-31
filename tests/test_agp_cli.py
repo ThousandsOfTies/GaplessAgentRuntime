@@ -245,18 +245,33 @@ class AgpCliTest(unittest.TestCase):
     def test_deploy_sim_copies_artifacts_to_configured_ec2_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for path in (
-                "embedded-poc-app/app/sensor_demo",
-                "agp-tools/cuse-stubs/gpio-shim/gpio_shim.so",
-                "agp-tools/cuse-stubs/spi-shim/spi_shim.so",
-                "agp-tools/cuse-stubs/i2c-stub/cuse_i2c",
-                "agp-tools/cuse-stubs/test/gpio_led_button",
-                "agp-tools/cuse-stubs/test/vl53l0x_read",
-                "agp-tools/cuse-stubs/web-bridge/bridge.py",
-            ):
-                artifact = root / path
-                artifact.parent.mkdir(parents=True, exist_ok=True)
-                artifact.write_text("", encoding="utf-8")
+            (root / "files" / "bin").mkdir(parents=True)
+            (root / "files" / "bin" / "sensor_demo").write_text("", encoding="utf-8")
+            (root / "files" / "web-bridge").mkdir(parents=True)
+            (root / "files" / "web-bridge" / "bridge.py").write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sensor-demo",
+                        "deploy": {
+                            "sim": {
+                                "files": [
+                                    {
+                                        "src": "files/bin/sensor_demo",
+                                        "dest": "~/sensor_demo",
+                                        "mode": "0755",
+                                    },
+                                    {
+                                        "src": "files/web-bridge",
+                                        "dest": "~/web-bridge",
+                                    },
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             config = {"selected_providers": {}, "ec2": {"host": "configured-ec2"}}
             with (
@@ -268,35 +283,60 @@ class AgpCliTest(unittest.TestCase):
                 result = run_deploy_command("sim", artifacts_dir=str(root))
 
         self.assertEqual(0, result)
-        self.assertEqual(7, run.call_count)
-        first_argv = run.call_args_list[0].args[0]
-        last_argv = run.call_args_list[-1].args[0]
-        self.assertEqual("scp", first_argv[0])
-        self.assertEqual("configured-ec2:~/", first_argv[-1])
-        self.assertIn("-r", last_argv)
-        self.assertEqual("configured-ec2:~/", last_argv[-1])
+        self.assertEqual(3, run.call_count)
+        file_copy = run.call_args_list[0].args[0]
+        chmod = run.call_args_list[1].args[0]
+        dir_copy = run.call_args_list[2].args[0]
+        self.assertEqual("scp", file_copy[0])
+        self.assertEqual("configured-ec2:~/sensor_demo", file_copy[-1])
+        self.assertEqual(["ssh", "-F"], chmod[:2])
+        self.assertEqual(["configured-ec2", "chmod", "0755", "~/sensor_demo"], chmod[-4:])
+        self.assertIn("-r", dir_copy)
+        self.assertEqual("configured-ec2:~/web-bridge", dir_copy[-1])
 
-    def test_deploy_device_pushes_sensor_demo_with_adb(self) -> None:
+    def test_deploy_native_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            artifact = root / "embedded-poc-app" / "app" / "sensor_demo"
+            artifact = root / "files" / "sensor_demo"
             artifact.parent.mkdir(parents=True, exist_ok=True)
             artifact.write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sensor-demo",
+                        "deploy": {
+                            "native": {
+                                "files": [
+                                    {
+                                        "src": "files/sensor_demo",
+                                        "dest": "/home/user/sensor_demo",
+                                        "mode": "0755",
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with mock.patch("scripts.agp_lib.cli.subprocess.run") as run:
                 run.return_value.returncode = 0
 
                 result = run_deploy_command(
-                    "device",
+                    "native",
                     artifacts_dir=str(root),
                     serial="raspi",
                     dest="/home/user",
                 )
 
         self.assertEqual(0, result)
-        argv = run.call_args.args[0]
-        self.assertEqual(["adb", "-s", "raspi", "push"], argv[:4])
-        self.assertEqual("/home/user/", argv[-1])
+        self.assertEqual(2, run.call_count)
+        push_argv = run.call_args_list[0].args[0]
+        chmod_argv = run.call_args_list[1].args[0]
+        self.assertEqual(["adb", "-s", "raspi", "push"], push_argv[:4])
+        self.assertEqual("/home/user/sensor_demo", push_argv[-1])
+        self.assertEqual(["adb", "-s", "raspi", "shell", "chmod", "0755", "/home/user/sensor_demo"], chmod_argv)
 
     def test_sim_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
@@ -309,13 +349,13 @@ class AgpCliTest(unittest.TestCase):
             host="ec2-test",
         )
 
-    def test_device_deploy_is_available_from_cli(self) -> None:
+    def test_native_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
-            result = main(["device", "deploy", "--serial", "raspi"])
+            result = main(["native", "deploy", "--serial", "raspi"])
 
         self.assertEqual(0, result)
         run_deploy.assert_called_once_with(
-            "device",
+            "native",
             artifacts_dir=None,
             serial="raspi",
             dest="/home/user",

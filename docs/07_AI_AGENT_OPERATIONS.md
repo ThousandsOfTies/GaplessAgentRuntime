@@ -162,6 +162,6 @@ make sim-test EC2=vibecode-graviton
 - OLED framebuffer の期待値チェックを追加する
 - `/api/events` で操作履歴を取得する
 - 実機 RasPi5 にも同じ `run / logs / diagnose` 抽象を用意する
-- `agp sim run <target>` / `agp device run <target>` を共通 manifest 化する
+- `agp sim run <target>` / `agp native run <target>` を共通 manifest 化する
 - GPIO/SPI の LD_PRELOAD shim を CUSE/fake device runtime へ移し、アプリ起動手順からシミュレーション固有の指定を減らす
 - systemd 化して EC2 上の起動/停止を安定させる

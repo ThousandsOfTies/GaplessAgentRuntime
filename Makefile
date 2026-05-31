@@ -44,7 +44,8 @@ init:
 
 start:
 	@test -x .venv/bin/agp || { echo "Run 'make init' first."; exit 1; }
-	.venv/bin/agp setup
+	@echo "Entering AgentCockpit virtual environment... (Type 'exit' to leave)"
+	@bash -c 'TMP_RC=$$(mktemp); echo "source ~/.bashrc" > $$TMP_RC; echo "source $(CURDIR)/.venv/bin/activate" >> $$TMP_RC; echo "rm -f $$TMP_RC" >> $$TMP_RC; exec bash --rcfile $$TMP_RC -i'
 
 port-forward:
 	tools/forward_ec2_ports.sh --host $(or $(EC2),vibecode-graviton)

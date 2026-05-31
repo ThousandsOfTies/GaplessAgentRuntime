@@ -69,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     setup_parser.add_argument(
         "--ec2-host",
         default=None,
-        help="agp sim が既定で使う SSH config 上の EC2 host 名",
+        help="agp sim が既定で使う SSH config 上の runtime host 名",
     )
     code_parser = subparsers.add_parser(
         "code",
@@ -161,17 +161,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     sim_parser = subparsers.add_parser(
         "sim",
-        help="EC2 simulation runtime を操作します",
+        help="simulation runtime を操作します",
     )
     sim_subparsers = sim_parser.add_subparsers(dest="sim_command")
     sim_deploy_parser = sim_subparsers.add_parser(
         "deploy",
-        help="EC2 simulation runtime へ成果物を配置します",
+        help="simulation runtime へ成果物を配置します",
     )
     sim_deploy_parser.add_argument(
         "--host",
         default=None,
-        help="SSH config 上の EC2 host 名。省略時は .agp/config.json の ec2.host",
+        help="SSH config 上の runtime host 名。省略時は .agp/config.json の保存済み host",
     )
     sim_deploy_parser.add_argument(
         "--artifacts-dir",
@@ -186,7 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         command_parser.add_argument(
             "--host",
             default=None,
-            help="SSH config 上の EC2 host 名。省略時は .agp/config.json の ec2.host",
+            help="SSH config 上の runtime host 名。省略時は .agp/config.json の保存済み host",
         )
         if command_name == "start":
             command_parser.add_argument(
@@ -210,26 +210,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 action="store_true",
                 help="Hardware Panel 用の port forward を停止しません",
             )
-    device_parser = subparsers.add_parser(
-        "device",
-        help="実機 runtime を操作します",
+    native_parser = subparsers.add_parser(
+        "native",
+        help="接続先の native I/O を使う runtime を操作します",
     )
-    device_subparsers = device_parser.add_subparsers(dest="device_command")
-    device_deploy_parser = device_subparsers.add_parser(
+    native_subparsers = native_parser.add_subparsers(dest="native_command")
+    native_deploy_parser = native_subparsers.add_parser(
         "deploy",
-        help="実機へ成果物を配置します",
+        help="native runtime へ成果物を配置します",
     )
-    device_deploy_parser.add_argument(
+    native_deploy_parser.add_argument(
         "--serial",
         default=None,
         help="adb device serial。省略時は adb の既定接続先",
     )
-    device_deploy_parser.add_argument(
+    native_deploy_parser.add_argument(
         "--dest",
         default="/home/user",
-        help="実機側の配置先ディレクトリ",
+        help="artifact.json の native dest が相対パスのときの接続先基準ディレクトリ",
     )
-    device_deploy_parser.add_argument(
+    native_deploy_parser.add_argument(
         "--artifacts-dir",
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
@@ -277,13 +277,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             port_forward=not getattr(args, "no_port_forward", False),
             stop_port_forward=not getattr(args, "keep_port_forward", False),
         )
-    if args.command == "device":
-        if args.device_command is None:
-            device_parser.print_help()
+    if args.command == "native":
+        if args.native_command is None:
+            native_parser.print_help()
             return 1
-        if args.device_command == "deploy":
+        if args.native_command == "deploy":
             return run_deploy_command(
-                "device",
+                "native",
                 artifacts_dir=args.artifacts_dir,
                 serial=args.serial,
                 dest=args.dest,
@@ -339,8 +339,7 @@ def start_code_codespace(
         "/workspaces/AgentCockpit",
     )
     selected_mount_dir = Path(
-        mount_dir
-        or os.environ.get("CODESPACE_MOUNT_DIR", str(home / "codespaces" / "AgentCockpit"))
+        mount_dir if mount_dir is not None else PROJECT_ROOT.parent / "codespaces"
     ).expanduser()
     settings_path = Path(
         settings
@@ -477,7 +476,7 @@ def stop_code_codespace(
         mount_dir
         or os.environ.get("CODESPACE_MOUNT_DIR")
         or state.get("CODESPACE_MOUNT_DIR")
-        or str(home / "codespaces" / "AgentCockpit")
+        or str(PROJECT_ROOT.parent / "codespaces")
     ).expanduser()
     settings_path = Path(
         settings
@@ -760,8 +759,8 @@ def run_deploy_command(
 
     if target == "sim":
         return deploy_sim_artifacts(root, host=host)
-    if target == "device":
-        return deploy_device_artifacts(root, serial=serial, dest=dest)
+    if target == "native":
+        return deploy_native_artifacts(root, serial=serial, dest=dest)
 
     print(f"unknown deploy target: {target}", file=sys.stderr)
     return 1
@@ -771,56 +770,163 @@ def default_artifacts_dir() -> Path:
     return PROJECT_ROOT.parent / "agp-build-env" / "artifacts" / "from-codespace"
 
 
+def find_artifact_manifest(root: Path) -> Path | None:
+    direct = root / "artifact.json"
+    if direct.exists():
+        return direct
+
+    candidates = sorted(path for path in root.iterdir() if (path / "artifact.json").exists()) if root.exists() else []
+    if len(candidates) == 1:
+        return candidates[0] / "artifact.json"
+    return None
+
+
+def load_artifact_manifest(root: Path) -> tuple[Path, dict] | None:
+    manifest_path = find_artifact_manifest(root)
+    if manifest_path is None:
+        print(f"missing artifact manifest: {root / 'artifact.json'}", file=sys.stderr)
+        return None
+
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"invalid artifact manifest JSON: {manifest_path}: {exc}", file=sys.stderr)
+        return None
+
+    if not isinstance(data, dict):
+        print(f"invalid artifact manifest: root must be an object: {manifest_path}", file=sys.stderr)
+        return None
+
+    return manifest_path.parent, data
+
+
+def artifact_deploy_files(manifest: dict, target: str) -> list[dict] | None:
+    deploy = manifest.get("deploy")
+    if not isinstance(deploy, dict):
+        print("invalid artifact manifest: deploy must be an object", file=sys.stderr)
+        return None
+
+    target_config = deploy.get(target)
+    if not isinstance(target_config, dict):
+        print(f"artifact manifest has no deploy.{target} section", file=sys.stderr)
+        return None
+
+    files = target_config.get("files")
+    if not isinstance(files, list) or not files:
+        print(f"artifact manifest deploy.{target}.files must be a non-empty list", file=sys.stderr)
+        return None
+
+    for index, entry in enumerate(files):
+        if not isinstance(entry, dict):
+            print(f"artifact manifest deploy.{target}.files[{index}] must be an object", file=sys.stderr)
+            return None
+        if not isinstance(entry.get("src"), str) or not isinstance(entry.get("dest"), str):
+            print(
+                f"artifact manifest deploy.{target}.files[{index}] requires string src and dest",
+                file=sys.stderr,
+            )
+            return None
+
+    return files
+
+
+def resolve_artifact_src(bundle_root: Path, src: str) -> Path | None:
+    source = (bundle_root / src).resolve()
+    try:
+        source.relative_to(bundle_root)
+    except ValueError:
+        print(f"artifact src escapes bundle root: {src}", file=sys.stderr)
+        return None
+
+    if not source.exists():
+        print(f"missing artifact: {source}", file=sys.stderr)
+        return None
+
+    return source
+
+
+def load_deploy_files(root: Path, target: str) -> tuple[Path, list[dict]] | None:
+    loaded = load_artifact_manifest(root)
+    if loaded is None:
+        return None
+
+    bundle_root, manifest = loaded
+    files = artifact_deploy_files(manifest, target)
+    if files is None:
+        return None
+
+    return bundle_root, files
+
+
+def native_dest_path(manifest_dest: str, base_dest: str) -> str:
+    if manifest_dest.startswith(("/", "~")):
+        return manifest_dest
+    return f"{base_dest.rstrip('/')}/{manifest_dest}"
+
+
 def deploy_sim_artifacts(root: Path, *, host: str | None) -> int:
     resolved_host = host or default_ec2_host(load_config())
-    files = (
-        root / "embedded-poc-app" / "app" / "sensor_demo",
-        root / "agp-tools" / "cuse-stubs" / "gpio-shim" / "gpio_shim.so",
-        root / "agp-tools" / "cuse-stubs" / "spi-shim" / "spi_shim.so",
-        root / "agp-tools" / "cuse-stubs" / "i2c-stub" / "cuse_i2c",
-        root / "agp-tools" / "cuse-stubs" / "test" / "gpio_led_button",
-        root / "agp-tools" / "cuse-stubs" / "test" / "vl53l0x_read",
-    )
-    web_bridge = root / "agp-tools" / "cuse-stubs" / "web-bridge"
-
-    missing = [path for path in (*files, web_bridge) if not path.exists()]
-    if missing:
-        for path in missing:
-            print(f"missing artifact: {path}", file=sys.stderr)
+    loaded = load_deploy_files(root, "sim")
+    if loaded is None:
         return 1
 
-    for path in files:
-        result = subprocess.run(
-            ["scp", "-F", str(Path.home() / ".ssh" / "config"), str(path), f"{resolved_host}:~/"],
-            check=False,
-        )
+    bundle_root, files = loaded
+    for entry in files:
+        source = resolve_artifact_src(bundle_root, entry["src"])
+        if source is None:
+            return 1
+
+        command = ["scp", "-F", str(Path.home() / ".ssh" / "config")]
+        if source.is_dir():
+            command.append("-r")
+        command.extend([str(source), f"{resolved_host}:{entry['dest']}"])
+        result = subprocess.run(command, check=False)
         if result.returncode != 0:
             return result.returncode
 
-    return subprocess.run(
-        [
-            "scp",
-            "-F",
-            str(Path.home() / ".ssh" / "config"),
-            "-r",
-            str(web_bridge),
-            f"{resolved_host}:~/",
-        ],
-        check=False,
-    ).returncode
+        mode = entry.get("mode")
+        if isinstance(mode, str):
+            result = subprocess.run(
+                ["ssh", "-F", str(Path.home() / ".ssh" / "config"), resolved_host, "chmod", mode, entry["dest"]],
+                check=False,
+            )
+            if result.returncode != 0:
+                return result.returncode
+
+    return 0
 
 
-def deploy_device_artifacts(root: Path, *, serial: str | None, dest: str) -> int:
-    sensor_demo = root / "embedded-poc-app" / "app" / "sensor_demo"
-    if not sensor_demo.exists():
-        print(f"missing artifact: {sensor_demo}", file=sys.stderr)
+def deploy_native_artifacts(root: Path, *, serial: str | None, dest: str) -> int:
+    loaded = load_deploy_files(root, "native")
+    if loaded is None:
         return 1
 
-    command = ["adb"]
-    if serial:
-        command.extend(["-s", serial])
-    command.extend(["push", str(sensor_demo), f"{dest.rstrip('/')}/"])
-    return subprocess.run(command, check=False).returncode
+    bundle_root, files = loaded
+    for entry in files:
+        source = resolve_artifact_src(bundle_root, entry["src"])
+        if source is None:
+            return 1
+
+        target_dest = native_dest_path(entry["dest"], dest)
+        command = ["adb"]
+        if serial:
+            command.extend(["-s", serial])
+        command.extend(["push", str(source), target_dest])
+        result = subprocess.run(command, check=False)
+        if result.returncode != 0:
+            return result.returncode
+
+        mode = entry.get("mode")
+        if isinstance(mode, str):
+            command = ["adb"]
+            if serial:
+                command.extend(["-s", serial])
+            command.extend(["shell", "chmod", mode, target_dest])
+            result = subprocess.run(command, check=False)
+            if result.returncode != 0:
+                return result.returncode
+
+    return 0
 
 
 def run_sim_command(
@@ -1110,17 +1216,17 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
     if ec2_host:
         set_default_ec2_host(config, ec2_host)
         save_config(config)
-        print(f"EC2 host: {style(ec2_host, BOLD, GREEN)}")
+        print(f"Runtime host: {style(ec2_host, BOLD, GREEN)}")
         return
 
-    print(style("EC2 Simulation Runtime:", BOLD, BLUE))
+    print(style("Simulation Runtime:", BOLD, BLUE))
     print(f"  既定 host: {style(current_host, BOLD)}")
 
     if not sys.stdin.isatty():
         return
 
     answer = safe_input(
-        "agp sim の既定 EC2 host を入力してください "
+        "agp sim の既定 runtime host を入力してください "
         f"[{current_host}]: ",
         default_on_eof=current_host,
     )
