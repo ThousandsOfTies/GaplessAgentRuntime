@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "tools/agentcockpit-mcp/.venv",
+]
+
+[tool.ruff.lint]
+# Enabled rule families:
+# - E/W: pycodestyle (whitespace, indentation)
+# - F:   pyflakes  (undefined names, unused imports, dead code)
+# - I:   isort     (import ordering)
+# - UP:  pyupgrade (modern Python idioms)
+# - B:   flake8-bugbear (common bug patterns)
+select = ["E", "W", "F", "I", "UP", "B"]
+ignore = [
+    # E501: long-line; line-length is enforced separately and many strings exceed.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use unused imports for re-export verification and long lines for fixtures.
+"tests/*" = ["E501"]

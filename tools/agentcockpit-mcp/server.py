@@ -135,9 +135,24 @@ def create_terminal_request(arguments: dict) -> str:
     command = str(arguments.get("command", "")).strip()
     if not command:
         raise ValueError("command is required")
+    if len(command) > 4000:
+        raise ValueError("command exceeds 4000 character limit")
+    if "\x00" in command:
+        raise ValueError("command must not contain NUL bytes")
 
     title = str(arguments.get("title") or "AgentCockpit User Action")
-    cwd = Path(str(arguments.get("cwd") or ROOT)).resolve()
+    if len(title) > 200:
+        raise ValueError("title exceeds 200 character limit")
+
+    raw_cwd = arguments.get("cwd")
+    cwd = Path(str(raw_cwd)).resolve() if raw_cwd else ROOT
+    try:
+        cwd.relative_to(ROOT)
+    except ValueError as exc:
+        raise ValueError(
+            f"cwd must be inside the AgentCockpit repository ({ROOT}); got {cwd}"
+        ) from exc
+
     request_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     request_id = f"{request_id}-{uuid.uuid4().hex[:8]}"
 

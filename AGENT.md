@@ -47,7 +47,7 @@ gh codespace ssh --codespace glowing-capybara-5j6g4594j75c44j
 経路: Codespaces でビルド → WSL に成果物コピー → WSL から EC2 へ転送
 
 ```bash
-agp deploy sim
+agp sim deploy
 ```
 
 ### 「実機にデプロイして」と言われたら
@@ -59,7 +59,7 @@ agp deploy sim
    ```
 2. WSL hub から実機へ転送:
    ```bash
-   agp deploy device
+   agp native deploy
    ```
    経路: Codespaces でビルド → WSL に成果物コピー → adb push → RasPi5
 
@@ -103,6 +103,8 @@ agp sim stop
 詳細: `docs/07_AI_AGENT_OPERATIONS.md`
 
 ### RasPi5 で実機実行
+
+実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。SSH/scp 経路は将来 `agp setup` で選択可能にする予定。
 
 ```powershell
 adb shell

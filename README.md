@@ -105,7 +105,7 @@ Antigravity から EC2 に Remote SSH → PORTS タブで 8080 を Simple Browse
 ### RasPi5（実機）
 
 ```powershell
-# Windows
+# Windows (USB / adb 経路)
 agp native deploy                                # sensor_demo を adb push
 adb shell
 ```
@@ -113,6 +113,16 @@ adb shell
 # RasPi5 (adb shell 内)
 ~/sensor_demo                                    # LD_PRELOAD 不要、実 H/W を直接制御
 ```
+
+ネットワーク越しに RasPi5 へ到達できる環境では、`agp setup` で device プロバイダに `SSH / scp` を選択し、scp 経路で配送できます。
+
+```powershell
+# Windows / Linux (SSH / scp 経路)
+agp native deploy --host raspi5                  # ~/.ssh/config の Host エントリ名
+ssh raspi5 ~/sensor_demo
+```
+
+詳細なコマンド一覧は [docs/11_COMMAND_REFERENCE.md](docs/11_COMMAND_REFERENCE.md) を参照してください。
 
 ---
 
@@ -129,7 +139,7 @@ adb shell
 
 ## 設計の方向性
 
-現状の `LD_PRELOAD` は、PoC を短期間で成立させるための有効な足場です。ただし、長期的な目標は「アプリ起動スクリプトにシミュレーション固有の指定を混ぜない」ことです。
+現状の `LD_PRELOAD` は、PoC を短期間で成立させるための有効な足場です。ただし、長期的な目標は「アプリ起動スクリプトにシミュレーション固有の指定を混ぜない」ことです。具体的な移行計画は [docs/12_CUSE_MIGRATION_PLAN.md](docs/12_CUSE_MIGRATION_PLAN.md) を参照してください。
 
 ```text
 短期: I2C = CUSE, GPIO/SPI = LD_PRELOAD

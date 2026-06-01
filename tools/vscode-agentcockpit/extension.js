@@ -71,13 +71,17 @@ function processRequest(uri) {
 function runInTerminal(request) {
   const title = request.title || "AgentCockpit";
   let terminal = terminals.get(title);
+  let createdNew = false;
   if (!terminal || terminal.exitStatus) {
     terminal = vscode.window.createTerminal({ name: title, cwd: request.cwd });
     terminals.set(title, terminal);
+    createdNew = true;
   }
 
   terminal.show(false);
-  if (request.cwd) {
+  // Only emit `cd` when reusing an existing terminal; new terminals already
+  // start in `request.cwd` from createTerminal({ cwd }).
+  if (!createdNew && request.cwd) {
     terminal.sendText(`cd ${shellQuote(request.cwd)}`);
   }
   terminal.sendText(request.command);

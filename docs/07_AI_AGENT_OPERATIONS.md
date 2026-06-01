@@ -157,11 +157,31 @@ make sim-test EC2=vibecode-graviton
 
 ---
 
+## Agent 体験の磨き込み方針
+
+AgentCockpit の主戦場は **VSCode (Antigravity / Copilot Chat 等) の Agent モード**です。Agent はファイル編集・terminal 実行・タスク実行の機能を既に備えているため、AgentCockpit が独自プロトコルを増やすのではなく、**`agp` CLI を Agent から叩きやすい形に磨く**ことを差別化の軸とします。
+
+MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop, Cursor 等) からも繋げる**補助的な互換口**として最小限維持し、機能の主役にはしません。
+
+具体的な改善方針:
+
+| 項目 | 内容 | 受益者 |
+|---|---|---|
+| `--json` 出力モード | `agp sim status / diag / log` 等の主要コマンドに構造化出力を追加し、Agent がパースしやすくする | VSCode Agent / CI |
+| 構造化ログ + 末尾 summary | `agp sim diag` の最後に "OK / FAIL: <理由>" の 1 行 summary を出し、Agent が 1 ターンで判断できるようにする | VSCode Agent |
+| `.vscode/tasks.json` テンプレート | `agp setup` で代表タスク (sim start / stop / deploy / panel-button 等) を仕込み、Agent の `run_task` から呼べるようにする | VSCode Agent |
+| copilot-instructions.md / AGENT.md の作法強化 | "まず `agp sim status` を確認する" 等の手順を Agent に学習させる | VSCode Agent |
+| `agp terminal run` の活用 | 長時間実行やインタラクティブ操作は可視 terminal に出して、人間が割り込めるようにする | 人間 + Agent |
+
+このアプローチは、買い手が普段使う VSCode 環境の中で価値が増えるため、MCP エコシステム全体を保守する責任を負わずに済みます。
+
+---
+
 ## 今後の改善候補
 
 - OLED framebuffer の期待値チェックを追加する
 - `/api/events` で操作履歴を取得する
 - 実機 RasPi5 にも同じ `run / logs / diagnose` 抽象を用意する
 - `agp sim run <target>` / `agp native run <target>` を共通 manifest 化する
-- GPIO/SPI の LD_PRELOAD shim を CUSE/fake device runtime へ移し、アプリ起動手順からシミュレーション固有の指定を減らす
+- GPIO/SPI の LD_PRELOAD shim を CUSE/fake device runtime へ移し、アプリ起動手順からシミュレーション固有の指定を減らす（設計: [12_CUSE_MIGRATION_PLAN.md](12_CUSE_MIGRATION_PLAN.md)）
 - systemd 化して EC2 上の起動/停止を安定させる

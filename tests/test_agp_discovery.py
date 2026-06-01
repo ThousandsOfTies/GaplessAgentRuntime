@@ -4,16 +4,16 @@ import contextlib
 import io
 import json
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from scripts.agp_lib.environments.base import DevEnvironment
 from scripts.agp_lib.environments.discovery import discover_environment_providers
-from scripts.agp_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
 from scripts.agp_lib.environments.registry.development.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
+from scripts.agp_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
 from scripts.agp_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 
 
@@ -27,6 +27,7 @@ class AgpDiscoveryTest(unittest.TestCase):
         self.assertIn("ssh_remote", provider_ids)
         self.assertIn("local", provider_ids)
         self.assertIn("adb_usb", provider_ids)
+        self.assertIn("ssh_scp", provider_ids)
         self.assertTrue(
             all(issubclass(provider, DevEnvironment) for provider in providers)
         )
@@ -44,6 +45,7 @@ class AgpDiscoveryTest(unittest.TestCase):
         )
         self.assertEqual("simulation", categories_by_provider["aws_ssm"])
         self.assertEqual("device", categories_by_provider["adb_usb"])
+        self.assertEqual("device", categories_by_provider["ssh_scp"])
 
     def test_provider_ids_are_unique(self) -> None:
         providers = discover_environment_providers()
@@ -219,7 +221,8 @@ class AgpDiscoveryTest(unittest.TestCase):
         self.assertIn(["unzip", "-q", mock.ANY, "-d", mock.ANY], commands)
         self.assertTrue(
             any(
-                command[0] == "sudo" and command[-1].endswith("/aws/install")
+                command[0] == "sudo"
+                and Path(command[-1]).as_posix().endswith("/aws/install")
                 for command in commands
             )
         )

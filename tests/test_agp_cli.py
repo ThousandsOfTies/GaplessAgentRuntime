@@ -3,9 +3,11 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import tempfile
-from pathlib import Path
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from scripts.agp_lib.cli import (
@@ -14,10 +16,10 @@ from scripts.agp_lib.cli import (
     run_deploy_command,
     run_setup,
     run_sim_command,
+    run_terminal_request,
     select_codespace_from_list,
     start_code_codespace,
     stop_code_codespace,
-    run_terminal_request,
 )
 from scripts.agp_lib.environments.base import DevEnvironment
 
@@ -70,9 +72,9 @@ class AgpCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.agp_lib.cli.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-            mock.patch("scripts.agp_lib.cli.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.agp_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.agp_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", return_value=""),
         ):
             output = io.StringIO()
@@ -95,9 +97,9 @@ class AgpCliTest(unittest.TestCase):
         config = {"selected_providers": {"development": "development_test"}}
 
         with (
-            mock.patch("scripts.agp_lib.cli.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-            mock.patch("scripts.agp_lib.cli.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.agp_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.agp_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "", "q"]),
         ):
             output = io.StringIO()
@@ -116,11 +118,11 @@ class AgpCliTest(unittest.TestCase):
         config = {"selected_providers": {}}
 
         with (
-            mock.patch("scripts.agp_lib.cli.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-            mock.patch("scripts.agp_lib.cli.save_config") as save_config,
-            mock.patch("scripts.agp_lib.cli.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("builtins.input", side_effect=["", "", ""]),
+            mock.patch("scripts.agp_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.agp_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._setup.save_config") as save_config,
+            mock.patch("scripts.agp_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("builtins.input", side_effect=["", "", "", "q"]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -135,8 +137,8 @@ class AgpCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             with (
-                mock.patch("scripts.agp_lib.cli.CONFIG_PATH", tmp_path / ".agp" / "config.json"),
-                mock.patch("scripts.agp_lib.cli.Path.cwd", return_value=tmp_path),
+                mock.patch("scripts.agp_lib._terminal.CONFIG_PATH", tmp_path / ".agp" / "config.json"),
+                mock.patch("scripts.agp_lib._terminal.Path.cwd", return_value=tmp_path),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -163,9 +165,9 @@ class AgpCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-            mock.patch("scripts.agp_lib.cli.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.agp_lib.cli.show_sim_state", return_value=0) as state,
+            mock.patch("scripts.agp_lib._sim.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._sim.status_sim_port_forward", return_value=0) as status,
+            mock.patch("scripts.agp_lib._sim.show_sim_state", return_value=0) as state,
         ):
             result = run_sim_command("status")
 
@@ -175,8 +177,8 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_start_only_starts_device_runtime(self) -> None:
         with (
-            mock.patch("scripts.agp_lib.cli.subprocess.run") as run,
-            mock.patch("scripts.agp_lib.cli.write_sim_terminal_profile"),
+            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
         ):
             run.return_value.returncode = 0
 
@@ -195,8 +197,8 @@ class AgpCliTest(unittest.TestCase):
             settings = home / "settings.json"
 
             with (
-                mock.patch("scripts.agp_lib.cli.Path.home", return_value=home),
-                mock.patch("scripts.agp_lib.cli.subprocess.run") as run,
+                mock.patch("scripts.agp_lib._sim.Path.home", return_value=home),
+                mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
                 output = io.StringIO()
@@ -220,9 +222,9 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_start_starts_port_forward(self) -> None:
         with (
-            mock.patch("scripts.agp_lib.cli.subprocess.run") as run,
-            mock.patch("scripts.agp_lib.cli.write_sim_terminal_profile"),
-            mock.patch("scripts.agp_lib.cli.start_sim_port_forward", return_value=0) as forward,
+            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+            mock.patch("scripts.agp_lib._sim.start_sim_port_forward", return_value=0) as forward,
         ):
             run.return_value.returncode = 0
 
@@ -233,8 +235,8 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_status_checks_port_forward(self) -> None:
         with (
-            mock.patch("scripts.agp_lib.cli.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.agp_lib.cli.show_sim_state", return_value=0) as state,
+            mock.patch("scripts.agp_lib._sim.status_sim_port_forward", return_value=0) as status,
+            mock.patch("scripts.agp_lib._sim.show_sim_state", return_value=0) as state,
         ):
             result = run_sim_command("status", host="ec2-test")
 
@@ -275,8 +277,8 @@ class AgpCliTest(unittest.TestCase):
 
             config = {"selected_providers": {}, "ec2": {"host": "configured-ec2"}}
             with (
-                mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-                mock.patch("scripts.agp_lib.cli.subprocess.run") as run,
+                mock.patch("scripts.agp_lib._deploy.load_config", return_value=config),
+                mock.patch("scripts.agp_lib._deploy.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
 
@@ -320,7 +322,7 @@ class AgpCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch("scripts.agp_lib.cli.subprocess.run") as run:
+            with mock.patch("scripts.agp_lib._deploy.subprocess.run") as run:
                 run.return_value.returncode = 0
 
                 result = run_deploy_command(
@@ -358,8 +360,90 @@ class AgpCliTest(unittest.TestCase):
             "native",
             artifacts_dir=None,
             serial="raspi",
+            host=None,
             dest="/home/user",
         )
+
+    def test_native_deploy_passes_host_for_ssh_provider(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
+            result = main(["native", "deploy", "--host", "raspi-net"])
+
+        self.assertEqual(0, result)
+        run_deploy.assert_called_once_with(
+            "native",
+            artifacts_dir=None,
+            serial=None,
+            host="raspi-net",
+            dest="/home/user",
+        )
+
+    def test_native_deploy_uses_scp_when_ssh_provider_is_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "files" / "sensor_demo"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sensor-demo",
+                        "deploy": {
+                            "native": {
+                                "files": [
+                                    {
+                                        "src": "files/sensor_demo",
+                                        "dest": "/home/user/sensor_demo",
+                                        "mode": "0755",
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = {"selected_providers": {"device": "ssh_scp"}}
+            with (
+                mock.patch("scripts.agp_lib._deploy.load_config", return_value=config),
+                mock.patch("scripts.agp_lib._deploy.subprocess.run") as run,
+            ):
+                run.return_value.returncode = 0
+
+                result = run_deploy_command(
+                    "native",
+                    artifacts_dir=str(root),
+                    host="raspi-net",
+                    dest="/home/user",
+                )
+
+        self.assertEqual(0, result)
+        self.assertEqual(2, run.call_count)
+        copy_argv = run.call_args_list[0].args[0]
+        chmod_argv = run.call_args_list[1].args[0]
+        self.assertEqual("scp", copy_argv[0])
+        self.assertEqual("raspi-net:/home/user/sensor_demo", copy_argv[-1])
+        self.assertEqual(["ssh", "-F"], chmod_argv[:2])
+        self.assertEqual(
+            ["raspi-net", "chmod", "0755", "/home/user/sensor_demo"],
+            chmod_argv[-4:],
+        )
+
+    def test_native_deploy_with_ssh_provider_requires_host(self) -> None:
+        config = {"selected_providers": {"device": "ssh_scp"}}
+        with (
+            mock.patch("scripts.agp_lib._deploy.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._deploy.subprocess.run") as run,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            result = run_deploy_command(
+                "native",
+                artifacts_dir=str(Path(__file__).parent),
+                dest="/home/user",
+            )
+
+        self.assertNotEqual(0, result)
+        run.assert_not_called()
 
     def test_code_start_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_code_command", return_value=0) as run_code:
@@ -390,9 +474,9 @@ class AgpCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.agp_lib.cli.Path.home", return_value=home),
-                mock.patch("scripts.agp_lib.cli.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.agp_lib.cli.subprocess.run", side_effect=run_side_effect),
+                mock.patch("scripts.agp_lib._code.Path.home", return_value=home),
+                mock.patch("scripts.agp_lib._code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.agp_lib._code.subprocess.run", side_effect=run_side_effect),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -456,9 +540,9 @@ class AgpCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.agp_lib.cli.Path.home", return_value=home),
-                mock.patch("scripts.agp_lib.cli.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.agp_lib.cli.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.agp_lib._code.Path.home", return_value=home),
+                mock.patch("scripts.agp_lib._code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.agp_lib._code.subprocess.run", side_effect=run_side_effect) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -532,9 +616,9 @@ class AgpCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.agp_lib.cli.Path.home", return_value=home),
-                mock.patch("scripts.agp_lib.cli.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.agp_lib.cli.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.agp_lib._code.Path.home", return_value=home),
+                mock.patch("scripts.agp_lib._code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.agp_lib._code.subprocess.run", side_effect=run_side_effect) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -608,10 +692,10 @@ class AgpCliTest(unittest.TestCase):
         config = {"selected_providers": {}}
 
         with (
-            mock.patch("scripts.agp_lib.cli.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.agp_lib.cli.load_config", return_value=config),
-            mock.patch("scripts.agp_lib.cli.save_config") as save_config,
-            mock.patch("scripts.agp_lib.cli.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.agp_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.agp_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.agp_lib._setup.save_config") as save_config,
+            mock.patch("scripts.agp_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "", ""]),
         ):
             output = io.StringIO()
@@ -635,11 +719,132 @@ class AgpCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch("scripts.agp_lib.cli.CONFIG_PATH", config_path):
+            with mock.patch("scripts.agp_lib._config.CONFIG_PATH", config_path):
                 config = load_config()
 
         self.assertEqual("wsl", config["selected_providers"]["development"])
         self.assertEqual("vibecode-graviton", config["ec2"]["host"])
+
+    def test_load_config_warns_on_invalid_json(self) -> None:
+        from scripts.agp_lib.cli import default_config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / ".agp" / "config.json"
+            config_path.parent.mkdir()
+            config_path.write_text("{ not json", encoding="utf-8")
+
+            stderr = io.StringIO()
+            with (
+                mock.patch("scripts.agp_lib._config.CONFIG_PATH", config_path),
+                contextlib.redirect_stderr(stderr),
+            ):
+                config = load_config()
+
+        self.assertEqual(default_config(), config)
+        self.assertIn("not valid JSON", stderr.getvalue())
+
+    def test_save_config_is_atomic_and_leaves_no_temp_file(self) -> None:
+        from scripts.agp_lib.cli import save_config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / ".agp" / "config.json"
+
+            with mock.patch("scripts.agp_lib._config.CONFIG_PATH", config_path):
+                save_config({"selected_providers": {"device": "ssh_scp"}})
+
+            self.assertTrue(config_path.is_file())
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertEqual({"device": "ssh_scp"}, data["selected_providers"])
+
+            leftovers = [
+                path
+                for path in config_path.parent.iterdir()
+                if path.name != config_path.name
+            ]
+            self.assertEqual([], leftovers)
+
+    def test_project_root_points_to_repository_root(self) -> None:
+        """PROJECT_ROOT must resolve to the repo root, not scripts/."""
+        from scripts.agp_lib.cli import PROJECT_ROOT
+
+        self.assertTrue(
+            (PROJECT_ROOT / "AGENT.md").is_file(),
+            f"PROJECT_ROOT={PROJECT_ROOT} is not the repository root "
+            "(AGENT.md not found at expected location).",
+        )
+        self.assertTrue((PROJECT_ROOT / "scripts" / "agp_lib").is_dir())
+
+    def test_deploy_rejects_invalid_mode_in_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "files").mkdir()
+            (root / "files" / "x").write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "bad-mode",
+                        "deploy": {
+                            "sim": {
+                                "files": [
+                                    {
+                                        "src": "files/x",
+                                        "dest": "~/x",
+                                        "mode": "rwx",  # invalid: not octal
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = {"selected_providers": {}, "ec2": {"host": "h"}}
+            with (
+                mock.patch("scripts.agp_lib._deploy.load_config", return_value=config),
+                mock.patch("scripts.agp_lib._deploy.subprocess.run") as run,
+                contextlib.redirect_stderr(io.StringIO()),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = run_deploy_command("sim", artifacts_dir=str(root))
+
+            self.assertNotEqual(0, result)
+            run.assert_not_called()
+
+    def test_terminal_gc_removes_old_processed_requests(self) -> None:
+        from scripts.agp_lib.cli import run_terminal_gc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            processed = tmp_path / ".agp" / "terminal-requests" / "processed"
+            status_dir = tmp_path / ".agp" / "terminal-status"
+            processed.mkdir(parents=True)
+            status_dir.mkdir(parents=True)
+
+            old = processed / "old.started.json"
+            new = processed / "new.started.json"
+            old_status = status_dir / "old.json"
+            old.write_text("{}", encoding="utf-8")
+            new.write_text("{}", encoding="utf-8")
+            old_status.write_text("{}", encoding="utf-8")
+
+            old_mtime = datetime.now(UTC).timestamp() - 30 * 86400
+            os.utime(old, (old_mtime, old_mtime))
+            os.utime(old_status, (old_mtime, old_mtime))
+
+            with (
+                mock.patch(
+                    "scripts.agp_lib._terminal.CONFIG_PATH",
+                    tmp_path / ".agp" / "config.json",
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = run_terminal_gc(keep_days=7, dry_run=False)
+
+            self.assertEqual(0, result)
+            self.assertFalse(old.exists())
+            self.assertFalse(old_status.exists())
+            self.assertTrue(new.exists())
 
 
 if __name__ == "__main__":

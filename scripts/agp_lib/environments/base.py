@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
+import uuid
 from abc import ABC
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import ClassVar
-import uuid
 
 
 @dataclass(frozen=True)
@@ -125,7 +125,7 @@ class DevEnvironment(ABC):
 
     @classmethod
     def create_visible_terminal_request(cls, title: str, commands: list[str]) -> Path:
-        request_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        request_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         request_id = f"{request_id}-{uuid.uuid4().hex[:8]}"
         cwd = Path.cwd()
         request_dir = cwd / ".agp" / "terminal-requests"
@@ -133,7 +133,7 @@ class DevEnvironment(ABC):
         request_path = request_dir / f"{request_id}.json"
         request = {
             "id": request_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "title": "AgentCockpit User Action",
             "cwd": str(cwd),
             "command": " && ".join(commands),

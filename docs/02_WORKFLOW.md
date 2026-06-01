@@ -1,6 +1,6 @@
 # 開発ワークフロー
 
-SSH/scp + adb を用いたデプロイベースのワークフローです。
+SSH/scp + adb を用いたデプロイベースのワークフローです。実機接続は **adb を既定**とし、ネットワーク越し接続が可能な環境では SSH/scp を選択する方針です（詳細: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)）。
 
 現状の EC2 runtime は I2C を CUSE、GPIO/SPI を LD_PRELOAD shim で成立させています。ただしこれは最終形ではなく、アプリや起動スクリプトにシミュレーション固有の分岐を持たせないための移行段階です。今後は GPIO/SPI も fake `/dev/*` runtime へ寄せ、EC2 と RasPi5 の起動定義を共通化します。
 

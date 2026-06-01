@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 import pkgutil
+from pathlib import Path
 
-from scripts.agp_lib.environments.base import DevEnvironment
 import scripts.agp_lib.environments.registry as registry_pkg
+from scripts.agp_lib.environments.base import DevEnvironment
 
 
 class ProviderDiscoveryError(RuntimeError):
