@@ -15,7 +15,7 @@ AgentCockpit で AI に任せたい作業は、アプリ機能の実装だけで
 | 人間向け | AI エージェント向け |
 |---|---|
 | Web Panel で LED / ボタン / RFID / OLED を見る | `make panel-*` で仮想 H/W を操作する |
-| SSH でログを見る | `agp sim log` / `agp sim diag` で観察する |
+| SSH でログを見る | `agp sim log` / `agp sim diag`（AI は `agp sim diag --json`）で観察する |
 | 手順書を読みながら実行する | `agp` コマンドと Make ターゲットを組み合わせて実行する |
 
 AIに任せたい操作は、なるべく「短く、明示的で、再実行しやすいコマンド」にします。
@@ -167,7 +167,7 @@ MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop
 
 | 項目 | 内容 | 受益者 |
 |---|---|---|
-| `--json` 出力モード | `agp sim status / diag / log` 等の主要コマンドに構造化出力を追加し、Agent がパースしやすくする | VSCode Agent / CI |
+| `--json` 出力モード | `agp sim diag --json` を実装済み（processes / devices / api / ok を構造化出力）。他コマンドへも順次展開 | VSCode Agent / CI |
 | 構造化ログ + 末尾 summary | `agp sim diag` の最後に "OK / FAIL: <理由>" の 1 行 summary を出し、Agent が 1 ターンで判断できるようにする | VSCode Agent |
 | `.vscode/tasks.json` テンプレート | `agp setup` で代表タスク (sim start / stop / deploy / panel-button 等) を仕込み、Agent の `run_task` から呼べるようにする | VSCode Agent |
 | copilot-instructions.md / AGENT.md の作法強化 | "まず `agp sim status` を確認する" 等の手順を Agent に学習させる | VSCode Agent |

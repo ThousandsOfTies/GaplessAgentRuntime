@@ -64,7 +64,7 @@ endif
 	@sleep 1
 	$(MAKE) panel-rfid EC2=$(EC2) KEY=$(KEY) UID=$(UID)
 	@sleep 1
-	scripts/agp sim state --host $(EC2)
+	scripts/agp sim status --host $(EC2)
 	scripts/agp sim log --host $(EC2)
 
 sim-scenario:

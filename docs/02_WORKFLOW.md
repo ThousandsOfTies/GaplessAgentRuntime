@@ -49,8 +49,8 @@ sequenceDiagram
 
     rect rgb(70, 40, 20)
         Note over Dev,EC2: 【EC2】起動 + デプロイ
-        Dev->>Win: C:\VibeCode\ec2.ps1 start
-        Win->>EC2: 起動 + IP 取得 + SSH config 更新 + 自動 git pull
+        Dev->>EC2: agp ec2 start
+        EC2-->>Dev: 起動 + IP 取得 + SSH config 更新（--pull で git pull）
         Dev->>GH: target software ごとのビルド
         GH->>Win: 成果物を WSL hub にコピー
         Win->>EC2: scp sensor_demo / shims / cuse_i2c / web-bridge/
@@ -111,29 +111,25 @@ sequenceDiagram
 
 ## コマンドリファレンス
 
-| フェーズ | 場所 | コマンド |
-|---|---|---|
-| GitHub CLI インストール | Windows PS | `winget install GitHub.cli` |
-| GitHub CLI 認証 | Windows PS | `gh auth login` |
-| AWS CLI インストール | Windows PS | `winget install Amazon.AWSCLI` |
-| AWS CLI 認証設定 | Windows PS | `aws configure` |
-| ADB (PlatformTools) インストール | Windows PS | `winget install Google.PlatformTools` |
-| EC2 起動 | Windows PS | `C:\VibeCode\ec2.ps1 start` |
-| EC2 停止 | Windows PS | `C:\VibeCode\ec2.ps1 stop` |
-| EC2 状態確認 | Windows PS | `C:\VibeCode\ec2.ps1 status` |
-| Codespaces SSH | Windows PS | `gh codespace ssh --codespace <name>` |
-| ARM64 ビルド | Codespaces / repo 内 | target software ごとの README / build script に従う |
-| EC2 へデプロイ | WSL hub | Codespace 成果物を WSL にコピーし、WSL から `scp` |
-| RasPi5 へデプロイ | Windows PS | `C:\VibeCode\raspi.ps1 deploy` |
-| EC2 シェル | Windows PS | `ssh vibecode-graviton` |
-| RasPi5 シェル | Windows PS | `adb shell` |
-| ブリッジ起動 | EC2 | `~/venv/bin/python3 ~/web-bridge/bridge.py` |
-| I2C スタブ起動 | EC2 | `sudo ~/cuse_i2c -f --devname=i2c-1` |
-| アプリ実行 (EC2) | EC2 | `./start.sh` |
-| アプリ実行 (RasPi5) | RasPi5 | `~/sensor_demo` |
-| simulation runtime 起動 | WSL hub | `agp sim start` |
-| EC2 ログ確認 | WSL hub | `agp sim log` |
-| 仮想ボタン押下 | Codespaces | `make panel-button EC2=vibecode-graviton LINE=17` |
-| 仮想RFIDタップ | Codespaces | `make panel-rfid EC2=vibecode-graviton` |
-| 代表シナリオ実行 | Codespaces | `make sim-test EC2=vibecode-graviton` |
-| simulation 状態確認 | WSL hub | `agp sim status` |
+`agp` コマンド・Make ターゲット・補助スクリプトの一覧は [11_COMMAND_REFERENCE.md](11_COMMAND_REFERENCE.md) に集約しています（正本）。AI 向けの操作（`agp sim` / Make / HTTP API）の使い方は [07_AI_AGENT_OPERATIONS.md](07_AI_AGENT_OPERATIONS.md) を参照してください。
+
+代表的な流れだけ抜粋すると次の通りです。
+
+```bash
+# WSL hub: 初回セットアップ
+make init && make start            # venv 作成・有効化
+agp setup                          # 依存検出・既定 host 保存
+
+# Codespace build VM: target software ごとの README / build script でビルド
+
+# WSL hub: 成果物配置 → simulation runtime 起動
+agp sim deploy
+agp sim start                      # /dev/* runtime + port forward
+# VS Code terminal profile "EC2 Simulation" から本番と同じ起動手順
+./start.sh
+
+# 仮想 H/W 操作・観察
+make panel-button EC2=vibecode-graviton LINE=17
+make panel-rfid   EC2=vibecode-graviton
+agp sim log
+```

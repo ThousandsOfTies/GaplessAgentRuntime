@@ -13,13 +13,18 @@ from unittest import mock
 from scripts.agp_lib.cli import (
     load_config,
     main,
+    parse_sim_diag,
+    parse_usbipd_list,
     run_deploy_command,
+    run_ec2_command,
     run_setup,
     run_sim_command,
     run_terminal_request,
+    run_usb_command,
     select_codespace_from_list,
     start_code_codespace,
     stop_code_codespace,
+    update_ssh_config_hostname,
 )
 from scripts.agp_lib.environments.base import DevEnvironment
 
@@ -100,7 +105,7 @@ class AgpCliTest(unittest.TestCase):
             mock.patch("scripts.agp_lib._setup.discover_environment_providers", return_value=providers),
             mock.patch("scripts.agp_lib._setup.load_config", return_value=config),
             mock.patch("scripts.agp_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("builtins.input", side_effect=["", "", "q"]),
+            mock.patch("builtins.input", side_effect=["", "", "", "q"]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -174,6 +179,159 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         status.assert_called_once_with("configured-ec2")
         state.assert_called_once_with("configured-ec2")
+
+    def test_ec2_status_uses_configured_instance_and_region(self) -> None:
+        config = {
+            "selected_providers": {},
+            "ec2": {
+                "host": "configured-ec2",
+                "instance_id": "i-test123",
+                "region": "ap-test-1",
+            },
+        }
+        with (
+            mock.patch("scripts.agp_lib._ec2._aws_available", return_value=True),
+            mock.patch("scripts.agp_lib._ec2.load_config", return_value=config),
+            mock.patch(
+                "scripts.agp_lib._ec2.ec2_instance_state", return_value="running"
+            ) as state,
+            mock.patch(
+                "scripts.agp_lib._ec2.ec2_public_ip", return_value="203.0.113.5"
+            ) as ip,
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_ec2_command("status")
+
+        self.assertEqual(0, result)
+        state.assert_called_once_with("i-test123", "ap-test-1")
+        ip.assert_called_once_with("i-test123", "ap-test-1")
+        self.assertIn("203.0.113.5", output.getvalue())
+
+    def test_ec2_start_updates_ssh_config_hostname(self) -> None:
+        config = {
+            "selected_providers": {},
+            "ec2": {
+                "host": "configured-ec2",
+                "instance_id": "i-test123",
+                "region": "ap-test-1",
+            },
+        }
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with (
+            mock.patch("scripts.agp_lib._ec2._aws_available", return_value=True),
+            mock.patch("scripts.agp_lib._ec2.load_config", return_value=config),
+            mock.patch(
+                "scripts.agp_lib._ec2._run_aws", return_value=completed
+            ) as run_aws,
+            mock.patch(
+                "scripts.agp_lib._ec2.ec2_public_ip", return_value="203.0.113.5"
+            ),
+            mock.patch(
+                "scripts.agp_lib._ec2.update_ssh_config_hostname", return_value=True
+            ) as update_ssh,
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_ec2_command("start")
+
+        self.assertEqual(0, result)
+        update_ssh.assert_called_once_with("configured-ec2", "203.0.113.5")
+        first_aws_args = run_aws.call_args_list[0].args[0]
+        self.assertIn("start-instances", first_aws_args)
+        self.assertIn("i-test123", first_aws_args)
+
+    def test_update_ssh_config_hostname_rewrites_target_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config"
+            config_path.write_text(
+                "Host other\n"
+                "    HostName 198.51.100.1\n"
+                "\n"
+                "Host vibecode-graviton\n"
+                "    HostName 192.0.2.1\n"
+                "    User ubuntu\n",
+                encoding="utf-8",
+            )
+
+            updated = update_ssh_config_hostname(
+                "vibecode-graviton", "203.0.113.5", path=config_path
+            )
+
+            self.assertTrue(updated)
+            contents = config_path.read_text(encoding="utf-8")
+            self.assertIn("HostName 203.0.113.5", contents)
+            self.assertIn("HostName 198.51.100.1", contents)
+
+    def test_usb_list_parses_usbipd_output(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE                                STATE\n"
+            "1-4    8087:0aaa  Intel(R) Wireless Bluetooth(R)        Not shared\n"
+            "2-3    18d1:4ee7  Android ADB Interface, USB Mass...    Shared\n"
+            "\n"
+            "Persisted:\n"
+            "GUID  DEVICE\n"
+        )
+        devices = parse_usbipd_list(output)
+
+        self.assertEqual(2, len(devices))
+        android = devices[1]
+        self.assertEqual("2-3", android.busid)
+        self.assertEqual("18d1:4ee7", android.vid_pid)
+        self.assertEqual("Shared", android.state)
+        self.assertTrue(android.is_shared)
+        self.assertTrue(android.looks_like_android)
+        self.assertFalse(devices[0].looks_like_android)
+
+    def test_usb_attach_auto_detects_android_and_remembers_busid(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE             STATE\n"
+            "2-3    18d1:4ee7  Android ADB        Shared\n"
+        )
+        saved: dict = {}
+        with (
+            mock.patch("scripts.agp_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch(
+                "scripts.agp_lib._usb.list_usb_devices",
+                return_value=parse_usbipd_list(output),
+            ),
+            mock.patch("scripts.agp_lib._usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.agp_lib._usb.save_config", side_effect=lambda c: saved.update(c)),
+            mock.patch("scripts.agp_lib._usb._run_usbipd") as run_usbipd,
+        ):
+            run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            output_buffer = io.StringIO()
+            with contextlib.redirect_stdout(output_buffer):
+                result = run_usb_command("attach")
+
+        self.assertEqual(0, result)
+        run_usbipd.assert_called_once_with(["attach", "--wsl", "--busid", "2-3"])
+        self.assertEqual("2-3", saved.get("usb", {}).get("busid"))
+
+    def test_usb_attach_hints_bind_when_not_shared(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE             STATE\n"
+            "2-3    18d1:4ee7  Android ADB        Not shared\n"
+        )
+        with (
+            mock.patch("scripts.agp_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch(
+                "scripts.agp_lib._usb.list_usb_devices",
+                return_value=parse_usbipd_list(output),
+            ),
+            mock.patch("scripts.agp_lib._usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.agp_lib._usb._run_usbipd") as run_usbipd,
+        ):
+            err_buffer = io.StringIO()
+            with contextlib.redirect_stderr(err_buffer):
+                result = run_usb_command("attach")
+
+        self.assertEqual(1, result)
+        run_usbipd.assert_not_called()
+        self.assertIn("usbipd bind --busid 2-3", err_buffer.getvalue())
 
     def test_sim_start_only_starts_device_runtime(self) -> None:
         with (
@@ -657,6 +815,7 @@ class AgpCliTest(unittest.TestCase):
             profile_name="Simulation",
             port_forward=True,
             stop_port_forward=True,
+            json_output=False,
         )
 
     def test_sim_cli_omits_host_by_default(self) -> None:
@@ -671,6 +830,7 @@ class AgpCliTest(unittest.TestCase):
             profile_name=None,
             port_forward=True,
             stop_port_forward=True,
+            json_output=False,
         )
 
     def test_sim_status_is_available_from_cli(self) -> None:
@@ -685,6 +845,7 @@ class AgpCliTest(unittest.TestCase):
             profile_name=None,
             port_forward=True,
             stop_port_forward=True,
+            json_output=False,
         )
 
     def test_setup_can_store_default_ec2_host(self) -> None:
@@ -845,6 +1006,88 @@ class AgpCliTest(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertFalse(old_status.exists())
             self.assertTrue(new.exists())
+
+    def test_parse_sim_diag_builds_structured_payload(self) -> None:
+        raw = (
+            "@@PROC@@\n"
+            "1234 /usr/bin/python3 /home/ubuntu/web-bridge/bridge.py\n"
+            "1235 ./cuse_i2c -f --devname=i2c-1\n"
+            "@@DEV@@\n"
+            "/dev/i2c-1 1\n"
+            "/dev/gpiochip0 0\n"
+            "/dev/spidev0.0 0\n"
+            "@@API@@\n"
+            '{"led18": 1, "button17": 0}\n'
+        )
+        payload = parse_sim_diag(raw)
+
+        self.assertEqual(2, len(payload["processes"]))
+        self.assertEqual(1234, payload["processes"][0]["pid"])
+        self.assertIn("bridge.py", payload["processes"][0]["cmd"])
+        self.assertEqual(
+            {"/dev/i2c-1": True, "/dev/gpiochip0": False, "/dev/spidev0.0": False},
+            payload["devices"],
+        )
+        self.assertEqual({"led18": 1, "button17": 0}, payload["api"])
+        self.assertTrue(payload["ok"])
+
+    def test_parse_sim_diag_marks_not_ok_when_api_missing(self) -> None:
+        raw = (
+            "@@PROC@@\n"
+            "@@DEV@@\n"
+            "/dev/i2c-1 0\n"
+            "@@API@@\n"
+        )
+        payload = parse_sim_diag(raw)
+
+        self.assertEqual([], payload["processes"])
+        self.assertIsNone(payload["api"])
+        self.assertFalse(payload["ok"])
+
+    def test_sim_diag_json_outputs_machine_readable_payload(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout=(
+                "@@PROC@@\n"
+                "1234 bridge.py\n"
+                "@@DEV@@\n"
+                "/dev/i2c-1 1\n"
+                "/dev/gpiochip0 0\n"
+                "/dev/spidev0.0 0\n"
+                "@@API@@\n"
+                '{"led18": 1}\n'
+            ),
+            stderr="",
+        )
+        with (
+            mock.patch("scripts.agp_lib._sim.load_config", return_value={"selected_providers": {}, "ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_sim_command("diag", json_output=True)
+
+        self.assertEqual(0, result)
+        self.assertIn("@@PROC@@", run.call_args.args[0][-1])
+        payload = json.loads(output.getvalue())
+        self.assertEqual("ec2-test", payload["host"])
+        self.assertTrue(payload["ok"])
+        self.assertEqual({"led18": 1}, payload["api"])
+
+    def test_sim_diag_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
+            result = main(["sim", "diag", "--json", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_sim.assert_called_once_with(
+            "diag",
+            host="ec2-test",
+            settings=None,
+            profile_name=None,
+            port_forward=True,
+            stop_port_forward=True,
+            json_output=True,
+        )
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -15,6 +16,99 @@ from scripts.agp_lib._config import (
 )
 from scripts.agp_lib._vscode import write_vscode_terminal_profile
 
+# Machine-readable diag: emit section markers so the WSL side can parse the
+# remote output into structured JSON. Devices are probed as "<path> 0|1".
+SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
+SIM_DIAG_JSON_COMMAND = (
+    'echo "@@PROC@@"; '
+    'pgrep -af "bridge.py|cuse_i2c" || true; '
+    'echo "@@DEV@@"; '
+    "for d in " + " ".join(SIM_DIAG_DEVICES) + "; do "
+    'if [ -e "$d" ]; then echo "$d 1"; else echo "$d 0"; fi; done; '
+    'echo "@@API@@"; '
+    "curl -s http://127.0.0.1:8080/api/state || true"
+)
+
+
+def parse_sim_diag(raw: str) -> dict:
+    """Parse the marker-delimited ``SIM_DIAG_JSON_COMMAND`` output into a dict.
+
+    Returns ``{"processes": [...], "devices": {...}, "api": ... | None, "ok": bool}``.
+    ``ok`` is True when at least one runtime process is alive and the bridge API
+    returned parseable JSON.
+    """
+    section = None
+    proc_lines: list[str] = []
+    device_lines: list[str] = []
+    api_lines: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped == "@@PROC@@":
+            section = "proc"
+            continue
+        if stripped == "@@DEV@@":
+            section = "dev"
+            continue
+        if stripped == "@@API@@":
+            section = "api"
+            continue
+        if section == "proc":
+            if stripped:
+                proc_lines.append(stripped)
+        elif section == "dev":
+            if stripped:
+                device_lines.append(stripped)
+        elif section == "api":
+            api_lines.append(line)
+
+    processes = []
+    for line in proc_lines:
+        pid, _, cmd = line.partition(" ")
+        if pid.isdigit():
+            processes.append({"pid": int(pid), "cmd": cmd.strip()})
+
+    devices: dict[str, bool] = {}
+    for line in device_lines:
+        path, _, flag = line.rpartition(" ")
+        if path:
+            devices[path] = flag == "1"
+
+    api_text = "\n".join(api_lines).strip()
+    api: object | None
+    try:
+        api = json.loads(api_text) if api_text else None
+    except json.JSONDecodeError:
+        api = None
+
+    ok = bool(processes) and api is not None
+    return {"processes": processes, "devices": devices, "api": api, "ok": ok}
+
+
+def run_sim_diag_json(host: str) -> int:
+    """Run ``agp sim diag --json``: print structured JSON, exit 0 when ok."""
+    result = subprocess.run(
+        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, SIM_DIAG_JSON_COMMAND],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        payload = {
+            "processes": [],
+            "devices": {},
+            "api": None,
+            "ok": False,
+            "error": f"ssh exited {result.returncode}",
+            "stderr": result.stderr.strip(),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return result.returncode
+
+    payload = parse_sim_diag(result.stdout)
+    payload["host"] = host
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload["ok"] else 1
+
 
 def run_sim_command(
     command: str,
@@ -24,6 +118,7 @@ def run_sim_command(
     profile_name: str | None = None,
     port_forward: bool = True,
     stop_port_forward: bool = True,
+    json_output: bool = False,
 ) -> int:
     commands = {
         "start": (
@@ -62,6 +157,10 @@ def run_sim_command(
         port_forward_result = status_sim_port_forward(resolved_host)
         state_result = show_sim_state(resolved_host)
         return port_forward_result or state_result
+
+    if command == "diag" and json_output:
+        resolved_host = host or default_ec2_host(load_config())
+        return run_sim_diag_json(resolved_host)
 
     remote_command = commands.get(command)
     if remote_command is None:

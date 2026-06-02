@@ -6,8 +6,10 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.agp_lib._vscode` — VSCode terminal profile / Bridge install
 - :mod:`scripts.agp_lib._code` — ``agp code``
 - :mod:`scripts.agp_lib._deploy` — ``agp sim deploy`` / ``agp native deploy``
+- :mod:`scripts.agp_lib._ec2` — ``agp ec2``
 - :mod:`scripts.agp_lib._sim` — ``agp sim``
 - :mod:`scripts.agp_lib._terminal` — ``agp terminal``
+- :mod:`scripts.agp_lib._usb` — ``agp usb``
 - :mod:`scripts.agp_lib._setup` — ``agp setup``
 """
 
@@ -56,6 +58,12 @@ from scripts.agp_lib._deploy import (  # noqa: F401
     run_deploy_command,
     selected_device_provider_id,
 )
+from scripts.agp_lib._ec2 import (  # noqa: F401
+    ec2_instance_state,
+    ec2_public_ip,
+    run_ec2_command,
+    update_ssh_config_hostname,
+)
 from scripts.agp_lib._setup import (  # noqa: F401
     configure_default_ec2_host,
     ensure_provider_dependencies,
@@ -70,7 +78,9 @@ from scripts.agp_lib._setup import (  # noqa: F401
     unconfigured_categories,
 )
 from scripts.agp_lib._sim import (  # noqa: F401
+    parse_sim_diag,
     run_sim_command,
+    run_sim_diag_json,
     show_sim_state,
     sim_terminal_script,
     start_sim_port_forward,
@@ -81,6 +91,12 @@ from scripts.agp_lib._sim import (  # noqa: F401
 from scripts.agp_lib._terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
+)
+from scripts.agp_lib._usb import (  # noqa: F401
+    UsbDevice,
+    list_usb_devices,
+    parse_usbipd_list,
+    run_usb_command,
 )
 from scripts.agp_lib._ui import (  # noqa: F401
     BLUE,
@@ -223,6 +239,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 action="store_true",
                 help="Hardware Panel 用の port forward を停止しません",
             )
+        if command_name == "diag":
+            command_parser.add_argument(
+                "--json",
+                dest="json_output",
+                action="store_true",
+                help="診断結果を機械可読な JSON で出力します（AI / CI 向け）",
+            )
 
     native_parser = subparsers.add_parser(
         "native",
@@ -253,6 +276,66 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
+
+    ec2_parser = subparsers.add_parser(
+        "ec2",
+        help="EC2 シミュレーション host を起動・停止・状態確認します",
+    )
+    ec2_subparsers = ec2_parser.add_subparsers(dest="ec2_command")
+    for ec2_command_name in ("start", "stop", "status"):
+        ec2_command_parser = ec2_subparsers.add_parser(
+            ec2_command_name,
+            help=f"EC2: {ec2_command_name}",
+        )
+        ec2_command_parser.add_argument(
+            "--host",
+            default=None,
+            help="SSH config 上の host 名。省略時は .agp/config.json の保存済み host",
+        )
+        ec2_command_parser.add_argument(
+            "--instance-id",
+            default=None,
+            help="EC2 instance ID。省略時は保存済み設定",
+        )
+        ec2_command_parser.add_argument(
+            "--region",
+            default=None,
+            help="AWS region。省略時は保存済み設定",
+        )
+        if ec2_command_name == "start":
+            ec2_command_parser.add_argument(
+                "--no-update-ssh",
+                action="store_true",
+                help="起動後に ~/.ssh/config の HostName を更新しません",
+            )
+            ec2_command_parser.add_argument(
+                "--pull",
+                action="store_true",
+                help="起動後に ec2.repo_dir で git pull を実行します",
+            )
+
+    usb_parser = subparsers.add_parser(
+        "usb",
+        help="USB-C 実機を usbipd-win 経由で WSL2 に attach します",
+    )
+    usb_subparsers = usb_parser.add_subparsers(dest="usb_command")
+    for usb_command_name in ("attach", "detach", "status", "list"):
+        usb_command_parser = usb_subparsers.add_parser(
+            usb_command_name,
+            help=f"USB: {usb_command_name}",
+        )
+        if usb_command_name != "list":
+            usb_command_parser.add_argument(
+                "--busid",
+                default=None,
+                help="usbipd の busid。省略時は保存済み busid → Android 自動検出",
+            )
+        if usb_command_name == "attach":
+            usb_command_parser.add_argument(
+                "--no-remember",
+                action="store_true",
+                help="attach した busid を .agp/config.json に記憶しません",
+            )
 
     args = parser.parse_args(argv)
 
@@ -300,6 +383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             profile_name=getattr(args, "profile_name", None),
             port_forward=not getattr(args, "no_port_forward", False),
             stop_port_forward=not getattr(args, "keep_port_forward", False),
+            json_output=getattr(args, "json_output", False),
         )
     if args.command == "native":
         if args.native_command is None:
@@ -313,6 +397,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 host=args.host,
                 dest=args.dest,
             )
+
+    if args.command == "ec2":
+        if args.ec2_command is None:
+            ec2_parser.print_help()
+            return 1
+        return run_ec2_command(
+            args.ec2_command,
+            host=args.host,
+            instance_id=args.instance_id,
+            region=args.region,
+            update_ssh=not getattr(args, "no_update_ssh", False),
+            pull=getattr(args, "pull", False),
+        )
+
+    if args.command == "usb":
+        if args.usb_command is None:
+            usb_parser.print_help()
+            return 1
+        return run_usb_command(
+            args.usb_command,
+            busid=getattr(args, "busid", None),
+            remember=not getattr(args, "no_remember", False),
+        )
 
     parser.print_help()
     return 0

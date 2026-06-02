@@ -1,10 +1,13 @@
 # Agent Terminal Bridge 設計メモ
 
+> このドキュメントは **bridge の仕組み（request ファイル・extension・status）** を扱います。
+> AI の**振る舞いルール**（いつ裏で実行し、いつ handoff するか）は [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLABORATION_RULES.md) を正本とします。
+
 ## 目的
 
 AgentCockpit では、AI Agent がビルド、初期化、デプロイ、実行確認を進める。ただし `sudo` パスワード、`gh auth login`、クラウド認証などは AI に渡さず、人間が VSCode integrated terminal 上で直接入力する。
 
-そのため、通常処理は AI 側の裏実行で進め、sudo/auth など人間入力が必要な場面だけ visible terminal へ handoff する。
+そのため、通常処理は AI 側の裏実行で進め、sudo/auth など人間入力が必要な場面だけ visible terminal へ handoff する（判断基準の詳細は [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLABORATION_RULES.md)）。
 AI と VSCode terminal を直接つなぐのではなく、明示的な橋を置く。
 
 ```text

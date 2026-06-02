@@ -16,6 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VSCODE_EXT_NAME = "agentcockpit-terminal-bridge"
 VSCODE_EXT_VERSION = "0.0.1"
 
+DEFAULT_EC2_HOST = "vibecode-graviton"
+DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"
+DEFAULT_EC2_REGION = "ap-southeast-2"
+
 
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
@@ -53,15 +57,36 @@ def load_config() -> dict:
 
     ec2 = data.get("ec2")
     ec2_host = None
-    if isinstance(ec2, dict) and isinstance(ec2.get("host"), str):
-        ec2_host = ec2["host"]
+    ec2_instance_id = None
+    ec2_region = None
+    ec2_repo_dir = None
+    if isinstance(ec2, dict):
+        if isinstance(ec2.get("host"), str):
+            ec2_host = ec2["host"]
+        if isinstance(ec2.get("instance_id"), str):
+            ec2_instance_id = ec2["instance_id"]
+        if isinstance(ec2.get("region"), str):
+            ec2_region = ec2["region"]
+        if isinstance(ec2.get("repo_dir"), str):
+            ec2_repo_dir = ec2["repo_dir"]
+
+    usb = data.get("usb")
+    usb_busid = None
+    if isinstance(usb, dict) and isinstance(usb.get("busid"), str):
+        usb_busid = usb["busid"]
 
     return {
         "selected_providers": {
             str(category_id): str(provider_id)
             for category_id, provider_id in selected_providers.items()
         },
-        "ec2": {"host": ec2_host or "vibecode-graviton"},
+        "ec2": {
+            "host": ec2_host or DEFAULT_EC2_HOST,
+            "instance_id": ec2_instance_id or DEFAULT_EC2_INSTANCE_ID,
+            "region": ec2_region or DEFAULT_EC2_REGION,
+            **({"repo_dir": ec2_repo_dir} if ec2_repo_dir else {}),
+        },
+        **({"usb": {"busid": usb_busid}} if usb_busid else {}),
     }
 
 
@@ -96,7 +121,11 @@ def save_config(config: dict) -> None:
 def default_config() -> dict:
     return {
         "selected_providers": {},
-        "ec2": {"host": "vibecode-graviton"},
+        "ec2": {
+            "host": DEFAULT_EC2_HOST,
+            "instance_id": DEFAULT_EC2_INSTANCE_ID,
+            "region": DEFAULT_EC2_REGION,
+        },
     }
 
 
@@ -104,7 +133,43 @@ def default_ec2_host(config: dict) -> str:
     ec2 = config.get("ec2")
     if isinstance(ec2, dict) and isinstance(ec2.get("host"), str) and ec2["host"]:
         return ec2["host"]
-    return "vibecode-graviton"
+    return DEFAULT_EC2_HOST
+
+
+def default_ec2_instance_id(config: dict) -> str:
+    ec2 = config.get("ec2")
+    if isinstance(ec2, dict) and isinstance(ec2.get("instance_id"), str) and ec2["instance_id"]:
+        return ec2["instance_id"]
+    return DEFAULT_EC2_INSTANCE_ID
+
+
+def default_ec2_region(config: dict) -> str:
+    ec2 = config.get("ec2")
+    if isinstance(ec2, dict) and isinstance(ec2.get("region"), str) and ec2["region"]:
+        return ec2["region"]
+    return DEFAULT_EC2_REGION
+
+
+def ec2_repo_dir(config: dict) -> str | None:
+    ec2 = config.get("ec2")
+    if isinstance(ec2, dict) and isinstance(ec2.get("repo_dir"), str) and ec2["repo_dir"]:
+        return ec2["repo_dir"]
+    return None
+
+
+def saved_usb_busid(config: dict) -> str | None:
+    usb = config.get("usb")
+    if isinstance(usb, dict) and isinstance(usb.get("busid"), str) and usb["busid"]:
+        return usb["busid"]
+    return None
+
+
+def set_saved_usb_busid(config: dict, busid: str) -> None:
+    usb = config.setdefault("usb", {})
+    if not isinstance(usb, dict):
+        usb = {}
+        config["usb"] = usb
+    usb["busid"] = busid
 
 
 def set_default_ec2_host(config: dict, host: str) -> None:

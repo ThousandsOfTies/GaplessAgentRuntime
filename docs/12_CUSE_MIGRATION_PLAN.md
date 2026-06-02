@@ -56,7 +56,26 @@ LD_PRELOAD="$HOME/gpio_shim.so $HOME/spi_shim.so" ~/sensor_demo
 
 CUSE 化すれば、(1)(2) のうち ioctl/read/write 経由の経路は完全に捕捉でき、(3) は起動コマンドから shim 指定が消えることで解消、(4) は ioctl ABI のみを追えば良くなる。`mmap` 経路だけは CUSE でも別途設計が必要（§7 参照）。
 
+### 2.3 GPIO だけ CUSE で解けない理由と解決方式の比較
+
+I2C / SPI は同一 fd 上で `read` / `write` / `ioctl` が完結するため CUSE で素直に置き換えられる。**GPIO だけは別問題**で、`GPIO_V2_GET_LINE_IOCTL` が「呼び出し元プロセスに新しいライン fd を払い出す」ABI のため、他プロセスの fd テーブルに fd を挿し込めない CUSE デーモンでは透過的に再現できない（[gpio-stub/README.md](../../agp-tools/cuse-stubs/gpio-stub/README.md) の limitation）。
+
+解決方式の選択肢:
+
+| # | 方式 | fd 問題 | カーネル改変 | 移植性 | 備考 |
+|---|---|---|---|---|---|
+| 1 | 現状 `LD_PRELOAD` shim | 回避（偽 fd を `memfd_create`） | 不要 | 低（`dlsym` / `mmap` / 直接 syscall に弱い） | 今動いている |
+| 2 | CUSE のみ | **解けない** | 不要 | — | I2C / SPI は OK、GPIO 不可 |
+| 3 | 薄い自前カーネルモジュール | 正攻法で解決（fd 払い出しだけ kernel、値処理は user 空間へ委譲） | 要（自前 `.ko`） | 高（実機と同一 ABI） | ビルド / 署名 / 保守コスト |
+| 4 | `gpio-mockup`（既存 kernel 機能） | 解決 | 不要（既存モジュール） | 中 | 値注入経路が sysfs/debugfs で限定的 |
+| 5 | **`gpio-sim`（configfs、Linux 5.17+）** | 解決 | 不要（標準モジュール） | **高** | **本命候補**。`/dev/gpiochipN` を本物として生やし、ライン値を sysfs から注入。方式 3 を自前で書かずに済む |
+
+方式 5 `gpio-sim` は「方式 3 を自前で書く代わりに、それ相当のものがカーネル標準に入っている」状態。bridge.py は gpio-sim の sysfs を叩くだけで済み、自前 `.ko` の保守を避けられる。**まず EC2 Graviton のカーネルが `gpio-sim` を持つか確認**し、あれば GPIO は CUSE ではなく gpio-sim で解決する方針が有力（確認: `modinfo gpio-sim` または `zcat /proc/config.gz | grep GPIO_SIM`）。
+
+`gpio-sim` が使えない場合のフォールバックとして §4.2 の CUSE 実装（内部仮想 fd 方式）を採る。
+
 ---
+
 
 ## 3. ターゲット構成
 

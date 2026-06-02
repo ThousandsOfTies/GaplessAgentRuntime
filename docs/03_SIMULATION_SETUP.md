@@ -4,7 +4,9 @@
 
 AgentCockpit のシミュレーション方針は、アプリケーションにシミュレーション専用の分岐や HAL を持たせることではありません。実機用アプリは実機と同じ `/dev/*` を開くだけにし、差し替えは EC2 側の device compatibility runtime に閉じ込めます。
 
-現状は I2C を CUSE、GPIO/SPI を LD_PRELOAD shim で実現しています。これは短期 PoC の到達点であり、最終形ではありません。今後は GPIO/SPI も CUSE/fake device へ寄せ、`LD_PRELOAD` をアプリ起動手順から外していく方針です。人手では採算が合いにくい ioctl ABI 追従や stub 実装を AI が担うことが、このプロジェクトの重要な価値です。
+現状は I2C を CUSE、GPIO/SPI を LD_PRELOAD shim で実現しています。これは短期 PoC の到達点であり、最終形ではありません。今後は GPIO/SPI も CUSE/fake device へ寄せ、`LD_PRELOAD` をアプリ起動手順から外していく方針です。
+
+移行の具体的な設計とステップは [12_CUSE_MIGRATION_PLAN.md](12_CUSE_MIGRATION_PLAN.md)、このアプローチがなぜ価値を持つかは [06_INDUSTRY_TRENDS.md](06_INDUSTRY_TRENDS.md) にまとめています。
 
 移行の具体的な設計とステップは [12_CUSE_MIGRATION_PLAN.md](12_CUSE_MIGRATION_PLAN.md) にまとめています。
 
