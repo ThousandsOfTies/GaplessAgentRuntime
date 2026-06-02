@@ -59,6 +59,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None) -> int:
         if result == 0:
             config["selected_providers"][provider.category_id] = provider.provider_id
             save_config(config)
+        else:
+            break
         print()
 
     missing_categories = unconfigured_categories(providers, config)

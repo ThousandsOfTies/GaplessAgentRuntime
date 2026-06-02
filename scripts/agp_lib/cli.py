@@ -78,7 +78,9 @@ from scripts.agp_lib._setup import (  # noqa: F401
     unconfigured_categories,
 )
 from scripts.agp_lib._sim import (  # noqa: F401
+    parse_gpio_sim_check,
     parse_sim_diag,
+    run_gpio_sim_check,
     run_sim_command,
     run_sim_diag_json,
     show_sim_state,
@@ -215,7 +217,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
-    for command_name in ("start", "stop", "status", "diag", "log"):
+    for command_name in ("start", "stop", "status", "diag", "log", "gpio-sim-check"):
         command_parser = sim_subparsers.add_parser(
             command_name,
             help=f"simulation runtime: {command_name}",
@@ -239,7 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 action="store_true",
                 help="Hardware Panel 用の port forward を停止しません",
             )
-        if command_name == "diag":
+        if command_name in ("diag", "gpio-sim-check"):
             command_parser.add_argument(
                 "--json",
                 dest="json_output",

@@ -13,7 +13,7 @@
  *   MFRC-522 (RFID) — ON のときのみスキャン
  *
  * 実機: そのまま動く
- * EC2:  LD_PRELOAD=gpio_shim.so + cuse_i2c でシミュレート
+ * EC2:  gpio-sim + cuse_i2c でシミュレート
  */
 
 #include "ssd1306.h"
@@ -39,40 +39,99 @@
 #define LED2_LINE    24  /* activity (RFID detected flash) */
 #define BTN_LINE     17
 
+#ifndef GPIO_V2_GET_LINE_IOCTL
+#ifndef _BITULL
+#define _BITULL(x) (1ULL << (x))
+#endif
+
+#define GPIO_V2_LINES_MAX 64
+#define GPIO_V2_LINE_NUM_ATTRS_MAX 10
+
+#define GPIO_V2_LINE_FLAG_INPUT  _BITULL(2)
+#define GPIO_V2_LINE_FLAG_OUTPUT _BITULL(3)
+
+#define GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES 2
+
+struct gpio_v2_line_values {
+    __aligned_u64 bits;
+    __aligned_u64 mask;
+};
+
+struct gpio_v2_line_attribute {
+    __u32 id;
+    __u32 padding;
+    union {
+        __aligned_u64 flags;
+        __aligned_u64 values;
+        __u32 debounce_period_us;
+    };
+};
+
+struct gpio_v2_line_config_attribute {
+    struct gpio_v2_line_attribute attr;
+    __aligned_u64 mask;
+};
+
+struct gpio_v2_line_config {
+    __aligned_u64 flags;
+    __u32 num_attrs;
+    __u32 padding[5];
+    struct gpio_v2_line_config_attribute attrs[GPIO_V2_LINE_NUM_ATTRS_MAX];
+};
+
+struct gpio_v2_line_request {
+    __u32 offsets[GPIO_V2_LINES_MAX];
+    char consumer[GPIO_MAX_NAME_SIZE];
+    struct gpio_v2_line_config config;
+    __u32 num_lines;
+    __u32 event_buffer_size;
+    __u32 padding[5];
+    __s32 fd;
+};
+
+#define GPIO_V2_GET_LINE_IOCTL _IOWR(0xB4, 0x07, struct gpio_v2_line_request)
+#define GPIO_V2_LINE_GET_VALUES_IOCTL _IOWR(0xB4, 0x0E, struct gpio_v2_line_values)
+#define GPIO_V2_LINE_SET_VALUES_IOCTL _IOWR(0xB4, 0x0F, struct gpio_v2_line_values)
+#endif
+
 static volatile int running = 1;
 static void on_signal(int s) { (void)s; running = 0; }
 
 /* ---- GPIO helpers ---- */
 static int gpio_request_output(int chip, int line, int initial) {
-    struct gpiohandle_request r = {
-        .lineoffsets[0]    = line,
-        .flags             = GPIOHANDLE_REQUEST_OUTPUT,
-        .default_values[0] = initial,
-        .lines             = 1,
-    };
-    strncpy(r.consumer_label, "sensor_demo", sizeof(r.consumer_label) - 1);
-    return ioctl(chip, GPIO_GET_LINEHANDLE_IOCTL, &r) < 0 ? -1 : r.fd;
+    struct gpio_v2_line_request r = {0};
+    r.offsets[0] = line;
+    r.config.flags = GPIO_V2_LINE_FLAG_OUTPUT;
+    r.config.num_attrs = 1;
+    r.config.attrs[0].attr.id = GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES;
+    r.config.attrs[0].attr.values = initial ? 1 : 0;
+    r.config.attrs[0].mask = 1;
+    r.num_lines = 1;
+    strncpy(r.consumer, "sensor_demo", sizeof(r.consumer) - 1);
+    return ioctl(chip, GPIO_V2_GET_LINE_IOCTL, &r) < 0 ? -1 : r.fd;
 }
 
 static int gpio_request_input(int chip, int line) {
-    struct gpiohandle_request r = {
-        .lineoffsets[0] = line,
-        .flags          = GPIOHANDLE_REQUEST_INPUT,
-        .lines          = 1,
-    };
-    strncpy(r.consumer_label, "sensor_demo", sizeof(r.consumer_label) - 1);
-    return ioctl(chip, GPIO_GET_LINEHANDLE_IOCTL, &r) < 0 ? -1 : r.fd;
+    struct gpio_v2_line_request r = {0};
+    r.offsets[0] = line;
+    r.config.flags = GPIO_V2_LINE_FLAG_INPUT;
+    r.num_lines = 1;
+    strncpy(r.consumer, "sensor_demo", sizeof(r.consumer) - 1);
+    return ioctl(chip, GPIO_V2_GET_LINE_IOCTL, &r) < 0 ? -1 : r.fd;
 }
 
 static void gpio_set(int hfd, int val) {
-    struct gpiohandle_data d = { .values[0] = val };
-    ioctl(hfd, GPIOHANDLE_SET_LINE_VALUES_IOCTL, &d);
+    struct gpio_v2_line_values d = {
+        .bits = val ? 1 : 0,
+        .mask = 1,
+    };
+    ioctl(hfd, GPIO_V2_LINE_SET_VALUES_IOCTL, &d);
 }
 
 static int gpio_get(int hfd) {
-    struct gpiohandle_data d = {0};
-    ioctl(hfd, GPIOHANDLE_GET_LINE_VALUES_IOCTL, &d);
-    return d.values[0];
+    struct gpio_v2_line_values d = { .mask = 1 };
+    ioctl(hfd, GPIO_V2_LINE_GET_VALUES_IOCTL, &d);
+    return (d.bits & 1) ? 1 : 0;
 }
 
 /* ---- OLED render ---- */

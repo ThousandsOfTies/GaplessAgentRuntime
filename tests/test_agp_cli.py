@@ -13,10 +13,12 @@ from unittest import mock
 from scripts.agp_lib.cli import (
     load_config,
     main,
+    parse_gpio_sim_check,
     parse_sim_diag,
     parse_usbipd_list,
     run_deploy_command,
     run_ec2_command,
+    run_gpio_sim_check,
     run_setup,
     run_sim_command,
     run_terminal_request,
@@ -348,6 +350,36 @@ class AgpCliTest(unittest.TestCase):
         self.assertIn("cuse_i2c", remote_command)
         self.assertNotIn("sensor_demo", remote_command)
         self.assertNotIn("LD_PRELOAD", remote_command)
+
+    def test_sim_start_prepares_gpio_sim_as_gpiochip0(self) -> None:
+        with (
+            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+        ):
+            run.return_value.returncode = 0
+
+            result = run_sim_command("start", host="ec2-test", port_forward=False)
+
+        self.assertEqual(0, result)
+        remote_command = run.call_args.args[0][-1]
+        self.assertIn("modprobe gpio-sim", remote_command)
+        self.assertIn("mount --bind", remote_command)
+        self.assertIn("/dev/gpiochip0", remote_command)
+        self.assertIn("BTN_GPIO17", remote_command)
+        self.assertIn("LED_GPIO18", remote_command)
+
+    def test_sim_stop_tears_down_gpio_sim(self) -> None:
+        with mock.patch("scripts.agp_lib._sim.subprocess.run") as run:
+            run.return_value.returncode = 0
+
+            result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
+
+        self.assertEqual(0, result)
+        remote_command = run.call_args.args[0][-1]
+        self.assertIn("umount /dev/gpiochip0", remote_command)
+        self.assertIn("/sys/kernel/config/gpio-sim", remote_command)
+        self.assertIn("sudo pkill -f '[c]use_i2c'", remote_command)
+        self.assertIn("pkill -f '[b]ridge.py'", remote_command)
 
     def test_sim_start_writes_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1044,6 +1076,59 @@ class AgpCliTest(unittest.TestCase):
         self.assertIsNone(payload["api"])
         self.assertFalse(payload["ok"])
 
+    def test_parse_gpio_sim_check_builds_structured_payload(self) -> None:
+        raw = (
+            "@@KERNEL@@\n"
+            "6.8.0-test\n"
+            "@@MODINFO@@\n"
+            "1\n"
+            "filename: /lib/modules/gpio-sim.ko\n"
+            "@@CONFIG@@\n"
+            "CONFIG_GPIO_SIM=m\n"
+            "@@CONFIGFS@@\n"
+            "1\n"
+            "@@DEV@@\n"
+            "/dev/gpiochip0\n"
+        )
+        payload = parse_gpio_sim_check(raw)
+
+        self.assertEqual("6.8.0-test", payload["kernel"])
+        self.assertTrue(payload["module_available"])
+        self.assertTrue(payload["config_mentions_gpio_sim"])
+        self.assertTrue(payload["configfs_available"])
+        self.assertEqual(["/dev/gpiochip0"], payload["gpiochips"])
+        self.assertTrue(payload["ok"])
+
+    def test_gpio_sim_check_json_outputs_machine_readable_payload(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout=(
+                "@@KERNEL@@\n"
+                "6.8.0-test\n"
+                "@@MODINFO@@\n"
+                "0\n"
+                "modinfo: ERROR: Module gpio-sim not found.\n"
+                "@@CONFIG@@\n"
+                "CONFIG_GPIO_SIM=(not found)\n"
+                "@@CONFIGFS@@\n"
+                "1\n"
+                "@@DEV@@\n"
+            ),
+            stderr="",
+        )
+        with mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_gpio_sim_check("ec2-test", json_output=True)
+
+        self.assertEqual(1, result)
+        self.assertIn("gpio-sim", run.call_args.args[0][-1])
+        payload = json.loads(output.getvalue())
+        self.assertEqual("ec2-test", payload["host"])
+        self.assertEqual("6.8.0-test", payload["kernel"])
+        self.assertFalse(payload["module_available"])
+        self.assertFalse(payload["ok"])
+
     def test_sim_diag_json_outputs_machine_readable_payload(self) -> None:
         completed = mock.Mock(
             returncode=0,
@@ -1073,6 +1158,21 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual("ec2-test", payload["host"])
         self.assertTrue(payload["ok"])
         self.assertEqual({"led18": 1}, payload["api"])
+
+    def test_gpio_sim_check_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
+            result = main(["sim", "gpio-sim-check", "--json", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_sim.assert_called_once_with(
+            "gpio-sim-check",
+            host="ec2-test",
+            settings=None,
+            profile_name=None,
+            port_forward=True,
+            stop_port_forward=True,
+            json_output=True,
+        )
 
     def test_sim_diag_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:

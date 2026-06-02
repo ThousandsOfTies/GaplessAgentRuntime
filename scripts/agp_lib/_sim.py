@@ -7,6 +7,7 @@ import os
 import shlex
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 from scripts.agp_lib._config import (
@@ -28,8 +29,111 @@ SIM_DIAG_JSON_COMMAND = (
     'echo "@@API@@"; '
     "curl -s http://127.0.0.1:8080/api/state || true"
 )
+SIM_GPIO_SIM_CHECK_COMMAND = (
+    'echo "@@KERNEL@@"; '
+    "uname -r; "
+    'echo "@@MODINFO@@"; '
+    'if modinfo gpio-sim >/tmp/agp-gpio-sim.modinfo 2>/tmp/agp-gpio-sim.modinfo.err; then '
+    'echo "1"; '
+    'for f in filename name description depends; do '
+    'v=$(modinfo -F "$f" gpio-sim 2>/dev/null || true); '
+    'echo "$f: $v"; '
+    "done; "
+    "else echo \"0\"; cat /tmp/agp-gpio-sim.modinfo.err; fi; "
+    'echo "@@CONFIG@@"; '
+    'if zcat /proc/config.gz 2>/dev/null | grep -i GPIO_SIM; then true; '
+    'elif grep -i GPIO_SIM /boot/config-$(uname -r) 2>/dev/null; then true; '
+    'else echo "CONFIG_GPIO_SIM=(not found)"; fi; '
+    'echo "@@CONFIGFS@@"; '
+    'if [ -d /sys/kernel/config ]; then echo "1"; else echo "0"; fi; '
+    'echo "@@DEV@@"; '
+    "ls -1 /dev/gpiochip* 2>/dev/null || true"
+)
 
+SIM_GPIO_SIM_SETUP_COMMAND = textwrap.dedent(
+    r"""
+    set -eu
 
+    sudo modprobe gpio-sim
+    sudo mount -t configfs none /sys/kernel/config 2>/dev/null || true
+
+    sudo sh -c '
+      set -eu
+      base=/sys/kernel/config/gpio-sim
+      chip=agp
+
+      if mountpoint -q /dev/gpiochip0; then
+        umount /dev/gpiochip0 || true
+      fi
+
+      if [ -d "$base/$chip" ]; then
+        echo 0 > "$base/$chip/live" 2>/dev/null || true
+        for bank in "$base/$chip"/*; do
+          name=$(basename "$bank")
+          [ "$name" = live ] && continue
+          [ "$name" = dev_name ] && continue
+          for line in "$bank"/line*; do
+            [ -d "$line" ] && rmdir "$line" || true
+          done
+          rmdir "$bank" || true
+        done
+        rmdir "$base/$chip" || true
+      fi
+
+      mkdir "$base/$chip"
+      mkdir "$base/$chip/bank0"
+      echo 54 > "$base/$chip/bank0/num_lines"
+      echo AgentCockpit > "$base/$chip/bank0/label"
+
+      mkdir "$base/$chip/bank0/line17"
+      echo BTN_GPIO17 > "$base/$chip/bank0/line17/name"
+      mkdir "$base/$chip/bank0/line18"
+      echo LED_GPIO18 > "$base/$chip/bank0/line18/name"
+      mkdir "$base/$chip/bank0/line24"
+      echo LED_GPIO24 > "$base/$chip/bank0/line24/name"
+      mkdir "$base/$chip/bank0/line27"
+      echo BTN_GPIO27 > "$base/$chip/bank0/line27/name"
+
+      echo 1 > "$base/$chip/live"
+      sim_chip=$(cat "$base/$chip/bank0/chip_name")
+      chmod 666 "/dev/$sim_chip"
+
+      if [ "$sim_chip" != gpiochip0 ]; then
+        mount --bind "/dev/$sim_chip" /dev/gpiochip0
+      fi
+      chmod 666 /dev/gpiochip0
+      echo "gpio-sim ready: /dev/gpiochip0 -> /dev/$sim_chip"
+    '
+    """
+).strip()
+
+SIM_GPIO_SIM_TEARDOWN_COMMAND = textwrap.dedent(
+    r"""
+    sudo sh -c '
+      set -u
+      base=/sys/kernel/config/gpio-sim
+      chip=agp
+
+      if mountpoint -q /dev/gpiochip0; then
+        umount /dev/gpiochip0 || true
+      fi
+
+      if [ -d "$base/$chip" ]; then
+        echo 0 > "$base/$chip/live" 2>/dev/null || true
+        for bank in "$base/$chip"/*; do
+          name=$(basename "$bank")
+          [ "$name" = live ] && continue
+          [ "$name" = dev_name ] && continue
+          for line in "$bank"/line*; do
+            [ -d "$line" ] && rmdir "$line" || true
+          done
+          rmdir "$bank" || true
+        done
+        rmdir "$base/$chip" || true
+      fi
+    '
+    """
+).strip()
 def parse_sim_diag(raw: str) -> dict:
     """Parse the marker-delimited ``SIM_DIAG_JSON_COMMAND`` output into a dict.
 
@@ -84,6 +188,54 @@ def parse_sim_diag(raw: str) -> dict:
     return {"processes": processes, "devices": devices, "api": api, "ok": ok}
 
 
+def parse_gpio_sim_check(raw: str) -> dict:
+    """Parse the marker-delimited gpio-sim capability probe output."""
+    section = None
+    sections: dict[str, list[str]] = {
+        "kernel": [],
+        "modinfo": [],
+        "config": [],
+        "configfs": [],
+        "dev": [],
+    }
+    marker_map = {
+        "@@KERNEL@@": "kernel",
+        "@@MODINFO@@": "modinfo",
+        "@@CONFIG@@": "config",
+        "@@CONFIGFS@@": "configfs",
+        "@@DEV@@": "dev",
+    }
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped in marker_map:
+            section = marker_map[stripped]
+            continue
+        if section is not None:
+            sections[section].append(line)
+
+    modinfo_lines = [line.strip() for line in sections["modinfo"] if line.strip()]
+    modinfo_available = bool(modinfo_lines and modinfo_lines[0] == "1")
+    modinfo = modinfo_lines[1:] if modinfo_lines else []
+    config_lines = [line.strip() for line in sections["config"] if line.strip()]
+    config_mentions_gpio_sim = any(
+        "GPIO_SIM" in line.upper() and "(NOT FOUND)" not in line.upper()
+        for line in config_lines
+    )
+    configfs_available = any(line.strip() == "1" for line in sections["configfs"])
+    gpiochips = [line.strip() for line in sections["dev"] if line.strip()]
+
+    return {
+        "kernel": next((line.strip() for line in sections["kernel"] if line.strip()), None),
+        "module_available": modinfo_available,
+        "modinfo": modinfo,
+        "config": config_lines,
+        "config_mentions_gpio_sim": config_mentions_gpio_sim,
+        "configfs_available": configfs_available,
+        "gpiochips": gpiochips,
+        "ok": modinfo_available or config_mentions_gpio_sim,
+    }
+
+
 def run_sim_diag_json(host: str) -> int:
     """Run ``agp sim diag --json``: print structured JSON, exit 0 when ok."""
     result = subprocess.run(
@@ -110,6 +262,39 @@ def run_sim_diag_json(host: str) -> int:
     return 0 if payload["ok"] else 1
 
 
+def run_gpio_sim_check(host: str, *, json_output: bool = False) -> int:
+    """Probe whether the remote simulation host can use the kernel gpio-sim."""
+    result = subprocess.run(
+        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, SIM_GPIO_SIM_CHECK_COMMAND],
+        check=False,
+        capture_output=json_output,
+        text=True,
+    )
+    if not json_output:
+        return result.returncode
+
+    if result.returncode != 0:
+        payload = {
+            "kernel": None,
+            "module_available": False,
+            "modinfo": [],
+            "config": [],
+            "config_mentions_gpio_sim": False,
+            "configfs_available": False,
+            "gpiochips": [],
+            "ok": False,
+            "error": f"ssh exited {result.returncode}",
+            "stderr": result.stderr.strip(),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return result.returncode
+
+    payload = parse_gpio_sim_check(result.stdout)
+    payload["host"] = host
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload["ok"] else 1
+
+
 def run_sim_command(
     command: str,
     *,
@@ -122,6 +307,8 @@ def run_sim_command(
 ) -> int:
     commands = {
         "start": (
+            SIM_GPIO_SIM_SETUP_COMMAND
+            + "; "
             'setsid bash -c "nohup ~/venv/bin/python3 ~/web-bridge/bridge.py '
             '> /tmp/bridge.log 2>&1 &" < /dev/null; '
             "sleep 2; "
@@ -132,8 +319,10 @@ def run_sim_command(
             'pgrep -af "bridge.py|cuse_i2c"'
         ),
         "stop": (
-            "pkill -f cuse_i2c || true; "
-            "pkill -f bridge.py || true; "
+            SIM_GPIO_SIM_TEARDOWN_COMMAND
+            + "; "
+            "sudo pkill -f '[c]use_i2c' || true; "
+            "pkill -f '[b]ridge.py' || true; "
             'echo "Simulation device runtime stopped."'
         ),
         "diag": (
@@ -161,6 +350,10 @@ def run_sim_command(
     if command == "diag" and json_output:
         resolved_host = host or default_ec2_host(load_config())
         return run_sim_diag_json(resolved_host)
+
+    if command == "gpio-sim-check":
+        resolved_host = host or default_ec2_host(load_config())
+        return run_gpio_sim_check(resolved_host, json_output=json_output)
 
     remote_command = commands.get(command)
     if remote_command is None:
