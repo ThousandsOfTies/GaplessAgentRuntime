@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.agp_lib.cli import (
+    build_panel_command,
     load_config,
     main,
-    build_panel_command,
     parse_gpio_sim_check,
     parse_sim_diag,
     parse_usbipd_list,

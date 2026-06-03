@@ -78,9 +78,9 @@ from scripts.agp_lib._setup import (  # noqa: F401
     unconfigured_categories,
 )
 from scripts.agp_lib._sim import (  # noqa: F401
+    build_panel_command,
     parse_gpio_sim_check,
     parse_sim_diag,
-    build_panel_command,
     run_gpio_sim_check,
     run_sim_command,
     run_sim_diag_json,
