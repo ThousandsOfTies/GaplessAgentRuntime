@@ -80,9 +80,11 @@ from scripts.agp_lib._setup import (  # noqa: F401
 from scripts.agp_lib._sim import (  # noqa: F401
     parse_gpio_sim_check,
     parse_sim_diag,
+    build_panel_command,
     run_gpio_sim_check,
     run_sim_command,
     run_sim_diag_json,
+    run_sim_panel,
     show_sim_state,
     sim_terminal_script,
     start_sim_port_forward,
@@ -249,6 +251,62 @@ def main(argv: Sequence[str] | None = None) -> int:
                 help="診断結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
 
+    # --- 仮想パネル / 仮想ディスプレイへの操作（旧 make panel-* の置き換え） ---
+    def _add_host_arg(parser):
+        parser.add_argument(
+            "--host",
+            default=None,
+            help="SSH config 上の runtime host 名。省略時は .agp/config.json の保存済み host",
+        )
+
+    sim_button_parser = sim_subparsers.add_parser(
+        "button", help="仮想 GPIO ボタンを操作します"
+    )
+    sim_button_subparsers = sim_button_parser.add_subparsers(dest="panel_action")
+    sim_button_press = sim_button_subparsers.add_parser(
+        "press", help="ボタンを押して離します"
+    )
+    sim_button_press.add_argument("line", type=int, help="GPIO line 番号（例: 17）")
+    sim_button_press.add_argument(
+        "--duration-ms", type=int, default=150, help="押下時間（ミリ秒）"
+    )
+    _add_host_arg(sim_button_press)
+    sim_button_set = sim_button_subparsers.add_parser(
+        "set", help="ボタンの状態を直接セットします"
+    )
+    sim_button_set.add_argument("line", type=int, help="GPIO line 番号（例: 17）")
+    sim_button_set.add_argument("value", type=int, help="0=離す / 1=押す")
+    _add_host_arg(sim_button_set)
+
+    sim_rfid_parser = sim_subparsers.add_parser(
+        "rfid", help="仮想 RFID カードを操作します"
+    )
+    sim_rfid_subparsers = sim_rfid_parser.add_subparsers(dest="panel_action")
+    sim_rfid_tap = sim_rfid_subparsers.add_parser("tap", help="カードを置きます")
+    sim_rfid_tap.add_argument("uid", help="カード UID（例: 04:AB:CD:EF:01:23）")
+    _add_host_arg(sim_rfid_tap)
+    sim_rfid_remove = sim_rfid_subparsers.add_parser("remove", help="カードを外します")
+    _add_host_arg(sim_rfid_remove)
+
+    sim_range_parser = sim_subparsers.add_parser(
+        "range", help="仮想 VL53L0X の距離値を操作します"
+    )
+    sim_range_subparsers = sim_range_parser.add_subparsers(dest="panel_action")
+    sim_range_set = sim_range_subparsers.add_parser("set", help="距離値をセットします")
+    sim_range_set.add_argument("value", type=int, help="距離（ミリメートル）")
+    _add_host_arg(sim_range_set)
+
+    sim_state_parser = sim_subparsers.add_parser(
+        "state", help="仮想 H/W の現在状態（OLED framebuf 含む）を取得します"
+    )
+    _add_host_arg(sim_state_parser)
+    sim_state_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="bridge API の生 JSON をそのまま出力します（AI / CI 向け）",
+    )
+
     native_parser = subparsers.add_parser(
         "native",
         help="接続先の native I/O を使う runtime を操作します",
@@ -377,6 +435,41 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "sim",
                 artifacts_dir=args.artifacts_dir,
                 host=args.host,
+            )
+        if args.sim_command == "button":
+            if args.panel_action == "press":
+                return run_sim_panel(
+                    "button-press",
+                    host=args.host,
+                    line=args.line,
+                    duration_ms=args.duration_ms,
+                )
+            if args.panel_action == "set":
+                return run_sim_panel(
+                    "button-set",
+                    host=args.host,
+                    line=args.line,
+                    value=args.value,
+                )
+            sim_button_parser.print_help()
+            return 1
+        if args.sim_command == "rfid":
+            if args.panel_action == "tap":
+                return run_sim_panel("rfid-tap", host=args.host, uid=args.uid)
+            if args.panel_action == "remove":
+                return run_sim_panel("rfid-remove", host=args.host)
+            sim_rfid_parser.print_help()
+            return 1
+        if args.sim_command == "range":
+            if args.panel_action == "set":
+                return run_sim_panel("range-set", host=args.host, value=args.value)
+            sim_range_parser.print_help()
+            return 1
+        if args.sim_command == "state":
+            return run_sim_panel(
+                "state",
+                host=args.host,
+                json_output=getattr(args, "json_output", False),
             )
         return run_sim_command(
             args.sim_command,

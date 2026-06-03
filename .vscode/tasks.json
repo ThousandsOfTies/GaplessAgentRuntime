@@ -39,17 +39,6 @@
       "presentation": { "reveal": "silent" }
     },
     {
-      "label": "Run GPIO Demo (EC2)",
-      "type": "shell",
-      "command": "cd cuse-stubs/gpio-shim && LD_PRELOAD=./gpio_shim.so ../test/gpio_led_button",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "hardware"
-      }
-    },
-    {
       "label": "Run VL53L0X Demo (EC2)",
       "type": "shell",
       "command": "sudo ./cuse_i2c -f --devname=i2c-1 & sleep 1 && ./vl53l0x_read /dev/i2c-1",

@@ -13,6 +13,7 @@ from unittest import mock
 from scripts.agp_lib.cli import (
     load_config,
     main,
+    build_panel_command,
     parse_gpio_sim_check,
     parse_sim_diag,
     parse_usbipd_list,
@@ -21,6 +22,7 @@ from scripts.agp_lib.cli import (
     run_gpio_sim_check,
     run_setup,
     run_sim_command,
+    run_sim_panel,
     run_terminal_request,
     run_usb_command,
     select_codespace_from_list,
@@ -1186,6 +1188,86 @@ class AgpCliTest(unittest.TestCase):
             profile_name=None,
             port_forward=True,
             stop_port_forward=True,
+            json_output=True,
+        )
+
+
+class SimPanelTests(unittest.TestCase):
+    def test_build_panel_command_button_press(self) -> None:
+        command = build_panel_command("button-press", {"line": 17, "duration_ms": 150})
+        self.assertIn("/api/button/press?line=17&duration_ms=150", command)
+        self.assertIn("-X POST", command)
+
+    def test_build_panel_command_rfid_tap_encodes_uid(self) -> None:
+        command = build_panel_command("rfid-tap", {"uid": "04:AB:CD:EF:01:23"})
+        self.assertIn("/api/rfid/tap?uid=04:AB:CD:EF:01:23", command)
+
+    def test_build_panel_command_state_is_get(self) -> None:
+        command = build_panel_command("state", {})
+        self.assertIn("/api/state", command)
+        self.assertNotIn("-X POST", command)
+
+    def test_build_panel_command_rejects_unknown_action(self) -> None:
+        with self.assertRaises(ValueError):
+            build_panel_command("explode", {})
+
+    def test_run_sim_panel_sshes_with_curl(self) -> None:
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch("scripts.agp_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+        ):
+            result = run_sim_panel("button-press", host="ec2-test", line=17, duration_ms=150)
+
+        self.assertEqual(0, result)
+        argv = run.call_args.args[0]
+        self.assertEqual("ec2-test", argv[-2])
+        self.assertIn("/api/button/press?line=17&duration_ms=150", argv[-1])
+
+    def test_run_sim_panel_state_pretty_prints_json(self) -> None:
+        completed = mock.Mock(returncode=0, stdout='{"led18": 1}', stderr="")
+        with (
+            mock.patch("scripts.agp_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_sim_panel("state", host="ec2-test")
+
+        self.assertEqual(0, result)
+        self.assertEqual({"led18": 1}, json.loads(output.getvalue()))
+
+    def test_sim_button_press_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
+            result = main(["sim", "button", "press", "17", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_panel.assert_called_once_with(
+            "button-press",
+            host="ec2-test",
+            line=17,
+            duration_ms=150,
+        )
+
+    def test_sim_rfid_tap_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
+            result = main(["sim", "rfid", "tap", "04:AB:CD:EF:01:23", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_panel.assert_called_once_with(
+            "rfid-tap",
+            host="ec2-test",
+            uid="04:AB:CD:EF:01:23",
+        )
+
+    def test_sim_state_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
+            result = main(["sim", "state", "--json", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_panel.assert_called_once_with(
+            "state",
+            host="ec2-test",
             json_output=True,
         )
 

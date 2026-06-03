@@ -14,7 +14,7 @@ AgentCockpit で AI に任せたい作業は、アプリ機能の実装だけで
 
 | 人間向け | AI エージェント向け |
 |---|---|
-| Web Panel で LED / ボタン / RFID / OLED を見る | `make panel-*` で仮想 H/W を操作する |
+| Web Panel で LED / ボタン / RFID / OLED を見る | `agp sim button/rfid/range/state` で仮想 H/W を操作する |
 | SSH でログを見る | `agp sim log` / `agp sim diag`（AI は `agp sim diag --json`）で観察する |
 | 手順書を読みながら実行する | `agp` コマンドと Make ターゲットを組み合わせて実行する |
 
@@ -57,18 +57,24 @@ agp sim stop
 
 ## 仮想 H/W 操作
 
+人間も AI も入口は `agp sim ...` に統一。接続先 EC2 host は `agp setup` で `.agp/config.json` に保存されるため `--host` は省略可。
+
 ```bash
 # GPIO17 ボタンを短押し
-make panel-button EC2=vibecode-graviton LINE=17 DURATION_MS=150
+agp sim button press 17 --duration-ms 150
 
-# RFID カードをタップ
-make panel-rfid EC2=vibecode-graviton UID=04:AB:CD:EF:01:23
+# ボタン状態を直接セット（0=離す / 1=押す）
+agp sim button set 17 1
 
-# RFID カードを外す
-make panel-rfid-remove EC2=vibecode-graviton
+# RFID カードをタップ / 外す
+agp sim rfid tap 04:AB:CD:EF:01:23
+agp sim rfid remove
 
 # VL53L0X 距離センサー値を変更
-make panel-range EC2=vibecode-graviton RANGE_MM=450
+agp sim range set 450
+
+# 仮想 H/W の現在状態（OLED framebuf 含む）を取得
+agp sim state --json
 
 # port forward と bridge の共有状態を確認
 agp sim status
@@ -76,20 +82,20 @@ agp sim status
 
 ---
 
-## bridge HTTP API
+## bridge HTTP API（内部仕様）
 
-`bridge.py` は Web Panel 用の WebSocket と、AI/CI 用の HTTP API を持ちます。入口は分かれていますが、状態変更は同じ仮想 H/W 操作関数を通るため、Panel と自動試験の挙動がずれにくい構成です。
+`agp sim ...` は内部で下記の `bridge.py` HTTP API を SSH 越しに叩いています。直接叩く必要は通常ありませんが、参照用に残します。`bridge.py` は Web Panel 用の WebSocket と HTTP API を持ち、状態変更は同じ仮想 H/W 操作関数を通るため、Panel と自動試験の挙動がずれにくい構成です。
 
-| Endpoint | Method | 用途 |
-|---|---|---|
-| `/api/state` | GET | 現在の仮想 H/W 状態を取得 |
-| `/api/button` | POST | GPIO ボタン状態を直接セット |
-| `/api/button/press` | POST | GPIO ボタンを押して離す |
-| `/api/rfid/tap` | POST | RFID カードを置く |
-| `/api/rfid/remove` | POST | RFID カードを外す |
-| `/api/range` | POST | VL53L0X の距離値をセット |
+| Endpoint | Method | 用途 | 対応 `agp` コマンド |
+|---|---|---|---|
+| `/api/state` | GET | 現在の仮想 H/W 状態を取得 | `agp sim state` |
+| `/api/button` | POST | GPIO ボタン状態を直接セット | `agp sim button set` |
+| `/api/button/press` | POST | GPIO ボタンを押して離す | `agp sim button press` |
+| `/api/rfid/tap` | POST | RFID カードを置く | `agp sim rfid tap` |
+| `/api/rfid/remove` | POST | RFID カードを外す | `agp sim rfid remove` |
+| `/api/range` | POST | VL53L0X の距離値をセット | `agp sim range set` |
 
-例:
+例（参照用の生コマンド）:
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8080/api/button/press?line=17&duration_ms=150"
@@ -148,11 +154,11 @@ sensor_demo を EC2 にデプロイして、シミュレーション用の /dev 
 agp sim start
 # VS Code terminal profile "EC2 Simulation" などから EC2 へログイン
 ./start.sh
-make panel-button EC2=vibecode-graviton LINE=17
-make panel-rfid EC2=vibecode-graviton UID=04:AB:CD:EF:01:23
+agp sim button press 17
+agp sim rfid tap 04:AB:CD:EF:01:23
+agp sim state --json
 agp sim status
 agp sim log
-make sim-test EC2=vibecode-graviton
 ```
 
 ---

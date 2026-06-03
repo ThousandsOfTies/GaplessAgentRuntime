@@ -9,6 +9,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from urllib.parse import quote
 
 from scripts.agp_lib._config import (
     PROJECT_ROOT,
@@ -22,7 +23,7 @@ from scripts.agp_lib._vscode import write_vscode_terminal_profile
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
 SIM_DIAG_JSON_COMMAND = (
     'echo "@@PROC@@"; '
-    'pgrep -af "bridge.py|cuse_i2c" || true; '
+    'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
     'echo "@@DEV@@"; '
     "for d in " + " ".join(SIM_DIAG_DEVICES) + "; do "
     'if [ -e "$d" ]; then echo "$d 1"; else echo "$d 0"; fi; done; '
@@ -295,6 +296,67 @@ def run_gpio_sim_check(host: str, *, json_output: bool = False) -> int:
     return 0 if payload["ok"] else 1
 
 
+PANEL_BASE_URL = "http://127.0.0.1:8080"
+
+
+def build_panel_command(action: str, params: dict) -> str:
+    """Build the remote ``curl`` command for a virtual panel action.
+
+    Pure/string-only so it can be unit-tested without SSH. Mirrors the bridge
+    HTTP API served on the simulation host's ``127.0.0.1:8080``.
+    """
+    base = PANEL_BASE_URL
+    if action == "button-press":
+        line = int(params.get("line", 17))
+        duration_ms = max(0, int(params.get("duration_ms", 150)))
+        return f'curl -s -X POST "{base}/api/button/press?line={line}&duration_ms={duration_ms}"'
+    if action == "button-set":
+        line = int(params["line"])
+        value = 1 if int(params.get("value", 1)) else 0
+        return f'curl -s -X POST "{base}/api/button?line={line}&value={value}"'
+    if action == "rfid-tap":
+        uid = quote(str(params["uid"]), safe=":")
+        return f'curl -s -X POST "{base}/api/rfid/tap?uid={uid}"'
+    if action == "rfid-remove":
+        return f'curl -s -X POST "{base}/api/rfid/remove"'
+    if action == "range-set":
+        value = int(params["value"])
+        return f'curl -s -X POST "{base}/api/range?value={value}"'
+    if action == "state":
+        return f'curl -s "{base}/api/state"'
+    raise ValueError(f"unknown panel action: {action}")
+
+
+def run_sim_panel(
+    action: str,
+    *,
+    host: str | None = None,
+    json_output: bool = False,
+    **params,
+) -> int:
+    """Drive the virtual panel / display over SSH by calling the bridge API."""
+    resolved_host = host or default_ec2_host(load_config())
+    command = build_panel_command(action, params)
+    ssh_argv = ["ssh", "-F", str(Path.home() / ".ssh" / "config"), resolved_host, command]
+
+    if action == "state":
+        result = subprocess.run(ssh_argv, check=False, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(result.stderr.strip(), file=sys.stderr)
+            return result.returncode
+        raw = result.stdout.strip()
+        if json_output:
+            print(raw)
+        else:
+            try:
+                print(json.dumps(json.loads(raw), ensure_ascii=False, indent=2))
+            except json.JSONDecodeError:
+                print(raw)
+        return 0
+
+    return subprocess.run(ssh_argv, check=False).returncode
+
+
 def run_sim_command(
     command: str,
     *,
@@ -314,20 +376,23 @@ def run_sim_command(
             "sleep 2; "
             'setsid bash -c "sudo nohup ~/cuse_i2c -f --devname=i2c-1 '
             '> /tmp/cuse.log 2>&1 &" < /dev/null; '
+            'setsid bash -c "sudo nohup ~/cuse_spi -f --devname=spidev0.0 '
+            '> /tmp/cuse_spi.log 2>&1 &" < /dev/null; '
             "sleep 3; "
-            "sudo chmod 666 /dev/i2c-1; "
-            'pgrep -af "bridge.py|cuse_i2c"'
+            "sudo chmod 666 /dev/i2c-1 /dev/spidev0.0; "
+            'pgrep -af "bridge.py|cuse_i2c|cuse_spi"'
         ),
         "stop": (
             SIM_GPIO_SIM_TEARDOWN_COMMAND
             + "; "
             "sudo pkill -f '[c]use_i2c' || true; "
+            "sudo pkill -f '[c]use_spi' || true; "
             "pkill -f '[b]ridge.py' || true; "
             'echo "Simulation device runtime stopped."'
         ),
         "diag": (
             'echo "--- processes ---"; '
-            'pgrep -af "bridge.py|cuse_i2c" || true; '
+            'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
             'echo "--- devices ---"; '
             "ls -l /dev/i2c-1 /dev/gpiochip0 /dev/spidev0.0 2>/dev/null || true; "
             'echo "--- api ---"; '
@@ -337,7 +402,9 @@ def run_sim_command(
             'echo "--- bridge.log ---"; '
             "tail -n 80 /tmp/bridge.log 2>/dev/null; "
             'echo "--- cuse.log ---"; '
-            "tail -n 80 /tmp/cuse.log 2>/dev/null"
+            "tail -n 80 /tmp/cuse.log 2>/dev/null; "
+            'echo "--- cuse_spi.log ---"; '
+            "tail -n 80 /tmp/cuse_spi.log 2>/dev/null"
         ),
     }
 

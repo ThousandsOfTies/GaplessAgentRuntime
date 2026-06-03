@@ -1,9 +1,6 @@
 # AgentCockpit WSL hub commands.
 
-LINE ?= 17
-DURATION_MS ?= 150
 UID ?= 04:AB:CD:EF:01:23
-RANGE_MM ?= 300
 SCENARIO ?= scenarios/sensor_demo_rfid.json
 VSCODE_EXT_NAME = agentcockpit-terminal-bridge
 VSCODE_EXT_VERSION = 0.0.1
@@ -15,7 +12,7 @@ SSH_DST = $(if $(KEY),ubuntu@$(EC2),$(EC2))
 SSH     = ssh $(if $(KEY),-i $(KEY),)
 SCP     = scp $(if $(KEY),-i $(KEY),)
 
-.PHONY: agp init start port-forward port-forward-stop port-forward-status sim-test sim-scenario panel-button panel-rfid panel-rfid-remove panel-range
+.PHONY: agp init start port-forward port-forward-stop port-forward-status sim-test sim-scenario
 
 agp:
 	$(error make agp は廃止しました。初期構築は make init、日常開始は make start を使ってください)
@@ -60,9 +57,9 @@ sim-test:
 ifndef EC2
 	$(error EC2 変数を指定してください: make sim-test EC2=vibecode-graviton)
 endif
-	$(MAKE) panel-button EC2=$(EC2) KEY=$(KEY) LINE=17 DURATION_MS=150
+	scripts/agp sim button press 17 --duration-ms 150 --host $(EC2)
 	@sleep 1
-	$(MAKE) panel-rfid EC2=$(EC2) KEY=$(KEY) UID=$(UID)
+	scripts/agp sim rfid tap $(UID) --host $(EC2)
 	@sleep 1
 	scripts/agp sim status --host $(EC2)
 	scripts/agp sim log --host $(EC2)
@@ -74,27 +71,3 @@ endif
 	$(SSH) $(SSH_DST) 'mkdir -p ~/agentcockpit-scenarios'
 	$(SCP) scripts/run_scenario.py $(SCENARIO) $(SSH_DST):~/agentcockpit-scenarios/
 	$(SSH) $(SSH_DST) 'python3 ~/agentcockpit-scenarios/run_scenario.py ~/agentcockpit-scenarios/$(notdir $(SCENARIO)) --base-url http://127.0.0.1:8080'
-
-panel-button:
-ifndef EC2
-	$(error EC2 変数を指定してください: make panel-button EC2=vibecode-graviton LINE=17)
-endif
-	$(SSH) $(SSH_DST) 'curl -s -X POST "http://127.0.0.1:8080/api/button/press?line=$(LINE)&duration_ms=$(DURATION_MS)"'
-
-panel-rfid:
-ifndef EC2
-	$(error EC2 変数を指定してください: make panel-rfid EC2=vibecode-graviton UID=04:AB:CD:EF:01:23)
-endif
-	$(SSH) $(SSH_DST) 'curl -s -X POST "http://127.0.0.1:8080/api/rfid/tap?uid=$(UID)"'
-
-panel-rfid-remove:
-ifndef EC2
-	$(error EC2 変数を指定してください: make panel-rfid-remove EC2=vibecode-graviton)
-endif
-	$(SSH) $(SSH_DST) 'curl -s -X POST http://127.0.0.1:8080/api/rfid/remove'
-
-panel-range:
-ifndef EC2
-	$(error EC2 変数を指定してください: make panel-range EC2=vibecode-graviton RANGE_MM=300)
-endif
-	$(SSH) $(SSH_DST) 'curl -s -X POST "http://127.0.0.1:8080/api/range?value=$(RANGE_MM)"'
