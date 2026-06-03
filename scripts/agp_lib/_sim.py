@@ -98,6 +98,8 @@ SIM_GPIO_SIM_SETUP_COMMAND = textwrap.dedent(
       echo 1 > "$base/$chip/live"
       sim_chip=$(cat "$base/$chip/bank0/chip_name")
       chmod 666 "/dev/$sim_chip"
+      find /sys/devices/platform -path "*/$sim_chip/sim_gpio17/pull" -exec chmod 666 {} \; 2>/dev/null || true
+      find /sys/devices/platform -path "*/$sim_chip/sim_gpio27/pull" -exec chmod 666 {} \; 2>/dev/null || true
 
       if [ "$sim_chip" != gpiochip0 ]; then
         mount --bind "/dev/$sim_chip" /dev/gpiochip0
