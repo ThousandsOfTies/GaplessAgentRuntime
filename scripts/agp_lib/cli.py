@@ -96,12 +96,6 @@ from scripts.agp_lib._terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
 )
-from scripts.agp_lib._usb import (  # noqa: F401
-    UsbDevice,
-    list_usb_devices,
-    parse_usbipd_list,
-    run_usb_command,
-)
 from scripts.agp_lib._ui import (  # noqa: F401
     BLUE,
     BOLD,
@@ -113,6 +107,12 @@ from scripts.agp_lib._ui import (  # noqa: F401
     YELLOW,
     safe_input,
     style,
+)
+from scripts.agp_lib._usb import (  # noqa: F401
+    UsbDevice,
+    list_usb_devices,
+    parse_usbipd_list,
+    run_usb_command,
 )
 from scripts.agp_lib._vscode import (  # noqa: F401
     install_vscode_terminal_bridge,
