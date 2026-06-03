@@ -131,7 +131,8 @@ agp sim start                      # /dev/* runtime + port forward
 ~/sensor_demo
 
 # 仮想 H/W 操作・観察
-make panel-button EC2=vibecode-graviton LINE=17
-make panel-rfid   EC2=vibecode-graviton
+agp sim button press 17
+agp sim rfid tap 04:AB:CD:EF:01:23
+agp sim state --json
 agp sim log
 ```

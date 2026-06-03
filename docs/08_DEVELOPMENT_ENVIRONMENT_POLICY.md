@@ -116,14 +116,14 @@ agp code stop
 EC2 の Virtual Hardware Panel を WSL2/VS Code から見る場合は、WSL2 側で次を実行する。
 
 ```bash
-make port-forward EC2=vibecode-graviton
+agp sim start
 ```
 
-これにより、EC2 上の `8080` / `8765` が WSL2 の `127.0.0.1:8080` / `127.0.0.1:8765` に転送される。停止と状態確認は次を使う。
+これにより simulation runtime が起動し、EC2 上の `8080` / `8765` が WSL2 の `127.0.0.1:8080` / `127.0.0.1:8765` に転送される。停止と状態確認は次を使う。
 
 ```bash
-make port-forward-status
-make port-forward-stop
+agp sim status
+agp sim stop
 ```
 
 ---

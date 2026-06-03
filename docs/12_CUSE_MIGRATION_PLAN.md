@@ -244,7 +244,7 @@ KERNEL=="spidev0.0", MODE="0666"
 
 ## 6. 移行ステップ
 
-agp-tools リポジトリと AgentCockpit リポジトリで分担。各ステップの完了は `agp sim diag` のグリーンと `make sim-test` の合格で判定する。
+agp-tools リポジトリと AgentCockpit リポジトリで分担。各ステップの完了は `agp sim diag --json` の `ok` と、`agp sim button/rfid/state/log` による実機能確認で判定する。
 
 | Step | 対象リポ | 内容 | 完了条件 |
 |---|---|---|---|

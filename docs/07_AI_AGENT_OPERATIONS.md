@@ -43,11 +43,10 @@ agp sim log
 # プロセス、デバイス、API状態をまとめて確認
 agp sim diag
 
-# 代表シナリオを一括実行
-make sim-test EC2=vibecode-graviton
-
-# JSON シナリオを実行
-make sim-scenario EC2=vibecode-graviton SCENARIO=scenarios/sensor_demo_rfid.json
+# 代表操作を実行
+agp sim button press 17
+agp sim rfid tap 04:AB:CD:EF:01:23
+agp sim state --json
 
 # 停止
 agp sim stop
@@ -110,7 +109,9 @@ curl -s http://127.0.0.1:8080/api/state
 仮想 H/W 操作は JSON シナリオとして定義できます。AI Agent や CI は、同じシナリオを繰り返し実行することで、手順の再現性を確保できます。
 
 ```bash
-make sim-scenario EC2=vibecode-graviton SCENARIO=scenarios/sensor_demo_rfid.json
+agp sim button press 17
+agp sim rfid tap 04:AB:CD:EF:01:23
+agp sim state --json
 ```
 
 シナリオ例:
@@ -175,7 +176,7 @@ MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop
 |---|---|---|
 | `--json` 出力モード | `agp sim diag --json` を実装済み（processes / devices / api / ok を構造化出力）。他コマンドへも順次展開 | VSCode Agent / CI |
 | 構造化ログ + 末尾 summary | `agp sim diag` の最後に "OK / FAIL: <理由>" の 1 行 summary を出し、Agent が 1 ターンで判断できるようにする | VSCode Agent |
-| `.vscode/tasks.json` テンプレート | `agp setup` で代表タスク (sim start / stop / deploy / panel-button 等) を仕込み、Agent の `run_task` から呼べるようにする | VSCode Agent |
+| `.vscode/tasks.json` テンプレート | `agp setup` で代表タスク (sim start / stop / deploy / button press 等) を仕込み、Agent の `run_task` から呼べるようにする | VSCode Agent |
 | copilot-instructions.md / AGENT.md の作法強化 | "まず `agp sim status` を確認する" 等の手順を Agent に学習させる | VSCode Agent |
 | `agp terminal run` の活用 | 長時間実行やインタラクティブ操作は可視 terminal に出して、人間が割り込めるようにする | 人間 + Agent |
 
