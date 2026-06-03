@@ -109,11 +109,11 @@ ssh vibecode-graviton
 sudo ~/cuse_i2c -f --devname=i2c-1
 sudo chmod 666 /dev/i2c-1
 
-# ターミナル②': SPI CUSE スタブ（MFRC-522 sim、spi_shim.so を置換）
+# ターミナル②': SPI CUSE スタブ（MFRC-522 sim）
 sudo ~/cuse_spi -f --devname=spidev0.0
 sudo chmod 666 /dev/spidev0.0
 
-# ターミナル③: アプリ本体（GPIO=gpio-sim / I2C=cuse_i2c / SPI=cuse_spi、LD_PRELOAD 不要）
+# ターミナル③: アプリ本体（GPIO=gpio-sim / I2C=cuse_i2c / SPI=cuse_spi）
 # ※ 上記は手動参照用。通常は `agp sim start` が bridge/cuse_i2c/cuse_spi を一括起動する
 ~/sensor_demo
 ```

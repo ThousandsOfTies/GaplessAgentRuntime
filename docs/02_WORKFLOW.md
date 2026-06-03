@@ -2,7 +2,7 @@
 
 SSH/scp + adb を用いたデプロイベースのワークフローです。実機接続は **adb を既定**とし、ネットワーク越し接続が可能な環境では SSH/scp を選択する方針です（詳細: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)）。
 
-現状の EC2 runtime は I2C を CUSE、GPIO/SPI を LD_PRELOAD shim で成立させています。ただしこれは最終形ではなく、アプリや起動スクリプトにシミュレーション固有の分岐を持たせないための移行段階です。今後は GPIO/SPI も fake `/dev/*` runtime へ寄せ、EC2 と RasPi5 の起動定義を共通化します。
+現在の EC2 runtime は I2C/SPI を CUSE、GPIO を `gpio-sim` + GPIO chardev v2 で成立させています。アプリや起動スクリプトにシミュレーション固有の分岐を持たせず、EC2 と RasPi5 の起動定義を共通化します。
 
 ## システム全体図
 
@@ -11,13 +11,13 @@ Windows (Antigravity)
   │
   ├─ gh codespace ssh ──→ GitHub Codespaces
   │                         ARM ビルド → aarch64 バイナリ
-  │                         (sensor_demo / shims / cuse_i2c)
+  │                         (sensor_demo / cuse_i2c / cuse_spi / web-bridge)
   │
   ├─ Codespaces → scp ──→ AWS EC2 arm64 (Graviton)  ← シミュレーション
   │                         bridge.py (port 8080/8765)
   │                         cuse_i2c (/dev/i2c-1)
   │                         fake /dev/gpiochip0, /dev/spidev0.0 runtime
-  │                         start.sh (本番と同じアプリ起動)
+  │                         ~/sensor_demo (本番と同じアプリ起動)
   │                           └─ ポートフォワード → Virtual Hardware Panel
   │
   ├─ Codespaces → cp → Windows → adb push → Raspberry Pi 5 (arm64)  ← 実機
@@ -53,7 +53,7 @@ sequenceDiagram
         EC2-->>Dev: 起動 + IP 取得 + SSH config 更新（--pull で git pull）
         Dev->>GH: target software ごとのビルド
         GH->>Win: 成果物を WSL hub にコピー
-        Win->>EC2: scp sensor_demo / shims / cuse_i2c / web-bridge/
+        Win->>EC2: scp sensor_demo / cuse_i2c / cuse_spi / web-bridge/
     end
 
     rect rgb(40, 60, 30)
@@ -64,13 +64,15 @@ sequenceDiagram
         Dev->>EC2: ssh vibecode-graviton (②)
         Dev->>EC2: sudo ~/cuse_i2c -f --devname=i2c-1
         EC2-->>Dev: /dev/i2c-1 created
-        Note over Dev,EC2: agp sim start は /dev/* を用意するだけ。アプリは本番と同じ start.sh で起動する
+        Dev->>EC2: sudo ~/cuse_spi -f --devname=spidev0.0
+        EC2-->>Dev: /dev/spidev0.0 created
+        Note over Dev,EC2: agp sim start は /dev/* を用意するだけ。アプリは本番と同じ ~/sensor_demo で起動する
     end
 
     rect rgb(40, 60, 30)
         Note over Dev,EC2: 【EC2】アプリ起動（本番と同じ）
         Dev->>EC2: VS Code terminal profile "EC2 Simulation"
-        Dev->>EC2: ./start.sh
+        Dev->>EC2: ~/sensor_demo
     end
 
     rect rgb(60, 50, 20)
@@ -88,7 +90,7 @@ sequenceDiagram
         Note over Dev,RPi: 【RasPi5】デプロイ
         Dev->>Win: C:\VibeCode\raspi.ps1 deploy
         Win->>GH: gh codespace cp で取得
-        Win->>RPi: adb push sensor_demo / shims / cuse_i2c / ...
+        Win->>RPi: adb push sensor_demo
     end
 
     rect rgb(30, 60, 50)
@@ -126,7 +128,7 @@ agp setup                          # 依存検出・既定 host 保存
 agp sim deploy
 agp sim start                      # /dev/* runtime + port forward
 # VS Code terminal profile "EC2 Simulation" から本番と同じ起動手順
-./start.sh
+~/sensor_demo
 
 # 仮想 H/W 操作・観察
 make panel-button EC2=vibecode-graviton LINE=17

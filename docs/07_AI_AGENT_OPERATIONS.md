@@ -35,7 +35,7 @@ agp sim start
 
 # VS Code terminal profile "EC2 Simulation" などから EC2 へ入り、
 # 本番と同じアプリ起動手順を実行
-./start.sh
+~/sensor_demo
 
 # ログ確認
 agp sim log
@@ -144,7 +144,7 @@ make sim-scenario EC2=vibecode-graviton SCENARIO=scenarios/sensor_demo_rfid.json
 ## AI に依頼するタスク例
 
 ```text
-sensor_demo を EC2 にデプロイして、シミュレーション用の /dev runtime を起動し、EC2 にログインして本番と同じ start.sh でアプリを起動してください。そのあと GPIO17 を押して System ON にしてから RFID をタップし、OLED とログを確認して UID が表示されるか見てください。
+sensor_demo を EC2 にデプロイして、シミュレーション用の /dev runtime を起動し、EC2 にログインして `~/sensor_demo` を起動してください。そのあと GPIO17 を押して System ON にしてから RFID をタップし、OLED とログを確認して UID が表示されるか見てください。
 ```
 
 この依頼は、AIが次のように分解できます。
@@ -153,7 +153,7 @@ sensor_demo を EC2 にデプロイして、シミュレーション用の /dev 
 # agp-build-env Codespace でビルドし、成果物を WSL hub 経由で EC2 へ転送済み
 agp sim start
 # VS Code terminal profile "EC2 Simulation" などから EC2 へログイン
-./start.sh
+~/sensor_demo
 agp sim button press 17
 agp sim rfid tap 04:AB:CD:EF:01:23
 agp sim state --json
@@ -189,5 +189,5 @@ MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop
 - `/api/events` で操作履歴を取得する
 - 実機 RasPi5 にも同じ `run / logs / diagnose` 抽象を用意する
 - `agp sim run <target>` / `agp native run <target>` を共通 manifest 化する
-- GPIO/SPI の LD_PRELOAD shim を CUSE/fake device runtime へ移し、アプリ起動手順からシミュレーション固有の指定を減らす（設計: [12_CUSE_MIGRATION_PLAN.md](12_CUSE_MIGRATION_PLAN.md)）
+- `agp sim run <target>` / `agp native run <target>` を共通 manifest 化し、`~/sensor_demo` 起動後の検証ログ収集まで `agp` に畳む
 - systemd 化して EC2 上の起動/停止を安定させる
