@@ -208,7 +208,37 @@ static const struct line_def lines[] = {
 
 ### 5.1 systemd unit 化
 
-CUSE スタブは sudo が必要。bridge は不要。EC2 上では次のように systemd で常駐させる:
+EC2 上の simulation runtime は systemd で常駐させる形へ移行済み。`agp sim start` は `hardware/*.csv` から GPIO line と I2C/SPI dev を読み、unit / helper script を配置して `agp-sim.target` を起動する。`agp sim stop` は同じCSV由来の service 群を停止する。
+
+現在配置する主な unit / script:
+
+```text
+/usr/local/bin/agp-gpio-sim-start
+/usr/local/bin/agp-gpio-sim-stop
+/etc/systemd/system/agp-sim.target
+/etc/systemd/system/agp-gpio-sim.service
+/etc/systemd/system/agp-bridge.service
+/etc/systemd/system/agp-cuse-i2c@.service
+/etc/systemd/system/agp-cuse-spi@.service
+```
+
+EC2 動作確認済み:
+
+```bash
+systemctl is-active \
+  agp-gpio-sim.service \
+  agp-bridge.service \
+  agp-cuse-i2c@i2c-1.service \
+  agp-cuse-spi@spidev0.0.service
+
+agp sim diag --json --host vibecode-graviton
+```
+
+確認結果: 4 service active、`/dev/i2c-1` / `/dev/gpiochip0` / `/dev/spidev0.0` あり、`diag --json` は `ok: true`。`~/sensor_demo` 起動後、Button17 で `[btn] System ON`、RFID tap で UID ログ / OLED framebuf / bridge state 更新まで確認。
+
+現在の unit は PoC として `$HOME` 配下の `~/cuse_i2c`、`~/cuse_spi`、`~/web-bridge` を参照している。次段階では `/etc/agentcockpit/hardware/`、`/usr/local/sbin/`、`/usr/local/lib/agentcockpit/`、`/run/agentcockpit/` へ配置を整理する。
+
+旧計画時点の unit イメージ:
 
 ```ini
 # /etc/systemd/system/agp-bridge.service
@@ -228,7 +258,7 @@ ExecStart=/home/ubuntu/cuse_spi -f --devname=spidev0.0
 Restart=on-failure
 ```
 
-`agp sim start / stop` は systemd unit を `systemctl start/stop` する形に切り替える（現状の `setsid nohup` ベースは置き換え）。
+`agp sim start / stop` は systemd unit を `systemctl start/stop` する形に切り替え済み（旧 `setsid nohup` ベースは fallback 掃除のみ残す）。
 
 ### 5.2 デバイスノードのパーミッション
 

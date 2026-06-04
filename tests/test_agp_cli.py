@@ -350,6 +350,8 @@ class AgpCliTest(unittest.TestCase):
         remote_command = run.call_args.args[0][-1]
         self.assertIn("bridge.py", remote_command)
         self.assertIn("cuse_i2c", remote_command)
+        self.assertIn("agp-sim.target", remote_command)
+        self.assertIn("systemctl start", remote_command)
         self.assertNotIn("sensor_demo", remote_command)
         self.assertNotIn("LD_PRELOAD", remote_command)
 
@@ -370,6 +372,47 @@ class AgpCliTest(unittest.TestCase):
         self.assertIn("BTN_GPIO17", remote_command)
         self.assertIn("LED_GPIO18", remote_command)
 
+    def test_sim_start_uses_hardware_csv_for_runtime_devices(self) -> None:
+        hw_definition = {
+            "gpio": [
+                {
+                    "name": "test_button",
+                    "chip": "/dev/gpiochip2",
+                    "line": "5",
+                    "direction": "input",
+                    "role": "button",
+                    "sim_control": "pull",
+                },
+                {
+                    "name": "test_led",
+                    "chip": "/dev/gpiochip2",
+                    "line": "6",
+                    "direction": "output",
+                    "role": "led",
+                    "sim_control": "value",
+                },
+            ],
+            "i2c": [{"dev": "/dev/i2c-2"}],
+            "spi": [{"dev": "/dev/spidev1.0"}],
+        }
+        with (
+            mock.patch("scripts.agp_lib._sim.load_hw_definition", return_value=hw_definition),
+            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+        ):
+            run.return_value.returncode = 0
+
+            result = run_sim_command("start", host="ec2-test", port_forward=False)
+
+        self.assertEqual(0, result)
+        remote_command = run.call_args.args[0][-1]
+        self.assertIn("/dev/gpiochip2", remote_command)
+        self.assertIn("BTN_GPIO5", remote_command)
+        self.assertIn("LED_GPIO6", remote_command)
+        self.assertIn("--devname=%i", remote_command)
+        self.assertIn("agp-cuse-i2c@i2c-2.service", remote_command)
+        self.assertIn("agp-cuse-spi@spidev1.0.service", remote_command)
+
     def test_sim_stop_tears_down_gpio_sim(self) -> None:
         with mock.patch("scripts.agp_lib._sim.subprocess.run") as run:
             run.return_value.returncode = 0
@@ -378,10 +421,10 @@ class AgpCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         remote_command = run.call_args.args[0][-1]
-        self.assertIn("umount /dev/gpiochip0", remote_command)
-        self.assertIn("/sys/kernel/config/gpio-sim", remote_command)
-        self.assertIn("sudo pkill -f '[c]use_i2c'", remote_command)
-        self.assertIn("pkill -f '[b]ridge.py'", remote_command)
+        self.assertIn("systemctl stop agp-sim.target", remote_command)
+        self.assertIn("agp-gpio-sim.service", remote_command)
+        self.assertIn("sudo pkill -x cuse_i2c", remote_command)
+        self.assertIn("pkill -f '[/]web-bridge/bridge.py'", remote_command)
 
     def test_sim_start_writes_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1269,6 +1312,61 @@ class SimPanelTests(unittest.TestCase):
             "state",
             host="ec2-test",
             json_output=True,
+        )
+
+    def test_hw_init_creates_empty_csv_templates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hw_dir = Path(tmp) / "hardware"
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = main(["hw", "init", "--dir", str(hw_dir)])
+
+            self.assertEqual(0, result)
+            self.assertEqual(
+                "component_id,name,kind,part_number,description\n",
+                (hw_dir / "components.csv").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                "name,chip,line,direction,role,active,initial,pull,sim_control,description\n",
+                (hw_dir / "gpio.csv").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                "name,bus,dev,address,driver,sim,description\n",
+                (hw_dir / "i2c.csv").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                "name,bus,chip_select,dev,mode,max_speed_hz,driver,sim,description\n",
+                (hw_dir / "spi.csv").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                "source,source_pin,target,target_pin,signal,description\n",
+                (hw_dir / "connections.csv").read_text(encoding="utf-8"),
+            )
+
+    def test_hw_init_refuses_to_overwrite_without_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            hw_dir = Path(tmp) / "hardware"
+            hw_dir.mkdir()
+            gpio_csv = hw_dir / "gpio.csv"
+            gpio_csv.write_text("keep me\n", encoding="utf-8")
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = main(["hw", "init", "--dir", str(hw_dir)])
+
+            self.assertEqual(1, result)
+            self.assertEqual("keep me\n", gpio_csv.read_text(encoding="utf-8"))
+            self.assertIn("--force", output.getvalue())
+
+    def test_hw_init_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_hw_command", return_value=0) as run_hw:
+            result = main(["hw", "init", "--dir", "custom-hw", "--force"])
+
+        self.assertEqual(0, result)
+        run_hw.assert_called_once_with(
+            "init",
+            output_dir="custom-hw",
+            force=True,
         )
 
 

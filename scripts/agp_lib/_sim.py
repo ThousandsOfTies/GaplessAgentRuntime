@@ -16,20 +16,12 @@ from scripts.agp_lib._config import (
     default_ec2_host,
     load_config,
 )
+from scripts.agp_lib._hw import load_hw_definition
 from scripts.agp_lib._vscode import write_vscode_terminal_profile
 
 # Machine-readable diag: emit section markers so the WSL side can parse the
 # remote output into structured JSON. Devices are probed as "<path> 0|1".
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
-SIM_DIAG_JSON_COMMAND = (
-    'echo "@@PROC@@"; '
-    'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
-    'echo "@@DEV@@"; '
-    "for d in " + " ".join(SIM_DIAG_DEVICES) + "; do "
-    'if [ -e "$d" ]; then echo "$d 1"; else echo "$d 0"; fi; done; '
-    'echo "@@API@@"; '
-    "curl -s http://127.0.0.1:8080/api/state || true"
-)
 SIM_GPIO_SIM_CHECK_COMMAND = (
     'echo "@@KERNEL@@"; '
     "uname -r; "
@@ -51,94 +43,392 @@ SIM_GPIO_SIM_CHECK_COMMAND = (
     "ls -1 /dev/gpiochip* 2>/dev/null || true"
 )
 
-SIM_GPIO_SIM_SETUP_COMMAND = textwrap.dedent(
-    r"""
-    set -eu
 
-    sudo modprobe gpio-sim
-    sudo mount -t configfs none /sys/kernel/config 2>/dev/null || true
+def _csv_rows_for(kind: str, hw_definition: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
+    rows = hw_definition.get(kind, [])
+    return rows if isinstance(rows, list) else []
 
-    sudo sh -c '
-      set -eu
-      base=/sys/kernel/config/gpio-sim
-      chip=agp
 
-      if mountpoint -q /dev/gpiochip0; then
-        umount /dev/gpiochip0 || true
-      fi
+def _devname(dev: str) -> str:
+    return dev.removeprefix("/dev/")
 
-      if [ -d "$base/$chip" ]; then
-        echo 0 > "$base/$chip/live" 2>/dev/null || true
-        for bank in "$base/$chip"/*; do
-          name=$(basename "$bank")
-          [ "$name" = live ] && continue
-          [ "$name" = dev_name ] && continue
-          for line in "$bank"/line*; do
-            [ -d "$line" ] && rmdir "$line" || true
-          done
-          rmdir "$bank" || true
-        done
-        rmdir "$base/$chip" || true
-      fi
 
-      mkdir "$base/$chip"
-      mkdir "$base/$chip/bank0"
-      echo 54 > "$base/$chip/bank0/num_lines"
-      echo AgentCockpit > "$base/$chip/bank0/label"
+def _unique_nonempty(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
-      mkdir "$base/$chip/bank0/line17"
-      echo BTN_GPIO17 > "$base/$chip/bank0/line17/name"
-      mkdir "$base/$chip/bank0/line18"
-      echo LED_GPIO18 > "$base/$chip/bank0/line18/name"
-      mkdir "$base/$chip/bank0/line24"
-      echo LED_GPIO24 > "$base/$chip/bank0/line24/name"
-      mkdir "$base/$chip/bank0/line27"
-      echo BTN_GPIO27 > "$base/$chip/bank0/line27/name"
 
-      echo 1 > "$base/$chip/live"
-      sim_chip=$(cat "$base/$chip/bank0/chip_name")
-      chmod 666 "/dev/$sim_chip"
-      find /sys/devices/platform -path "*/$sim_chip/sim_gpio17/pull" -exec chmod 666 {} \; 2>/dev/null || true
-      find /sys/devices/platform -path "*/$sim_chip/sim_gpio27/pull" -exec chmod 666 {} \; 2>/dev/null || true
+def _gpio_label(row: dict[str, str], line: int) -> str:
+    role = row.get("role", "").strip().lower()
+    if role == "button":
+        prefix = "BTN"
+    elif role == "led":
+        prefix = "LED"
+    else:
+        prefix = (role or row.get("name", "GPIO")).upper()
+    return "".join(c if c.isalnum() else "_" for c in f"{prefix}_GPIO{line}")
 
-      if [ "$sim_chip" != gpiochip0 ]; then
-        mount --bind "/dev/$sim_chip" /dev/gpiochip0
-      fi
-      chmod 666 /dev/gpiochip0
-      echo "gpio-sim ready: /dev/gpiochip0 -> /dev/$sim_chip"
-    '
-    """
-).strip()
 
-SIM_GPIO_SIM_TEARDOWN_COMMAND = textwrap.dedent(
-    r"""
-    sudo sh -c '
-      set -u
-      base=/sys/kernel/config/gpio-sim
-      chip=agp
+def _gpio_rows(hw_definition: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
+    rows = []
+    for row in _csv_rows_for("gpio", hw_definition):
+        try:
+            int(row.get("line", ""))
+        except ValueError:
+            continue
+        rows.append(row)
+    return rows
 
-      if mountpoint -q /dev/gpiochip0; then
-        umount /dev/gpiochip0 || true
-      fi
 
-      if [ -d "$base/$chip" ]; then
-        echo 0 > "$base/$chip/live" 2>/dev/null || true
-        for bank in "$base/$chip"/*; do
-          name=$(basename "$bank")
-          [ "$name" = live ] && continue
-          [ "$name" = dev_name ] && continue
-          for line in "$bank"/line*; do
-            [ -d "$line" ] && rmdir "$line" || true
-          done
-          rmdir "$bank" || true
-        done
-        rmdir "$base/$chip" || true
-      fi
-    '
-    """
-).strip()
+def _gpiochip_path(hw_definition: dict[str, list[dict[str, str]]]) -> str:
+    for row in _gpio_rows(hw_definition):
+        chip = row.get("chip", "").strip()
+        if chip:
+            return chip
+    return "/dev/gpiochip0"
+
+
+def _i2c_devs(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return _unique_nonempty([row.get("dev", "").strip() for row in _csv_rows_for("i2c", hw_definition)])
+
+
+def _spi_devs(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return _unique_nonempty([row.get("dev", "").strip() for row in _csv_rows_for("spi", hw_definition)])
+
+
+def _diag_devices(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return _unique_nonempty([*_i2c_devs(hw_definition), _gpiochip_path(hw_definition), *_spi_devs(hw_definition)])
+
+
+def _i2c_services(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return [f"agp-cuse-i2c@{_devname(dev)}.service" for dev in (_i2c_devs(hw_definition) or ["/dev/i2c-1"])]
+
+
+def _spi_services(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return [f"agp-cuse-spi@{_devname(dev)}.service" for dev in (_spi_devs(hw_definition) or ["/dev/spidev0.0"])]
+
+
+def _runtime_services(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    return [
+        "agp-gpio-sim.service",
+        "agp-bridge.service",
+        *_i2c_services(hw_definition),
+        *_spi_services(hw_definition),
+    ]
+
+
+def _sudo_write_file_command(
+    path: str,
+    content: str,
+    *,
+    mode: str | None = None,
+    expand_remote_home: bool = False,
+) -> str:
+    command = f"printf %s {shlex.quote(content)}"
+    if expand_remote_home:
+        command += ' | sed "s#__AGP_HOME__#$HOME#g"'
+    command += f" | sudo tee {shlex.quote(path)} >/dev/null"
+    if mode:
+        command += f"; sudo chmod {shlex.quote(mode)} {shlex.quote(path)}"
+    return command
+
+
+def build_sim_diag_json_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    devices = _diag_devices(hw) or list(SIM_DIAG_DEVICES)
+    return (
+        'echo "@@PROC@@"; '
+        'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
+        'echo "@@DEV@@"; '
+        "for d in " + " ".join(shlex.quote(dev) for dev in devices) + "; do "
+        'if [ -e "$d" ]; then echo "$d 1"; else echo "$d 0"; fi; done; '
+        'echo "@@API@@"; '
+        "curl -s http://127.0.0.1:8080/api/state || true"
+    )
+
+
+def build_gpio_sim_setup_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    rows = _gpio_rows(hw)
+    gpiochip_path = _gpiochip_path(hw)
+    gpiochip_name = Path(gpiochip_path).name
+    max_line = max([int(row["line"]) for row in rows], default=53)
+    num_lines = max(max_line + 1, 54)
+    line_setup = []
+    pull_chmod = []
+    for row in rows:
+        line = int(row["line"])
+        label = _gpio_label(row, line)
+        line_setup.append(
+            f'mkdir "$base/$chip/bank0/line{line}"\n'
+            f'      echo {shlex.quote(label)} > "$base/$chip/bank0/line{line}/name"'
+        )
+        if row.get("direction", "").lower() == "input" or row.get("sim_control", "").lower() == "pull":
+            pull_chmod.append(
+                f'find /sys/devices/platform -path "*/$sim_chip/sim_gpio{line}/pull" '
+                "-exec chmod 666 {} \\; 2>/dev/null || true"
+            )
+
+    line_setup_text = "\n      ".join(line_setup) if line_setup else ":"
+    pull_chmod_text = "\n      ".join(pull_chmod) if pull_chmod else ":"
+
+    return textwrap.dedent(
+        f"""
+        set -eu
+
+        sudo modprobe gpio-sim
+        sudo mount -t configfs none /sys/kernel/config 2>/dev/null || true
+
+        sudo sh -c '
+          set -eu
+          base=/sys/kernel/config/gpio-sim
+          chip=agp
+
+          if mountpoint -q {shlex.quote(gpiochip_path)}; then
+            umount -l {shlex.quote(gpiochip_path)} || true
+          fi
+          if [ ! -e {shlex.quote(gpiochip_path)} ]; then
+            : > {shlex.quote(gpiochip_path)}
+          fi
+
+          if [ -d "$base/$chip" ]; then
+            echo 0 > "$base/$chip/live" 2>/dev/null || true
+            for bank in "$base/$chip"/*; do
+              name=$(basename "$bank")
+              [ "$name" = live ] && continue
+              [ "$name" = dev_name ] && continue
+              for line in "$bank"/line*; do
+                [ -d "$line" ] && rmdir "$line" || true
+              done
+              rmdir "$bank" || true
+            done
+            rmdir "$base/$chip" || true
+          fi
+
+          mkdir "$base/$chip"
+          mkdir "$base/$chip/bank0"
+          echo {num_lines} > "$base/$chip/bank0/num_lines"
+          echo AgentCockpit > "$base/$chip/bank0/label"
+
+          {line_setup_text}
+
+          echo 1 > "$base/$chip/live"
+          sim_chip=$(cat "$base/$chip/bank0/chip_name")
+          chmod 666 "/dev/$sim_chip"
+          {pull_chmod_text}
+
+          if [ "$sim_chip" != {shlex.quote(gpiochip_name)} ]; then
+            if [ ! -e {shlex.quote(gpiochip_path)} ]; then
+              : > {shlex.quote(gpiochip_path)}
+            fi
+            mount --bind "/dev/$sim_chip" {shlex.quote(gpiochip_path)}
+          fi
+          chmod 666 {shlex.quote(gpiochip_path)}
+          echo "gpio-sim ready: {gpiochip_path} -> /dev/$sim_chip"
+        '
+        """
+    ).strip()
+
+
+def build_gpio_sim_teardown_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    gpiochip_path = _gpiochip_path(hw)
+    return textwrap.dedent(
+        f"""
+        sudo sh -c '
+          set -u
+          base=/sys/kernel/config/gpio-sim
+          chip=agp
+
+          if mountpoint -q {shlex.quote(gpiochip_path)}; then
+            umount -l {shlex.quote(gpiochip_path)} || true
+          fi
+
+          if [ -d "$base/$chip" ]; then
+            echo 0 > "$base/$chip/live" 2>/dev/null || true
+            for bank in "$base/$chip"/*; do
+              name=$(basename "$bank")
+              [ "$name" = live ] && continue
+              [ "$name" = dev_name ] && continue
+              for line in "$bank"/line*; do
+                [ -d "$line" ] && rmdir "$line" || true
+              done
+              rmdir "$bank" || true
+            done
+            rmdir "$base/$chip" || true
+          fi
+        '
+        """
+    ).strip()
+
+
+def build_systemd_install_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    services = _runtime_services(hw)
+
+    gpio_start_script = "#!/bin/sh\n" + build_gpio_sim_setup_command(hw) + "\n"
+    gpio_stop_script = "#!/bin/sh\n" + build_gpio_sim_teardown_command(hw) + "\n"
+    gpio_unit = textwrap.dedent(
+        """
+        [Unit]
+        Description=AgentCockpit gpio-sim runtime
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/local/bin/agp-gpio-sim-start
+        ExecStop=/usr/local/bin/agp-gpio-sim-stop
+
+        [Install]
+        WantedBy=multi-user.target
+        """
+    ).lstrip()
+    bridge_unit = textwrap.dedent(
+        """
+        [Unit]
+        Description=AgentCockpit hardware bridge
+        After=agp-gpio-sim.service
+        Wants=agp-gpio-sim.service
+
+        [Service]
+        Type=simple
+        ExecStart=__AGP_HOME__/venv/bin/python3 __AGP_HOME__/web-bridge/bridge.py
+        Restart=on-failure
+        RestartSec=1
+
+        [Install]
+        WantedBy=multi-user.target
+        """
+    ).lstrip()
+    i2c_unit = textwrap.dedent(
+        """
+        [Unit]
+        Description=AgentCockpit CUSE I2C runtime for %i
+        After=agp-bridge.service
+        Wants=agp-bridge.service
+
+        [Service]
+        Type=simple
+        ExecStart=__AGP_HOME__/cuse_i2c -f --devname=%i
+        ExecStartPost=/bin/sh -c 'for n in $(seq 1 30); do [ -e /dev/%i ] && chmod 666 /dev/%i && exit 0; sleep 0.1; done; exit 0'
+        Restart=on-failure
+        RestartSec=1
+
+        [Install]
+        WantedBy=multi-user.target
+        """
+    ).lstrip()
+    spi_unit = textwrap.dedent(
+        """
+        [Unit]
+        Description=AgentCockpit CUSE SPI runtime for %i
+        After=agp-bridge.service
+        Wants=agp-bridge.service
+
+        [Service]
+        Type=simple
+        ExecStart=__AGP_HOME__/cuse_spi -f --devname=%i
+        ExecStartPost=/bin/sh -c 'for n in $(seq 1 30); do [ -e /dev/%i ] && chmod 666 /dev/%i && exit 0; sleep 0.1; done; exit 0'
+        Restart=on-failure
+        RestartSec=1
+
+        [Install]
+        WantedBy=multi-user.target
+        """
+    ).lstrip()
+    target_unit = textwrap.dedent(
+        f"""
+        [Unit]
+        Description=AgentCockpit simulation runtime
+        Wants={" ".join(services)}
+        After={" ".join(services)}
+
+        [Install]
+        WantedBy=multi-user.target
+        """
+    ).lstrip()
+
+    commands = [
+        _sudo_write_file_command("/usr/local/bin/agp-gpio-sim-start", gpio_start_script, mode="0755"),
+        _sudo_write_file_command("/usr/local/bin/agp-gpio-sim-stop", gpio_stop_script, mode="0755"),
+        _sudo_write_file_command("/etc/systemd/system/agp-gpio-sim.service", gpio_unit),
+        _sudo_write_file_command("/etc/systemd/system/agp-bridge.service", bridge_unit, expand_remote_home=True),
+        _sudo_write_file_command("/etc/systemd/system/agp-cuse-i2c@.service", i2c_unit, expand_remote_home=True),
+        _sudo_write_file_command("/etc/systemd/system/agp-cuse-spi@.service", spi_unit, expand_remote_home=True),
+        _sudo_write_file_command("/etc/systemd/system/agp-sim.target", target_unit),
+        "sudo systemctl daemon-reload",
+    ]
+    return "; ".join(commands)
+
+
+def build_systemd_start_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    services = " ".join(shlex.quote(service) for service in _runtime_services(hw))
+    return (
+        build_systemd_install_command(hw)
+        + "; "
+        + f"sudo systemctl stop agp-sim.target {services} >/dev/null 2>&1 || true; "
+        + "sudo pkill -x cuse_i2c || true; "
+        + "sudo pkill -x cuse_spi || true; "
+        + "sudo systemctl start agp-sim.target; "
+        + "sleep 3; "
+        + "sudo systemctl --no-pager --full status agp-sim.target; "
+        + 'pgrep -af "bridge.py|cuse_i2c|cuse_spi"'
+    )
+
+
+def build_systemd_stop_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    services = " ".join(shlex.quote(service) for service in reversed(_runtime_services(hw)))
+    return (
+        f"sudo systemctl stop agp-sim.target {services} >/dev/null 2>&1 || true; "
+        "sudo pkill -x cuse_i2c || true; "
+        "sudo pkill -x cuse_spi || true; "
+        "pkill -f '[/]web-bridge/bridge.py' || true; "
+        'echo "Simulation device runtime stopped."'
+    )
+
+
+def build_sim_start_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    return build_systemd_start_command(hw_definition)
+
+
+def build_sim_stop_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    return build_systemd_stop_command(hw_definition)
+
+
+def build_sim_status_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    hw = hw_definition or load_hw_definition()
+    return (
+        'echo "--- processes ---"; '
+        'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
+        'echo "--- devices ---"; '
+        + "ls -l "
+        + " ".join(shlex.quote(dev) for dev in _diag_devices(hw))
+        + " 2>/dev/null || true; "
+        'echo "--- api ---"; '
+        "curl -s http://127.0.0.1:8080/api/state || true"
+    )
+
+
+def build_sim_log_command() -> str:
+    return (
+        'echo "--- journalctl agp runtime ---"; '
+        "journalctl --no-pager -n 120 "
+        "-u agp-sim.target -u agp-gpio-sim.service -u agp-bridge.service "
+        "-u 'agp-cuse-i2c@*.service' -u 'agp-cuse-spi@*.service' || true; "
+        'echo "--- legacy logs ---"; '
+        "tail -n 80 /tmp/bridge.log /tmp/cuse.log /tmp/cuse_spi.log 2>/dev/null || true"
+    )
+
 def parse_sim_diag(raw: str) -> dict:
-    """Parse the marker-delimited ``SIM_DIAG_JSON_COMMAND`` output into a dict.
+    """Parse the marker-delimited simulation diag output into a dict.
 
     Returns ``{"processes": [...], "devices": {...}, "api": ... | None, "ok": bool}``.
     ``ok`` is True when at least one runtime process is alive and the bridge API
@@ -242,7 +532,7 @@ def parse_gpio_sim_check(raw: str) -> dict:
 def run_sim_diag_json(host: str) -> int:
     """Run ``agp sim diag --json``: print structured JSON, exit 0 when ok."""
     result = subprocess.run(
-        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, SIM_DIAG_JSON_COMMAND],
+        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, build_sim_diag_json_command()],
         check=False,
         capture_output=True,
         text=True,
@@ -369,45 +659,12 @@ def run_sim_command(
     stop_port_forward: bool = True,
     json_output: bool = False,
 ) -> int:
+    hw_definition = load_hw_definition()
     commands = {
-        "start": (
-            SIM_GPIO_SIM_SETUP_COMMAND
-            + "; "
-            'setsid bash -c "nohup ~/venv/bin/python3 ~/web-bridge/bridge.py '
-            '> /tmp/bridge.log 2>&1 &" < /dev/null; '
-            "sleep 2; "
-            'setsid bash -c "sudo nohup ~/cuse_i2c -f --devname=i2c-1 '
-            '> /tmp/cuse.log 2>&1 &" < /dev/null; '
-            'setsid bash -c "sudo nohup ~/cuse_spi -f --devname=spidev0.0 '
-            '> /tmp/cuse_spi.log 2>&1 &" < /dev/null; '
-            "sleep 3; "
-            "sudo chmod 666 /dev/i2c-1 /dev/spidev0.0; "
-            'pgrep -af "bridge.py|cuse_i2c|cuse_spi"'
-        ),
-        "stop": (
-            SIM_GPIO_SIM_TEARDOWN_COMMAND
-            + "; "
-            "sudo pkill -f '[c]use_i2c' || true; "
-            "sudo pkill -f '[c]use_spi' || true; "
-            "pkill -f '[b]ridge.py' || true; "
-            'echo "Simulation device runtime stopped."'
-        ),
-        "diag": (
-            'echo "--- processes ---"; '
-            'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
-            'echo "--- devices ---"; '
-            "ls -l /dev/i2c-1 /dev/gpiochip0 /dev/spidev0.0 2>/dev/null || true; "
-            'echo "--- api ---"; '
-            "curl -s http://127.0.0.1:8080/api/state || true"
-        ),
-        "log": (
-            'echo "--- bridge.log ---"; '
-            "tail -n 80 /tmp/bridge.log 2>/dev/null; "
-            'echo "--- cuse.log ---"; '
-            "tail -n 80 /tmp/cuse.log 2>/dev/null; "
-            'echo "--- cuse_spi.log ---"; '
-            "tail -n 80 /tmp/cuse_spi.log 2>/dev/null"
-        ),
+        "start": build_sim_start_command(hw_definition),
+        "stop": build_sim_stop_command(hw_definition),
+        "diag": build_sim_status_command(hw_definition),
+        "log": build_sim_log_command(),
     }
 
     if command == "status":

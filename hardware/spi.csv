@@ -1,0 +1,2 @@
+name,bus,chip_select,dev,mode,max_speed_hz,driver,sim,description
+mfrc522_rfid,0,0,/dev/spidev0.0,0,1000000,mfrc522,mfrc522,MFRC-522 RFID reader on SPI0 CE0

@@ -7,6 +7,7 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.agp_lib._code` — ``agp code``
 - :mod:`scripts.agp_lib._deploy` — ``agp sim deploy`` / ``agp native deploy``
 - :mod:`scripts.agp_lib._ec2` — ``agp ec2``
+- :mod:`scripts.agp_lib._hw` — ``agp hw``
 - :mod:`scripts.agp_lib._sim` — ``agp sim``
 - :mod:`scripts.agp_lib._terminal` — ``agp terminal``
 - :mod:`scripts.agp_lib._usb` — ``agp usb``
@@ -63,6 +64,11 @@ from scripts.agp_lib._ec2 import (  # noqa: F401
     ec2_public_ip,
     run_ec2_command,
     update_ssh_config_hostname,
+)
+from scripts.agp_lib._hw import (  # noqa: F401
+    HW_TEMPLATE_FILES,
+    run_hw_command,
+    write_hw_template,
 )
 from scripts.agp_lib._setup import (  # noqa: F401
     configure_default_ec2_host,
@@ -397,6 +403,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 help="attach した busid を .agp/config.json に記憶しません",
             )
 
+    hw_parser = subparsers.add_parser(
+        "hw",
+        help="hardware 定義 CSV を管理します",
+    )
+    hw_subparsers = hw_parser.add_subparsers(dest="hw_command")
+    hw_init_parser = hw_subparsers.add_parser(
+        "init",
+        help="空の hardware 定義 CSV テンプレートを作成します",
+    )
+    hw_init_parser.add_argument(
+        "--dir",
+        dest="output_dir",
+        default=None,
+        help="CSV を作成するディレクトリ（既定: AgentCockpit/hardware）",
+    )
+    hw_init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="既存のテンプレート CSV を上書きします",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "setup":
@@ -514,6 +541,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.usb_command,
             busid=getattr(args, "busid", None),
             remember=not getattr(args, "no_remember", False),
+        )
+
+    if args.command == "hw":
+        if args.hw_command is None:
+            hw_parser.print_help()
+            return 1
+        return run_hw_command(
+            args.hw_command,
+            output_dir=args.output_dir,
+            force=args.force,
         )
 
     parser.print_help()

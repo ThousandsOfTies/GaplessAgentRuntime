@@ -3,13 +3,13 @@
 毎日の「今日なにやろうかな」用のメモ。気軽に書き換えてOK。
 詳細な設計は [docs/](docs/) 各ファイルに、ここは「次の一手」を思い出すための入口。
 
-最終更新: 2026-06-03
+最終更新: 2026-06-05
 
 ---
 
 ## 🔥 いま一番やりたい（Next）
 
-- [ ] **systemd 化** bridge / cuse_i2c / cuse_spi / gpio-sim setup を EC2 上で unit 化し、`agp sim start/stop` を `systemctl` ベースに寄せる
+- [ ] **runtime 配置の本番寄せ** `/etc/agentcockpit/hardware/`、`/usr/local/sbin/`、`/usr/local/lib/agentcockpit/`、`/run/agentcockpit/` へ整理し、`$HOME` 前提を減らす
 
 ---
 
@@ -37,12 +37,15 @@
 - [ ] USB-C の auto-attach（Windows タスクスケジューラのデバイス接続トリガで挿した瞬間に attach）
 - [ ] `raspi.ps1` 相当（Codespace から成果物取得 → 実機 push）の `agp` 収容
 - [ ] **AI の自己判断レイヤ** 実行前に AI が `--json` の結果を見て「やめておく / 直す」を選ぶループ（docs/13 の欠けているピース）
+- [ ] **hardware assignment CSV の分離** — PoC 中は `AgentCockpit/hardware/` を正本置き場にする。最終的には Excel 代替のアサイン定義 CSV を別 repo に分離し、AgentCockpit は runtime/systemd/docs 用へ、製品プロセスは app config / device map 用へ、それぞれ変換して利用する
 - [ ] **「装置」化デモ — 距離キープ P 制御 1 ループ** 既存 sim 資産だけで、目標距離を自律で保つ最小フィードバック制御を組む。get=vl53l0x / 制御=誤差×ゲイン（P のみ、I・D は欲しくなってから）/ put=LED 点滅速度 or PWM / 表示=ssd1306 に「目標・現在・誤差」。狙いは「LED が点くだけ」→「目標値を自律で保つ計器」への一段＝デモを機能証明から価値証明へ。自然言語→仮想でゲイン調整→実機 の既存閉ループに乗せる。遠い構想は [docs/14](docs/14_FUTURE_VISION_DEVICE_DISCOVERY.md)、これはその"足元版"
 
 ---
 
 ## ✅ 最近やったこと（Done）
 
+- [x] **systemd 化 runtime の EC2 動作確認** — `agp sim start` が `agp-sim.target` と `agp-gpio-sim.service` / `agp-bridge.service` / `agp-cuse-i2c@i2c-1.service` / `agp-cuse-spi@spidev0.0.service` を配置・起動する形へ移行。EC2 で4 service active、`agp sim diag --json` `ok: true`、`~/sensor_demo` 起動、Button17 → `[btn] System ON`、RFID tap → UIDログ/OLED/state更新まで確認 — 2026-06-05
+- [x] **hardware assignment CSV の PoC 導入** — `hardware/{components,gpio,i2c,spi,connections}.csv` を追加し、現在の GPIO17/18/24/27、I2C `/dev/i2c-1` (`0x3c` SSD1306 / `0x29` VL53L0X)、SPI `/dev/spidev0.0` (MFRC-522) を反映。`agp sim start/diag` がCSVから GPIO line と I2C/SPI dev を読む形に変更 — 2026-06-05
 - [x] **panel 操作を `make panel-*` → `agp sim ...` へ移行**（`agp sim button press/set`・`rfid tap/remove`・`range set`・`state --json`。旧 `make panel-*` は削除し docs 主導線も更新。`make sim-test` は `agp sim` 直呼びに変更） — 2026-06-03
 - [x] `agp sim diag --json` 実装（marker 区切り出力を `parse_sim_diag` で構造化、`ok`/exit code 判定、テスト追加） — 2026-06-03
 - [x] `agp sim gpio-sim-check --json` 実装（modinfo/config.gz/configfs/kernel を構造化プローブ、Codex 移行分） — 2026-06-03
