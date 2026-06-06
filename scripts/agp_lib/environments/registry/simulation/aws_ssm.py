@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import platform
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -10,8 +12,8 @@ from scripts.agp_lib.environments.base import DevEnvironment
 
 class AwsSsmEnvironment(DevEnvironment):
     provider_id = "aws_ssm"
-    display_name = "AWS SSM"
-    description = "AWS CLI と Session Manager Plugin で EC2 に接続します"
+    display_name = "AWS SSM (非推奨)"
+    description = "現時点では AgentCockpit runtime 操作には未対応です。simulation は SSH Remote を使ってください"
     display_order = 20
     required_commands = ("aws", "session-manager-plugin")
 
@@ -61,31 +63,58 @@ class AwsSsmEnvironment(DevEnvironment):
 
     @classmethod
     def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
-        import subprocess
-        # target should be an instance ID
-        cmd2 = ["aws", "ssm", "start-session", "--target", target, "--document-name", "AWS-StartInteractiveCommand", "--parameters", f'command="{command}"']
-        return subprocess.run(cmd2, capture_output=capture_output, text=text, check=check)
+        message = _runtime_unsupported_message()
+        if not capture_output:
+            print(message, file=sys.stderr)
+        result = subprocess.CompletedProcess(
+            args=["aws_ssm", "run_remote", target],
+            returncode=1,
+            stdout="" if text else b"",
+            stderr=message if text else message.encode(),
+        )
+        if check:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                result.args,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
+        return result
 
     @classmethod
     def push_file(cls, target: str, src, dest) -> int:
-        # AWS SSM has no direct scp out of the box, usually S3 or port forwarding is used.
-        # Fallback to raising error or returning 1 for now.
-        print(f"push_file not fully implemented for AWS SSM (requires S3/port forwarding)")
+        print(_runtime_unsupported_message(), file=sys.stderr)
         return 1
 
     @classmethod
     def pull_file(cls, target: str, src, dest) -> int:
-        print(f"pull_file not fully implemented for AWS SSM")
+        print(_runtime_unsupported_message(), file=sys.stderr)
+        return 1
+
+    @classmethod
+    def start_port_forward(cls, target: str) -> int:
+        print(_runtime_unsupported_message(), file=sys.stderr)
+        return 1
+
+    @classmethod
+    def stop_port_forward(cls, target: str) -> int:
+        print(_runtime_unsupported_message(), file=sys.stderr)
+        return 1
+
+    @classmethod
+    def status_port_forward(cls, target: str) -> int:
+        print(_runtime_unsupported_message(), file=sys.stderr)
         return 1
 
     @classmethod
     def interactive_shell_script(cls, target: str) -> str:
-        import shlex
-        quoted_target = shlex.quote(target)
         return f"""#!/usr/bin/env bash
 set -euo pipefail
 
-exec aws ssm start-session --target {quoted_target}
+cat >&2 <<'EOF'
+{_runtime_unsupported_message()}
+EOF
+exit 1
 """
 
 
@@ -97,6 +126,13 @@ def _unsupported_reason() -> str | None:
     if _arch_id() is None:
         return f"未対応の CPU アーキテクチャです: {platform.machine()}"
     return None
+
+
+def _runtime_unsupported_message() -> str:
+    return (
+        "AWS SSM provider is currently deprecated for AgentCockpit runtime operations. "
+        "Use the ssh_remote simulation provider for agp sim env deploy/start/status/log."
+    )
 
 
 def _ensure_helper_commands() -> int:

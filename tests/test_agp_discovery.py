@@ -238,6 +238,29 @@ class AgpDiscoveryTest(unittest.TestCase):
         )
         self.assertIn(["sudo", "dpkg", "-i", mock.ANY], commands)
 
+    def test_aws_ssm_runtime_operations_fail_closed(self) -> None:
+        with mock.patch("scripts.agp_lib.environments.registry.simulation.aws_ssm.subprocess.run") as run:
+            result = AwsSsmEnvironment.run_remote(
+                "vibecode-graviton",
+                "echo hello",
+                capture_output=True,
+            )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("deprecated", result.stderr)
+        run.assert_not_called()
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(1, AwsSsmEnvironment.push_file("target", "src", "dest"))
+            self.assertEqual(1, AwsSsmEnvironment.pull_file("target", "src", "dest"))
+            self.assertEqual(1, AwsSsmEnvironment.start_port_forward("target"))
+            self.assertEqual(1, AwsSsmEnvironment.stop_port_forward("target"))
+            self.assertEqual(1, AwsSsmEnvironment.status_port_forward("target"))
+
+        self.assertIn("ssh_remote", stderr.getvalue())
+        self.assertIn("exit 1", AwsSsmEnvironment.interactive_shell_script("target"))
+
     def test_adb_usb_installs_adb_with_apt_get(self) -> None:
         commands: list[list[str]] = []
 

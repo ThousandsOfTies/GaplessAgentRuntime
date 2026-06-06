@@ -41,6 +41,7 @@ from scripts.agp_lib.cli import (
     update_ssh_config_hostname,
 )
 from scripts.agp_lib.environments.base import DevEnvironment
+from scripts.agp_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
 
 
 class DevelopmentProvider(DevEnvironment):
@@ -399,6 +400,7 @@ class AgpCliTest(unittest.TestCase):
         with (
             mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -423,6 +425,7 @@ class AgpCliTest(unittest.TestCase):
         with (
             mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -463,6 +466,7 @@ class AgpCliTest(unittest.TestCase):
             mock.patch("scripts.agp_lib._sim.load_hw_definition", return_value=hw_definition),
             mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -510,6 +514,7 @@ class AgpCliTest(unittest.TestCase):
     def test_sim_gpio_start_installs_and_restarts_gpio_service(self) -> None:
         with (
             mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -526,9 +531,10 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_stop_tears_down_gpio_sim(self) -> None:
         with mock.patch("scripts.agp_lib._sim.subprocess.run") as run:
-            run.return_value.returncode = 0
+            with mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment):
+                run.return_value.returncode = 0
 
-            result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
+                result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
 
         self.assertEqual(0, result)
         remote_command = run.call_args.args[0][-1]
@@ -542,7 +548,6 @@ class AgpCliTest(unittest.TestCase):
             home = Path(tmp)
             settings = home / "settings.json"
 
-            from scripts.agp_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
             with (
                 mock.patch("scripts.agp_lib._sim.Path.home", return_value=home),
                 mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
@@ -573,6 +578,7 @@ class AgpCliTest(unittest.TestCase):
             mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.agp_lib._sim.start_sim_port_forward", return_value=0) as forward,
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1586,7 +1592,10 @@ class AgpCliTest(unittest.TestCase):
             ),
             stderr="",
         )
-        with mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run:
+        with (
+            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+        ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = run_gpio_sim_check("ec2-test", json_output=True)
@@ -1618,7 +1627,10 @@ class AgpCliTest(unittest.TestCase):
             ),
             stderr="",
         )
-        with mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run:
+        with (
+            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+        ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = run_sim_gpio_command("status", host="ec2-test", json_output=True)
