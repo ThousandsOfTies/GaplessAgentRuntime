@@ -23,7 +23,7 @@ from scripts.agp_lib.cli import (
     run_deploy_command,
     run_ec2_command,
     run_gpio_sim_check,
-    run_native_sync_command,
+    run_target_sync_command,
     run_setup,
     run_sim_command,
     run_sim_gpio_command,
@@ -673,7 +673,7 @@ class AgpCliTest(unittest.TestCase):
         self.assertIn("/usr/local/lib/agentcockpit/web-bridge", dir_install[-1])
         self.assertIn("sudo cp -a", dir_install[-1])
 
-    def test_deploy_native_pushes_sensor_demo_with_adb(self) -> None:
+    def test_deploy_target_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             artifact = root / "files" / "sensor_demo"
@@ -684,7 +684,7 @@ class AgpCliTest(unittest.TestCase):
                     {
                         "name": "sensor-demo",
                         "deploy": {
-                            "native": {
+                            "target": {
                                 "files": [
                                     {
                                         "src": "files/sensor_demo",
@@ -712,7 +712,7 @@ class AgpCliTest(unittest.TestCase):
             with mock.patch("scripts.agp_lib._deploy.subprocess.run", side_effect=run_side_effect) as run:
 
                 result = run_deploy_command(
-                    "native",
+                    "target",
                     artifacts_dir=str(root),
                     serial="raspi",
                     dest="/home/user",
@@ -735,7 +735,7 @@ class AgpCliTest(unittest.TestCase):
         self.assertFalse(adb_device_available(output, serial="missing"))
         self.assertFalse(adb_device_available("List of devices attached\n", serial=None))
 
-    def test_native_deploy_auto_attaches_usb_when_adb_device_is_missing(self) -> None:
+    def test_target_deploy_auto_attaches_usb_when_adb_device_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             artifact = root / "files" / "sensor_demo"
@@ -746,7 +746,7 @@ class AgpCliTest(unittest.TestCase):
                     {
                         "name": "sensor-demo",
                         "deploy": {
-                            "native": {
+                            "target": {
                                 "files": [
                                     {
                                         "src": "files/sensor_demo",
@@ -781,7 +781,7 @@ class AgpCliTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()),
             ):
                 result = run_deploy_command(
-                    "native",
+                    "target",
                     artifacts_dir=str(root),
                     serial="raspi",
                     dest="/home/user",
@@ -822,33 +822,33 @@ class AgpCliTest(unittest.TestCase):
                 self.assertEqual(ec2_command, run_ec2.call_args.args[0])
                 self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
 
-    def test_native_deploy_is_available_from_cli(self) -> None:
+    def test_target_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
-            result = main(["native", "deploy", "--serial", "raspi"])
+            result = main(["target", "deploy", "--serial", "raspi"])
 
         self.assertEqual(0, result)
         run_deploy.assert_called_once_with(
-            "native",
+            "target",
             artifacts_dir=None,
             serial="raspi",
             host=None,
             dest="/home/user",
         )
 
-    def test_native_deploy_passes_host_for_ssh_provider(self) -> None:
+    def test_target_deploy_passes_host_for_ssh_provider(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
-            result = main(["native", "deploy", "--host", "raspi-net"])
+            result = main(["target", "deploy", "--host", "raspi-net"])
 
         self.assertEqual(0, result)
         run_deploy.assert_called_once_with(
-            "native",
+            "target",
             artifacts_dir=None,
             serial=None,
             host="raspi-net",
             dest="/home/user",
         )
 
-    def test_native_deploy_uses_scp_when_ssh_provider_is_selected(self) -> None:
+    def test_target_deploy_uses_scp_when_ssh_provider_is_selected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             artifact = root / "files" / "sensor_demo"
@@ -859,7 +859,7 @@ class AgpCliTest(unittest.TestCase):
                     {
                         "name": "sensor-demo",
                         "deploy": {
-                            "native": {
+                            "target": {
                                 "files": [
                                     {
                                         "src": "files/sensor_demo",
@@ -882,7 +882,7 @@ class AgpCliTest(unittest.TestCase):
                 run.return_value.returncode = 0
 
                 result = run_deploy_command(
-                    "native",
+                    "target",
                     artifacts_dir=str(root),
                     host="raspi-net",
                     dest="/home/user",
@@ -900,7 +900,7 @@ class AgpCliTest(unittest.TestCase):
             chmod_argv[-2:],
         )
 
-    def test_native_deploy_with_ssh_provider_requires_host(self) -> None:
+    def test_target_deploy_with_ssh_provider_requires_host(self) -> None:
         config = {"selected_providers": {"device": "ssh_scp"}}
         with (
             mock.patch("scripts.agp_lib._deploy.load_config", return_value=config),
@@ -908,7 +908,7 @@ class AgpCliTest(unittest.TestCase):
             contextlib.redirect_stderr(io.StringIO()),
         ):
             result = run_deploy_command(
-                "native",
+                "target",
                 artifacts_dir=str(Path(__file__).parent),
                 dest="/home/user",
             )
@@ -916,7 +916,7 @@ class AgpCliTest(unittest.TestCase):
         self.assertNotEqual(0, result)
         run.assert_not_called()
 
-    def test_native_fetch_copies_manifest_sources_from_codespace(self) -> None:
+    def test_target_fetch_copies_manifest_sources_from_codespace(self) -> None:
         manifest = {
             "name": "sensor-demo",
             "deploy": {
@@ -926,7 +926,7 @@ class AgpCliTest(unittest.TestCase):
                         {"src": "files/web-bridge", "dest": "~/web-bridge"},
                     ]
                 },
-                "native": {
+                "target": {
                     "files": [
                         {"src": "files/sensor_demo", "dest": "/home/user/sensor_demo", "mode": "0755"}
                     ]
@@ -968,12 +968,12 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual(manifest, written_manifest)
         self.assertEqual(4, cp.call_count)
 
-    def test_native_sync_fetches_then_deploys(self) -> None:
+    def test_target_sync_fetches_then_deploys(self) -> None:
         with (
             mock.patch("scripts.agp_lib._deploy.fetch_codespace_artifacts", return_value=0) as fetch,
             mock.patch("scripts.agp_lib._deploy.run_deploy_command", return_value=0) as deploy,
         ):
-            result = run_native_sync_command(
+            result = run_target_sync_command(
                 artifacts_dir=str(Path("/tmp/agp-artifacts")),
                 codespace="codespace-test",
                 remote_root="/workspaces/out",
@@ -984,20 +984,20 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         fetch.assert_called_once()
         deploy.assert_called_once_with(
-            "native",
+            "target",
             artifacts_dir=str(Path("/tmp/agp-artifacts").resolve()),
             serial="raspi",
             host=None,
             dest="/home/user",
         )
 
-    def test_native_fetch_is_available_from_cli(self) -> None:
+    def test_target_fetch_is_available_from_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with mock.patch("scripts.agp_lib.cli.fetch_codespace_artifacts", return_value=0) as fetch:
                 result = main(
                     [
-                        "native",
+                        "target",
                         "fetch",
                         "--codespace",
                         "codespace-test",
@@ -1015,11 +1015,11 @@ class AgpCliTest(unittest.TestCase):
             remote_root="/workspaces/out",
         )
 
-    def test_native_sync_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.agp_lib.cli.run_native_sync_command", return_value=0) as sync:
+    def test_target_sync_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_target_sync_command", return_value=0) as sync:
             result = main(
                 [
-                    "native",
+                    "target",
                     "sync",
                     "--codespace",
                     "codespace-test",

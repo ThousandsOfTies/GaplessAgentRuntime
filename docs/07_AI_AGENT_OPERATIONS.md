@@ -189,6 +189,6 @@ MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop
 - OLED framebuffer の期待値チェックを追加する
 - `/api/events` で操作履歴を取得する
 - 実機 RasPi5 にも同じ `run / logs / diagnose` 抽象を用意する
-- `agp sim run <target>` / `agp native run <target>` を共通 manifest 化する
-- `agp sim run <target>` / `agp native run <target>` を共通 manifest 化し、`~/sensor_demo` 起動後の検証ログ収集まで `agp` に畳む
+- `agp sim run <target>` / `agp target run <target>` を共通 manifest 化する
+- `agp sim run <target>` / `agp target run <target>` を共通 manifest 化し、`~/sensor_demo` 起動後の検証ログ収集まで `agp` に畳む
 - systemd 化して EC2 上の起動/停止を安定させる

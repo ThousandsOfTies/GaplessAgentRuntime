@@ -89,7 +89,7 @@ agp sim env deploy
    ```
 2. WSL hub から実機へ転送:
    ```bash
-   agp native deploy
+   agp target deploy
    ```
    経路: Codespaces でビルド → WSL に成果物コピー → adb push → RasPi5
 
@@ -140,7 +140,7 @@ agp sim env stop
 
 ### RasPi5 で実機実行
 
-実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`agp setup` の実機環境カテゴリで `SSH / scp` provider を選べ、`agp native deploy --host <ssh-host>` で転送できる（詳細: [docs/11_COMMAND_REFERENCE.md](docs/11_COMMAND_REFERENCE.md)）。
+実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`agp setup` の実機環境カテゴリで `SSH / scp` provider を選べ、`agp target deploy --host <ssh-host>` で転送できる（詳細: [docs/11_COMMAND_REFERENCE.md](docs/11_COMMAND_REFERENCE.md)）。
 
 ```powershell
 adb shell

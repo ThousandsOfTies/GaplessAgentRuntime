@@ -1,4 +1,4 @@
-"""`agp sim env deploy` / `agp native deploy`: artifact manifest deploy."""
+"""`agp sim env deploy` / `agp target deploy`: artifact manifest deploy."""
 
 from __future__ import annotations
 
@@ -61,23 +61,23 @@ def run_deploy_command(
 
     if target == "sim":
         return deploy_sim_artifacts(root, host=host)
-    if target == "native":
+    if target == "target":
         provider_id = selected_device_provider_id(load_config())
         if provider_id == "ssh_scp":
             if not host:
                 print(
-                    "agp native deploy: SSH/scp provider requires --host",
+                    "agp target deploy: SSH/scp provider requires --host",
                     file=sys.stderr,
                 )
                 return 1
-            return deploy_native_artifacts_ssh(root, host=host, dest=dest)
-        return deploy_native_artifacts(root, serial=serial, dest=dest)
+            return deploy_target_artifacts_ssh(root, host=host, dest=dest)
+        return deploy_target_artifacts(root, serial=serial, dest=dest)
 
     print(f"unknown deploy target: {target}", file=sys.stderr)
     return 1
 
 
-def run_native_sync_command(
+def run_target_sync_command(
     *,
     artifacts_dir: str | None = None,
     codespace: str | None = None,
@@ -95,7 +95,7 @@ def run_native_sync_command(
     if result != 0:
         return result
     return run_deploy_command(
-        "native",
+        "target",
         artifacts_dir=str(root.resolve()),
         serial=serial,
         host=host,
@@ -135,7 +135,7 @@ def select_codespace(explicit: str | None) -> str | None:
         env=gh_env(),
     )
     if result.returncode != 0:
-        print("agp native fetch: failed to list Codespaces", file=sys.stderr)
+        print("agp target fetch: failed to list Codespaces", file=sys.stderr)
         if result.stderr:
             print(result.stderr.strip(), file=sys.stderr)
         return None
@@ -179,7 +179,7 @@ def fetch_codespace_artifacts(
 ) -> int:
     selected_codespace = select_codespace(codespace)
     if not selected_codespace:
-        print("agp native fetch: pass --codespace NAME or set AGP_CODESPACE_NAME", file=sys.stderr)
+        print("agp target fetch: pass --codespace NAME or set AGP_CODESPACE_NAME", file=sys.stderr)
         return 1
 
     resolved_remote_root = (remote_root or default_codespace_artifact_root()).rstrip("/")
@@ -194,7 +194,7 @@ def fetch_codespace_artifacts(
         )
         if result.returncode != 0:
             print(
-                f"agp native fetch: failed to fetch {resolved_remote_root}/artifact.json",
+                f"agp target fetch: failed to fetch {resolved_remote_root}/artifact.json",
                 file=sys.stderr,
             )
             return result.returncode
@@ -229,7 +229,7 @@ def fetch_codespace_artifacts(
                 recursive=True,
             )
             if result.returncode != 0:
-                print(f"agp native fetch: failed to fetch {src}", file=sys.stderr)
+                print(f"agp target fetch: failed to fetch {src}", file=sys.stderr)
                 return result.returncode
 
         (root / "artifact.json").write_text(
@@ -351,7 +351,7 @@ def load_deploy_files(root: Path, target: str) -> tuple[Path, list[dict]] | None
     return bundle_root, files
 
 
-def native_dest_path(manifest_dest: str, base_dest: str) -> str:
+def target_dest_path(manifest_dest: str, base_dest: str) -> str:
     if manifest_dest.startswith(("/", "~")):
         return manifest_dest
     return f"{base_dest.rstrip('/')}/{manifest_dest}"
@@ -438,8 +438,8 @@ def deploy_sim_artifacts(root: Path, *, host: str | None) -> int:
     return 0
 
 
-def deploy_native_artifacts(root: Path, *, serial: str | None, dest: str) -> int:
-    loaded = load_deploy_files(root, "native")
+def deploy_target_artifacts(root: Path, *, serial: str | None, dest: str) -> int:
+    loaded = load_deploy_files(root, "target")
     if loaded is None:
         return 1
 
@@ -456,7 +456,7 @@ def deploy_native_artifacts(root: Path, *, serial: str | None, dest: str) -> int
         if source is None:
             return 1
 
-        target_dest = native_dest_path(entry["dest"], dest)
+        target_dest = target_dest_path(entry["dest"], dest)
         result = provider.push_file(target, source, target_dest)
         if result != 0:
             return result
@@ -478,12 +478,12 @@ def ensure_adb_device(*, serial: str | None) -> int:
         text=True,
     )
     if result.returncode != 0:
-        print(result.stderr.strip() or "agp native deploy: adb devices failed", file=sys.stderr)
+        print(result.stderr.strip() or "agp target deploy: adb devices failed", file=sys.stderr)
         return result.returncode
     if adb_device_available(result.stdout, serial=serial):
         return 0
 
-    print("agp native deploy: adb device not found; trying `agp usb attach`", file=sys.stderr)
+    print("agp target deploy: adb device not found; trying `agp usb attach`", file=sys.stderr)
     attach_result = run_usb_command("attach")
     if attach_result != 0:
         return attach_result
@@ -495,13 +495,13 @@ def ensure_adb_device(*, serial: str | None) -> int:
         text=True,
     )
     if result.returncode != 0:
-        print(result.stderr.strip() or "agp native deploy: adb devices failed after usb attach", file=sys.stderr)
+        print(result.stderr.strip() or "agp target deploy: adb devices failed after usb attach", file=sys.stderr)
         return result.returncode
     if adb_device_available(result.stdout, serial=serial):
         return 0
 
     target = f" serial {serial}" if serial else ""
-    print(f"agp native deploy: adb device{target} is still not visible after usb attach", file=sys.stderr)
+    print(f"agp target deploy: adb device{target} is still not visible after usb attach", file=sys.stderr)
     return 1
 
 
@@ -521,8 +521,8 @@ def adb_device_available(output: str, *, serial: str | None) -> bool:
     return False
 
 
-def deploy_native_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
-    loaded = load_deploy_files(root, "native")
+def deploy_target_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
+    loaded = load_deploy_files(root, "target")
     if loaded is None:
         return 1
 
@@ -533,7 +533,7 @@ def deploy_native_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
         if source is None:
             return 1
 
-        target_dest = native_dest_path(entry["dest"], dest)
+        target_dest = target_dest_path(entry["dest"], dest)
         result = provider.push_file(host, source, target_dest)
         if result != 0:
             return result

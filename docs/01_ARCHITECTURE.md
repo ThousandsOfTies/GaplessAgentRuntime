@@ -77,4 +77,4 @@ AgentCockpit では、AI が実機へ到達するための接続経路として 
 
 既定は USB-C を用いた adb です。社内ネットワークなどで作業 PC が複数の NIC を自由に使えない環境でも、USB ケーブル一本で実機にアクセスできるためです（[scripts/agp_lib/environments/registry/device/adb_usb.py](../scripts/agp_lib/environments/registry/device/adb_usb.py)）。
 
-ネットワーク越しに実機へ到達できる環境では、SSH/scp 経路も選択できます（[scripts/agp_lib/environments/registry/device/ssh_scp.py](../scripts/agp_lib/environments/registry/device/ssh_scp.py)）。`agp setup` の実機環境カテゴリで `SSH / scp` を選ぶと、`agp native deploy --host <ssh-host>` が `scp` と `ssh chmod` で artifact を転送します。adb / SSH の切り替えは `.agp/config.json` の `selected_providers.device` に保存されるため、AI も人間も同じ設定で動作します。
+ネットワーク越しに実機へ到達できる環境では、SSH/scp 経路も選択できます（[scripts/agp_lib/environments/registry/device/ssh_scp.py](../scripts/agp_lib/environments/registry/device/ssh_scp.py)）。`agp setup` の実機環境カテゴリで `SSH / scp` を選ぶと、`agp target deploy --host <ssh-host>` が `scp` と `ssh chmod` で artifact を転送します。adb / SSH の切り替えは `.agp/config.json` の `selected_providers.device` に保存されるため、AI も人間も同じ設定で動作します。

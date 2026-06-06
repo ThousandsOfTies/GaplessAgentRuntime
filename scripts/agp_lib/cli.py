@@ -5,7 +5,7 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.agp_lib._config` — config IO, paths, EC2 host helpers
 - :mod:`scripts.agp_lib._vscode` — VSCode terminal profile / Bridge install
 - :mod:`scripts.agp_lib._code` — ``agp code``
-- :mod:`scripts.agp_lib._deploy` — ``agp sim env deploy`` / ``agp native deploy``
+- :mod:`scripts.agp_lib._deploy` — ``agp sim env deploy`` / ``agp target deploy``
 - :mod:`scripts.agp_lib._ec2` — ``agp sim boot`` / ``shutdown`` / ``status``
 - :mod:`scripts.agp_lib._hw` — ``agp hw``
 - :mod:`scripts.agp_lib._sim` — ``agp sim``
@@ -54,8 +54,8 @@ from scripts.agp_lib._deploy import (  # noqa: F401
     artifact_manifest_deploy_sources,
     default_artifacts_dir,
     default_codespace_artifact_root,
-    deploy_native_artifacts,
-    deploy_native_artifacts_ssh,
+    deploy_target_artifacts,
+    deploy_target_artifacts_ssh,
     deploy_sim_artifacts,
     ensure_adb_device,
     fetch_codespace_artifacts,
@@ -63,10 +63,10 @@ from scripts.agp_lib._deploy import (  # noqa: F401
     gh_codespace_cp,
     load_artifact_manifest,
     load_deploy_files,
-    native_dest_path,
+    target_dest_path,
     resolve_artifact_src,
     run_deploy_command,
-    run_native_sync_command,
+    run_target_sync_command,
     select_codespace,
     selected_device_provider_id,
 )
@@ -477,87 +477,87 @@ def build_parser() -> argparse.ArgumentParser:
     sim_range_set.add_argument("value", type=int, help="距離（ミリメートル）")
     _add_host_arg(sim_range_set)
 
-    native_parser = subparsers.add_parser(
-        "native",
-        help="接続先の native I/O を使う runtime を操作します",
+    target_parser = subparsers.add_parser(
+        "target",
+        help="接続先が提供する I/O を使う runtime を操作します",
     )
-    native_subparsers = native_parser.add_subparsers(dest="native_command", metavar="command")
-    native_deploy_parser = native_subparsers.add_parser(
+    target_subparsers = target_parser.add_subparsers(dest="target_command", metavar="command")
+    target_deploy_parser = target_subparsers.add_parser(
         "deploy",
-        help="native runtime へ成果物を配置します",
+        help="target runtime へ成果物を配置します",
     )
-    native_deploy_parser.add_argument(
+    target_deploy_parser.add_argument(
         "--serial",
         default=None,
         help="adb device serial。省略時は adb の既定接続先",
     )
-    native_deploy_parser.add_argument(
+    target_deploy_parser.add_argument(
         "--host",
         default=None,
         help="SSH/scp provider 利用時の SSH config 上の host 名",
     )
-    native_deploy_parser.add_argument(
+    target_deploy_parser.add_argument(
         "--dest",
         default="/home/user",
-        help="artifact.json の native dest が相対パスのときの接続先基準ディレクトリ",
+        help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
     )
-    native_deploy_parser.add_argument(
+    target_deploy_parser.add_argument(
         "--artifacts-dir",
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
-    native_fetch_parser = native_subparsers.add_parser(
+    target_fetch_parser = target_subparsers.add_parser(
         "fetch",
         help="Codespace の artifact bundle を WSL hub へ取得します",
     )
-    native_fetch_parser.add_argument(
+    target_fetch_parser.add_argument(
         "--codespace",
         default=None,
         help="取得元 Codespace 名。省略時は AGP_CODESPACE_NAME / CODESPACE_NAME / gh list",
     )
-    native_fetch_parser.add_argument(
+    target_fetch_parser.add_argument(
         "--remote-root",
         default=None,
         help=f"Codespace 上の artifact bundle root（既定: {DEFAULT_CODESPACE_ARTIFACT_ROOT}）",
     )
-    native_fetch_parser.add_argument(
+    target_fetch_parser.add_argument(
         "--artifacts-dir",
         default=None,
         help="WSL hub 側に保存する artifact bundle root",
     )
-    native_sync_parser = native_subparsers.add_parser(
+    target_sync_parser = target_subparsers.add_parser(
         "sync",
-        help="Codespace から成果物を取得し、native runtime へ配置します",
+        help="Codespace から成果物を取得し、target runtime へ配置します",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--codespace",
         default=None,
         help="取得元 Codespace 名。省略時は AGP_CODESPACE_NAME / CODESPACE_NAME / gh list",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--remote-root",
         default=None,
         help=f"Codespace 上の artifact bundle root（既定: {DEFAULT_CODESPACE_ARTIFACT_ROOT}）",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--artifacts-dir",
         default=None,
         help="WSL hub 側に保存する artifact bundle root",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--serial",
         default=None,
         help="adb device serial。省略時は adb の既定接続先",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--host",
         default=None,
         help="SSH/scp provider 利用時の SSH config 上の host 名",
     )
-    native_sync_parser.add_argument(
+    target_sync_parser.add_argument(
         "--dest",
         default="/home/user",
-        help="artifact.json の native dest が相対パスのときの接続先基準ディレクトリ",
+        help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
     )
 
     usb_parser = subparsers.add_parser(
@@ -614,7 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
         "sim_button": sim_button_parser,
         "sim_rfid": sim_rfid_parser,
         "sim_range": sim_range_parser,
-        "native": native_parser,
+        "target": target_parser,
         "usb": usb_parser,
         "hw": hw_parser,
     }
@@ -747,19 +747,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         subcommand_parsers["sim"].print_help()
         return 1
-    if args.command == "native":
-        if args.native_command is None:
-            subcommand_parsers["native"].print_help()
+    if args.command == "target":
+        if args.target_command is None:
+            subcommand_parsers["target"].print_help()
             return 1
-        if args.native_command == "deploy":
+        if args.target_command == "deploy":
             return run_deploy_command(
-                "native",
+                "target",
                 artifacts_dir=args.artifacts_dir,
                 serial=args.serial,
                 host=args.host,
                 dest=args.dest,
             )
-        if args.native_command == "fetch":
+        if args.target_command == "fetch":
             root = (
                 default_artifacts_dir()
                 if args.artifacts_dir is None
@@ -770,8 +770,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 codespace=args.codespace,
                 remote_root=args.remote_root,
             )
-        if args.native_command == "sync":
-            return run_native_sync_command(
+        if args.target_command == "sync":
+            return run_target_sync_command(
                 artifacts_dir=args.artifacts_dir,
                 codespace=args.codespace,
                 remote_root=args.remote_root,

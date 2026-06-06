@@ -88,7 +88,7 @@ sequenceDiagram
 
     rect rgb(20, 50, 60)
         Note over Dev,RPi: 【RasPi5】デプロイ
-        Dev->>Win: agp native sync
+        Dev->>Win: agp target sync
         Win->>GH: gh codespace cp で artifact bundle 取得
         Win->>RPi: artifact manifest に従って adb push
     end
