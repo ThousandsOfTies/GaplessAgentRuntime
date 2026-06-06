@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -11,17 +12,26 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.agp_lib.cli import (
+    adb_device_available,
     build_panel_command,
+    completion_bash_script,
+    ensure_adb_device,
+    fetch_codespace_artifacts,
+    gpio_sim_plan,
     load_config,
     main,
+    normalize_question_help,
+    parse_gpio_runtime_status,
     parse_gpio_sim_check,
     parse_sim_diag,
     parse_usbipd_list,
     run_deploy_command,
     run_ec2_command,
     run_gpio_sim_check,
+    run_native_sync_command,
     run_setup,
     run_sim_command,
+    run_sim_gpio_command,
     run_sim_panel,
     run_terminal_request,
     run_usb_command,
@@ -70,6 +80,54 @@ class MissingProvider(DevEnvironment):
 
 
 class AgpCliTest(unittest.TestCase):
+    def test_question_mark_prints_contextual_help(self) -> None:
+        cases = [
+            (["?"], "usage: agp", "code"),
+            (["code", "?"], "usage: agp code", "start"),
+            (["sim", "gpio", "?"], "usage: agp sim gpio", "plan"),
+        ]
+
+        for argv, usage, command in cases:
+            with self.subTest(argv=argv):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = main(argv)
+
+                self.assertEqual(0, result)
+                text = output.getvalue()
+                self.assertIn(usage, text)
+                self.assertIn(command, text)
+
+    def test_question_mark_normalization_ignores_command_remainder(self) -> None:
+        self.assertEqual(["code", "--help"], normalize_question_help(["code", "?"]))
+        self.assertEqual(
+            ["terminal", "run", "--", "echo", "?"],
+            normalize_question_help(["terminal", "run", "--", "echo", "?"]),
+        )
+
+    def test_completion_bash_script_uses_argcomplete(self) -> None:
+        text = completion_bash_script()
+        self.assertIn("register-python-argcomplete agp", text)
+        self.assertIn("eval", text)
+        self.assertIn("completion words", text)
+
+    def test_completion_bash_is_available_from_cli(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["completion", "bash"])
+
+        self.assertEqual(0, result)
+        self.assertIn("register-python-argcomplete agp", output.getvalue())
+
+    def test_completion_words_uses_parser_commands(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["completion", "words", "--cword", "2", "--", "agp", "sim", ""])
+
+        self.assertEqual(0, result)
+        self.assertIn("env", output.getvalue().splitlines())
+        self.assertIn("ui", output.getvalue().splitlines())
+
     def test_setup_lists_only_selected_provider_for_configured_category(self) -> None:
         providers = [DevelopmentProvider, SimulationProvider, DeviceProvider]
         config = {
@@ -352,6 +410,12 @@ class AgpCliTest(unittest.TestCase):
         self.assertIn("cuse_i2c", remote_command)
         self.assertIn("agp-sim.target", remote_command)
         self.assertIn("systemctl start", remote_command)
+        self.assertIn("/etc/agentcockpit/hardware", remote_command)
+        self.assertIn("/usr/local/sbin/cuse_i2c", remote_command)
+        self.assertIn("/usr/local/sbin/cuse_spi", remote_command)
+        self.assertIn("/usr/local/lib/agentcockpit/web-bridge/bridge.py", remote_command)
+        self.assertIn("/run/agentcockpit", remote_command)
+        self.assertIn("AGP_HW_SIM_SOCK=/run/agentcockpit/hw_sim.sock", remote_command)
         self.assertNotIn("sensor_demo", remote_command)
         self.assertNotIn("LD_PRELOAD", remote_command)
 
@@ -413,6 +477,53 @@ class AgpCliTest(unittest.TestCase):
         self.assertIn("agp-cuse-i2c@i2c-2.service", remote_command)
         self.assertIn("agp-cuse-spi@spidev1.0.service", remote_command)
 
+    def test_sim_gpio_plan_builds_gpio_sim_contract(self) -> None:
+        hw_definition = {
+            "gpio": [
+                {
+                    "name": "test_button",
+                    "chip": "/dev/gpiochip2",
+                    "line": "5",
+                    "direction": "input",
+                    "role": "button",
+                    "sim_control": "pull",
+                },
+                {
+                    "name": "test_led",
+                    "chip": "/dev/gpiochip2",
+                    "line": "6",
+                    "direction": "output",
+                    "role": "led",
+                    "sim_control": "value",
+                },
+            ],
+        }
+
+        plan = gpio_sim_plan(hw_definition)
+
+        self.assertEqual("gpio-sim", plan["driver"])
+        self.assertEqual("/dev/gpiochip2", plan["target_device"])
+        self.assertEqual(54, plan["num_lines"])
+        self.assertEqual("BTN_GPIO5", plan["lines"][0]["label"])
+        self.assertEqual("LED_GPIO6", plan["lines"][1]["label"])
+
+    def test_sim_gpio_start_installs_and_restarts_gpio_service(self) -> None:
+        with (
+            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+        ):
+            run.return_value.returncode = 0
+
+            result = run_sim_gpio_command("start", host="ec2-test")
+
+        self.assertEqual(0, result)
+        remote_command = run.call_args.args[0][-1]
+        self.assertIn("modprobe gpio-sim", remote_command)
+        self.assertIn("/usr/local/sbin/agp-gpio-sim-start", remote_command)
+        self.assertIn("/etc/systemd/system/agp-gpio-sim.service", remote_command)
+        self.assertIn("systemctl restart agp-gpio-sim.service", remote_command)
+        self.assertNotIn("agp-bridge.service", remote_command)
+        self.assertNotIn("cuse_i2c", remote_command)
+
     def test_sim_stop_tears_down_gpio_sim(self) -> None:
         with mock.patch("scripts.agp_lib._sim.subprocess.run") as run:
             run.return_value.returncode = 0
@@ -431,9 +542,11 @@ class AgpCliTest(unittest.TestCase):
             home = Path(tmp)
             settings = home / "settings.json"
 
+            from scripts.agp_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
             with (
                 mock.patch("scripts.agp_lib._sim.Path.home", return_value=home),
                 mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+                mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
             ):
                 run.return_value.returncode = 0
                 output = io.StringIO()
@@ -479,11 +592,19 @@ class AgpCliTest(unittest.TestCase):
         status.assert_called_once_with("ec2-test")
         state.assert_called_once_with("ec2-test")
 
+    def test_sim_status_json_returns_bridge_state(self) -> None:
+        with mock.patch("scripts.agp_lib._sim.run_sim_panel", return_value=0) as panel:
+            result = run_sim_command("status", host="ec2-test", json_output=True)
+
+        self.assertEqual(0, result)
+        panel.assert_called_once_with("state", host="ec2-test", json_output=True)
+
     def test_deploy_sim_copies_artifacts_to_configured_ec2_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "files" / "bin").mkdir(parents=True)
             (root / "files" / "bin" / "sensor_demo").write_text("", encoding="utf-8")
+            (root / "files" / "cuse_i2c").write_text("", encoding="utf-8")
             (root / "files" / "web-bridge").mkdir(parents=True)
             (root / "files" / "web-bridge" / "bridge.py").write_text("", encoding="utf-8")
             (root / "artifact.json").write_text(
@@ -496,6 +617,11 @@ class AgpCliTest(unittest.TestCase):
                                     {
                                         "src": "files/bin/sensor_demo",
                                         "dest": "~/sensor_demo",
+                                        "mode": "0755",
+                                    },
+                                    {
+                                        "src": "files/cuse_i2c",
+                                        "dest": "~/cuse_i2c",
                                         "mode": "0755",
                                     },
                                     {
@@ -520,16 +646,30 @@ class AgpCliTest(unittest.TestCase):
                 result = run_deploy_command("sim", artifacts_dir=str(root))
 
         self.assertEqual(0, result)
-        self.assertEqual(3, run.call_count)
+        self.assertEqual(6, run.call_count)
         file_copy = run.call_args_list[0].args[0]
-        chmod = run.call_args_list[1].args[0]
-        dir_copy = run.call_args_list[2].args[0]
+        file_install = run.call_args_list[1].args[0]
+        cuse_copy = run.call_args_list[2].args[0]
+        cuse_install = run.call_args_list[3].args[0]
+        dir_copy = run.call_args_list[4].args[0]
+        dir_install = run.call_args_list[5].args[0]
         self.assertEqual("scp", file_copy[0])
-        self.assertEqual("configured-ec2:~/sensor_demo", file_copy[-1])
-        self.assertEqual(["ssh", "-F"], chmod[:2])
-        self.assertEqual(["configured-ec2", "chmod", "0755", "~/sensor_demo"], chmod[-4:])
+        self.assertIn("configured-ec2:/tmp/agentcockpit-deploy-", file_copy[-1])
+        self.assertEqual(["ssh", "-F"], file_install[:2])
+        self.assertEqual("configured-ec2", file_install[3])
+        self.assertIn('"${HOME}"/', file_install[-1])
+        self.assertIn("chmod '0755'", file_install[-1])
+        self.assertEqual("scp", cuse_copy[0])
+        self.assertIn("configured-ec2:/tmp/agentcockpit-deploy-", cuse_copy[-1])
+        self.assertEqual(["ssh", "-F"], cuse_install[:2])
+        self.assertIn("/usr/local/sbin/cuse_i2c", cuse_install[-1])
+        self.assertIn("sudo chmod '0755'", cuse_install[-1])
         self.assertIn("-r", dir_copy)
-        self.assertEqual("configured-ec2:~/web-bridge", dir_copy[-1])
+        self.assertIn("configured-ec2:/tmp/agentcockpit-deploy-", dir_copy[-1])
+        self.assertEqual(["ssh", "-F"], dir_install[:2])
+        self.assertEqual("configured-ec2", dir_install[3])
+        self.assertIn("/usr/local/lib/agentcockpit/web-bridge", dir_install[-1])
+        self.assertIn("sudo cp -a", dir_install[-1])
 
     def test_deploy_native_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -557,8 +697,17 @@ class AgpCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch("scripts.agp_lib._deploy.subprocess.run") as run:
-                run.return_value.returncode = 0
+            def run_side_effect(argv, **kwargs):
+                if argv == ["adb", "devices"]:
+                    return subprocess.CompletedProcess(
+                        args=argv,
+                        returncode=0,
+                        stdout="List of devices attached\nraspi\tdevice\n",
+                        stderr="",
+                    )
+                return subprocess.CompletedProcess(args=argv, returncode=0)
+
+            with mock.patch("scripts.agp_lib._deploy.subprocess.run", side_effect=run_side_effect) as run:
 
                 result = run_deploy_command(
                     "native",
@@ -568,16 +717,84 @@ class AgpCliTest(unittest.TestCase):
                 )
 
         self.assertEqual(0, result)
-        self.assertEqual(2, run.call_count)
-        push_argv = run.call_args_list[0].args[0]
-        chmod_argv = run.call_args_list[1].args[0]
+        self.assertEqual(3, run.call_count)
+        devices_argv = run.call_args_list[0].args[0]
+        push_argv = run.call_args_list[1].args[0]
+        chmod_argv = run.call_args_list[2].args[0]
+        self.assertEqual(["adb", "devices"], devices_argv)
         self.assertEqual(["adb", "-s", "raspi", "push"], push_argv[:4])
         self.assertEqual("/home/user/sensor_demo", push_argv[-1])
-        self.assertEqual(["adb", "-s", "raspi", "shell", "chmod", "0755", "/home/user/sensor_demo"], chmod_argv)
+        self.assertEqual(["adb", "-s", "raspi", "shell", "chmod 0755 /home/user/sensor_demo"], chmod_argv)
+
+    def test_adb_device_available_checks_serial_when_given(self) -> None:
+        output = "List of devices attached\nraspi\tdevice\nother\toffline\n"
+        self.assertTrue(adb_device_available(output, serial=None))
+        self.assertTrue(adb_device_available(output, serial="raspi"))
+        self.assertFalse(adb_device_available(output, serial="missing"))
+        self.assertFalse(adb_device_available("List of devices attached\n", serial=None))
+
+    def test_native_deploy_auto_attaches_usb_when_adb_device_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "files" / "sensor_demo"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sensor-demo",
+                        "deploy": {
+                            "native": {
+                                "files": [
+                                    {
+                                        "src": "files/sensor_demo",
+                                        "dest": "/home/user/sensor_demo",
+                                        "mode": "0755",
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            devices_calls = 0
+
+            def run_side_effect(argv, **kwargs):
+                nonlocal devices_calls
+                if argv == ["adb", "devices"]:
+                    devices_calls += 1
+                    stdout = (
+                        "List of devices attached\n"
+                        if devices_calls == 1
+                        else "List of devices attached\nraspi\tdevice\n"
+                    )
+                    return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+                return subprocess.CompletedProcess(args=argv, returncode=0)
+
+            with (
+                mock.patch("scripts.agp_lib._deploy.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.agp_lib._deploy.run_usb_command", return_value=0) as usb_attach,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                result = run_deploy_command(
+                    "native",
+                    artifacts_dir=str(root),
+                    serial="raspi",
+                    dest="/home/user",
+                )
+
+        self.assertEqual(0, result)
+        usb_attach.assert_called_once_with("attach")
+        self.assertEqual(4, run.call_count)
+        self.assertEqual(["adb", "devices"], run.call_args_list[0].args[0])
+        self.assertEqual(["adb", "devices"], run.call_args_list[1].args[0])
+        self.assertEqual(["adb", "-s", "raspi", "push"], run.call_args_list[2].args[0][:4])
 
     def test_sim_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
-            result = main(["sim", "deploy", "--host", "ec2-test"])
+            result = main(["sim", "env", "deploy", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_deploy.assert_called_once_with(
@@ -585,6 +802,23 @@ class AgpCliTest(unittest.TestCase):
             artifacts_dir=None,
             host="ec2-test",
         )
+
+    def test_sim_vm_commands_are_available_from_cli(self) -> None:
+        cases = [
+            (["sim", "boot", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
+            (["sim", "shutdown", "--host", "ec2-test"], "stop"),
+            (["sim", "status", "--host", "ec2-test"], "status"),
+        ]
+
+        for argv, ec2_command in cases:
+            with self.subTest(argv=argv):
+                with mock.patch("scripts.agp_lib.cli.run_ec2_command", return_value=0) as run_ec2:
+                    result = main(argv)
+
+                self.assertEqual(0, result)
+                run_ec2.assert_called_once()
+                self.assertEqual(ec2_command, run_ec2.call_args.args[0])
+                self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
 
     def test_native_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_deploy_command", return_value=0) as run_deploy:
@@ -660,8 +894,8 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual("raspi-net:/home/user/sensor_demo", copy_argv[-1])
         self.assertEqual(["ssh", "-F"], chmod_argv[:2])
         self.assertEqual(
-            ["raspi-net", "chmod", "0755", "/home/user/sensor_demo"],
-            chmod_argv[-4:],
+            ["raspi-net", "chmod 0755 /home/user/sensor_demo"],
+            chmod_argv[-2:],
         )
 
     def test_native_deploy_with_ssh_provider_requires_host(self) -> None:
@@ -679,6 +913,132 @@ class AgpCliTest(unittest.TestCase):
 
         self.assertNotEqual(0, result)
         run.assert_not_called()
+
+    def test_native_fetch_copies_manifest_sources_from_codespace(self) -> None:
+        manifest = {
+            "name": "sensor-demo",
+            "deploy": {
+                "sim": {
+                    "files": [
+                        {"src": "files/cuse_i2c", "dest": "~/cuse_i2c", "mode": "0755"},
+                        {"src": "files/web-bridge", "dest": "~/web-bridge"},
+                    ]
+                },
+                "native": {
+                    "files": [
+                        {"src": "files/sensor_demo", "dest": "/home/user/sensor_demo", "mode": "0755"}
+                    ]
+                },
+            },
+        }
+
+        def fake_cp(
+            codespace: str,
+            remote_path: str,
+            local_path: Path,
+            *,
+            recursive: bool = False,
+        ) -> subprocess.CompletedProcess:
+            self.assertEqual("codespace-test", codespace)
+            if remote_path.endswith("/artifact.json"):
+                local_path.write_text(json.dumps(manifest), encoding="utf-8")
+                return subprocess.CompletedProcess(args=[], returncode=0)
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            if remote_path.endswith("/files/web-bridge"):
+                local_path.mkdir(parents=True, exist_ok=True)
+                (local_path / "bridge.py").write_text("", encoding="utf-8")
+            else:
+                local_path.write_text("", encoding="utf-8")
+            self.assertTrue(recursive)
+            return subprocess.CompletedProcess(args=[], returncode=0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch("scripts.agp_lib._deploy.select_codespace", return_value="codespace-test"),
+                mock.patch("scripts.agp_lib._deploy.gh_codespace_cp", side_effect=fake_cp) as cp,
+            ):
+                result = fetch_codespace_artifacts(root, remote_root="/workspaces/out")
+
+            written_manifest = json.loads((root / "artifact.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(0, result)
+        self.assertEqual(manifest, written_manifest)
+        self.assertEqual(4, cp.call_count)
+
+    def test_native_sync_fetches_then_deploys(self) -> None:
+        with (
+            mock.patch("scripts.agp_lib._deploy.fetch_codespace_artifacts", return_value=0) as fetch,
+            mock.patch("scripts.agp_lib._deploy.run_deploy_command", return_value=0) as deploy,
+        ):
+            result = run_native_sync_command(
+                artifacts_dir=str(Path("/tmp/agp-artifacts")),
+                codespace="codespace-test",
+                remote_root="/workspaces/out",
+                serial="raspi",
+                dest="/home/user",
+            )
+
+        self.assertEqual(0, result)
+        fetch.assert_called_once()
+        deploy.assert_called_once_with(
+            "native",
+            artifacts_dir=str(Path("/tmp/agp-artifacts").resolve()),
+            serial="raspi",
+            host=None,
+            dest="/home/user",
+        )
+
+    def test_native_fetch_is_available_from_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch("scripts.agp_lib.cli.fetch_codespace_artifacts", return_value=0) as fetch:
+                result = main(
+                    [
+                        "native",
+                        "fetch",
+                        "--codespace",
+                        "codespace-test",
+                        "--remote-root",
+                        "/workspaces/out",
+                        "--artifacts-dir",
+                        str(root),
+                    ]
+                )
+
+        self.assertEqual(0, result)
+        fetch.assert_called_once_with(
+            root.resolve(),
+            codespace="codespace-test",
+            remote_root="/workspaces/out",
+        )
+
+    def test_native_sync_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_native_sync_command", return_value=0) as sync:
+            result = main(
+                [
+                    "native",
+                    "sync",
+                    "--codespace",
+                    "codespace-test",
+                    "--remote-root",
+                    "/workspaces/out",
+                    "--serial",
+                    "raspi",
+                    "--dest",
+                    "/home/user",
+                ]
+            )
+
+        self.assertEqual(0, result)
+        sync.assert_called_once_with(
+            artifacts_dir=None,
+            codespace="codespace-test",
+            remote_root="/workspaces/out",
+            serial="raspi",
+            host=None,
+            dest="/home/user",
+        )
 
     def test_code_start_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_code_command", return_value=0) as run_code:
@@ -698,6 +1058,8 @@ class AgpCliTest(unittest.TestCase):
     def test_code_start_writes_codespace_state_and_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
+            cwd = home / "workspace"
+            cwd.mkdir()
             settings = home / "settings.json"
 
             def run_side_effect(argv, **kwargs):
@@ -714,7 +1076,7 @@ class AgpCliTest(unittest.TestCase):
                 mock.patch("scripts.agp_lib._code.subprocess.run", side_effect=run_side_effect),
             ):
                 output = io.StringIO()
-                with contextlib.redirect_stdout(output):
+                with contextlib.chdir(cwd), contextlib.redirect_stdout(output):
                     result = start_code_codespace(
                         codespace="codespace-test",
                         settings=str(settings),
@@ -733,6 +1095,7 @@ class AgpCliTest(unittest.TestCase):
             state = (home / ".config" / "codespace-dev" / "env").read_text(encoding="utf-8")
             self.assertIn("CODESPACE_NAME='codespace-test'", state)
             self.assertIn("CODESPACE_SSH_HOST='codespace-host'", state)
+            self.assertIn(f"CODESPACE_MOUNT_DIR='{cwd / 'codespaces'}'", state)
             terminal = home / ".local" / "bin" / "codespace-terminal"
             self.assertIn("Run: agp code start", terminal.read_text(encoding="utf-8"))
             profile = json.loads(settings.read_text(encoding="utf-8"))
@@ -740,6 +1103,38 @@ class AgpCliTest(unittest.TestCase):
                 {"path": str(terminal)},
                 profile["terminal.integrated.profiles.linux"]["Codespaces"],
             )
+
+    def test_code_start_times_out_when_gh_ssh_config_hangs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            settings = home / "settings.json"
+
+            def run_side_effect(argv, **kwargs):
+                if argv[:4] == ["gh", "codespace", "ssh", "-c"]:
+                    raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+                completed = mock.Mock()
+                completed.returncode = 0
+                completed.stdout = ""
+                return completed
+
+            with (
+                mock.patch("scripts.agp_lib._code.Path.home", return_value=home),
+                mock.patch("scripts.agp_lib._code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.agp_lib._code.subprocess.run", side_effect=run_side_effect),
+            ):
+                stderr = io.StringIO()
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    result = start_code_codespace(
+                        codespace="codespace-test",
+                        settings=str(settings),
+                        no_mount=True,
+                        gh_timeout=3,
+                    )
+
+            self.assertEqual(1, result)
+            self.assertIn("timed out after 3s", stderr.getvalue())
+            self.assertFalse((home / ".ssh" / "codespaces").exists())
 
     def test_code_start_can_select_single_listed_codespace(self) -> None:
         output = "single-codespace\towner/repo\tmain\tStopped\tShutdown\t1h\n"
@@ -874,6 +1269,7 @@ class AgpCliTest(unittest.TestCase):
             result = main(
                 [
                     "sim",
+                    "env",
                     "start",
                     "--host",
                     "ec2-test",
@@ -897,7 +1293,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_cli_omits_host_by_default(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "start"])
+            result = main(["sim", "env", "start"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
@@ -912,7 +1308,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_status_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "status", "--host", "ec2-test"])
+            result = main(["sim", "env", "status", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
@@ -1144,6 +1540,35 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual(["/dev/gpiochip0"], payload["gpiochips"])
         self.assertTrue(payload["ok"])
 
+    def test_parse_gpio_runtime_status_builds_structured_payload(self) -> None:
+        raw = (
+            "@@SERVICE@@\n"
+            "active\n"
+            "@@DEVICE@@\n"
+            "/dev/gpiochip0 1\n"
+            "@@MOUNT@@\n"
+            "1\n"
+            "/dev/gpiochip1\n"
+            "@@CONFIGFS@@\n"
+            "1\n"
+            "1\n"
+            "gpiochip1\n"
+            "@@GPIOCHIPS@@\n"
+            "/dev/gpiochip0\n"
+            "/dev/gpiochip1\n"
+        )
+
+        payload = parse_gpio_runtime_status(raw)
+
+        self.assertEqual("active", payload["service"])
+        self.assertEqual({"path": "/dev/gpiochip0", "exists": True}, payload["device"])
+        self.assertEqual({"active": True, "source": "/dev/gpiochip1"}, payload["mount"])
+        self.assertEqual(
+            {"active": True, "live": "1", "chip_name": "gpiochip1"},
+            payload["configfs"],
+        )
+        self.assertTrue(payload["ok"])
+
     def test_gpio_sim_check_json_outputs_machine_readable_payload(self) -> None:
         completed = mock.Mock(
             returncode=0,
@@ -1173,6 +1598,37 @@ class AgpCliTest(unittest.TestCase):
         self.assertEqual("6.8.0-test", payload["kernel"])
         self.assertFalse(payload["module_available"])
         self.assertFalse(payload["ok"])
+
+    def test_sim_gpio_status_json_outputs_machine_readable_payload(self) -> None:
+        completed = mock.Mock(
+            returncode=0,
+            stdout=(
+                "@@SERVICE@@\n"
+                "active\n"
+                "@@DEVICE@@\n"
+                "/dev/gpiochip0 1\n"
+                "@@MOUNT@@\n"
+                "0\n"
+                "@@CONFIGFS@@\n"
+                "1\n"
+                "1\n"
+                "gpiochip0\n"
+                "@@GPIOCHIPS@@\n"
+                "/dev/gpiochip0\n"
+            ),
+            stderr="",
+        )
+        with mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_sim_gpio_command("status", host="ec2-test", json_output=True)
+
+        self.assertEqual(0, result)
+        self.assertIn("@@SERVICE@@", run.call_args.args[0][-1])
+        payload = json.loads(output.getvalue())
+        self.assertEqual("ec2-test", payload["host"])
+        self.assertTrue(payload["ok"])
+        self.assertEqual("gpiochip0", payload["configfs"]["chip_name"])
 
     def test_sim_diag_json_outputs_machine_readable_payload(self) -> None:
         completed = mock.Mock(
@@ -1206,7 +1662,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_gpio_sim_check_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "gpio-sim-check", "--json", "--host", "ec2-test"])
+            result = main(["sim", "env", "gpio-sim-check", "--json", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
@@ -1219,9 +1675,23 @@ class AgpCliTest(unittest.TestCase):
             json_output=True,
         )
 
+    def test_sim_gpio_start_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
+            result = main(["sim", "gpio", "start", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
+
+    def test_sim_gpio_plan_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
+            result = main(["sim", "gpio", "plan", "--json"])
+
+        self.assertEqual(0, result)
+        run_gpio.assert_called_once_with("plan", host=None, json_output=True)
+
     def test_sim_diag_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "diag", "--json", "--host", "ec2-test"])
+            result = main(["sim", "env", "diag", "--json", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
@@ -1282,7 +1752,7 @@ class SimPanelTests(unittest.TestCase):
 
     def test_sim_button_press_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
-            result = main(["sim", "button", "press", "17", "--host", "ec2-test"])
+            result = main(["sim", "ui", "button", "press", "17", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_panel.assert_called_once_with(
@@ -1294,7 +1764,7 @@ class SimPanelTests(unittest.TestCase):
 
     def test_sim_rfid_tap_is_available_from_cli(self) -> None:
         with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
-            result = main(["sim", "rfid", "tap", "04:AB:CD:EF:01:23", "--host", "ec2-test"])
+            result = main(["sim", "ui", "rfid", "tap", "04:AB:CD:EF:01:23", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_panel.assert_called_once_with(
@@ -1303,14 +1773,18 @@ class SimPanelTests(unittest.TestCase):
             uid="04:AB:CD:EF:01:23",
         )
 
-    def test_sim_state_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.agp_lib.cli.run_sim_panel", return_value=0) as run_panel:
-            result = main(["sim", "state", "--json", "--host", "ec2-test"])
+    def test_sim_env_status_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.agp_lib.cli.run_sim_command", return_value=0) as run_sim:
+            result = main(["sim", "env", "status", "--json", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
-        run_panel.assert_called_once_with(
-            "state",
+        run_sim.assert_called_once_with(
+            "status",
             host="ec2-test",
+            settings=None,
+            profile_name=None,
+            port_forward=True,
+            stop_port_forward=True,
             json_output=True,
         )
 

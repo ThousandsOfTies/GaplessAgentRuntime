@@ -27,7 +27,7 @@
 | 普通のソフト | AgentCockpit |
 |---|---|
 | 本番で動かして、壊れたら直す | 仮想で予行 → 確信してから実機 |
-| 状態は外から見るもの | 自分で状態を申告する（`agp sim diag --json` / `ok`） |
+| 状態は外から見るもの | 自分で状態を申告する（`agp sim env diag --json` / `ok`） |
 | 人間が全部判断 | AI が試行 → 観測 → 補正のループを回す |
 
 つまり「試す → 観る → 直す」という自己改善ループを、人間の外ではなくシステムの内側に
@@ -38,7 +38,7 @@
 | 器官 | AgentCockpit の要素 |
 |---|---|
 | 想像力 / 内部世界モデル | 仮想デバイス（CUSE / gpio-sim / bridge） |
-| 感覚・自己認識 | `agp sim diag --json` の `ok` / exit code |
+| 感覚・自己認識 | `agp sim env diag --json` の `ok` / exit code |
 | 本能・行動規範 | `AGENT.md` の AI オペレーション契約 |
 | 運動を実行する小脳 | AI（Codex / Copilot） |
 | 意志（何をしたいか） | 人間 |

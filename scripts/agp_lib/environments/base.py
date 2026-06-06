@@ -75,6 +75,43 @@ class DevEnvironment(ABC):
     def run_subprocess(cls, argv: list[str]) -> int:
         return subprocess.run(argv, check=False).returncode
 
+
+    @classmethod
+    def run_remote(
+        cls,
+        target: str,
+        command: str,
+        *,
+        capture_output: bool = False,
+        text: bool = True,
+        check: bool = False,
+    ) -> subprocess.CompletedProcess:
+        raise NotImplementedError(f"{cls.__name__} does not implement run_remote")
+
+    @classmethod
+    def push_file(cls, target: str, src: str | Path, dest: str | Path) -> int:
+        raise NotImplementedError(f"{cls.__name__} does not implement push_file")
+
+    @classmethod
+    def pull_file(cls, target: str, src: str | Path, dest: str | Path) -> int:
+        raise NotImplementedError(f"{cls.__name__} does not implement pull_file")
+
+    @classmethod
+    def start_port_forward(cls, target: str) -> int:
+        raise NotImplementedError(f"{cls.__name__} does not implement start_port_forward")
+
+    @classmethod
+    def stop_port_forward(cls, target: str) -> int:
+        raise NotImplementedError(f"{cls.__name__} does not implement stop_port_forward")
+
+    @classmethod
+    def status_port_forward(cls, target: str) -> int:
+        raise NotImplementedError(f"{cls.__name__} does not implement status_port_forward")
+
+    @classmethod
+    def interactive_shell_script(cls, target: str) -> str:
+        raise NotImplementedError(f"{cls.__name__} does not implement interactive_shell_script")
+
     @classmethod
     def sudo_block_reason(cls) -> str | None:
         result = subprocess.run(

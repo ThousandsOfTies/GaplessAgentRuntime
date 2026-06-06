@@ -21,3 +21,28 @@ class SshScpEnvironment(DevEnvironment):
             "OpenSSH client をインストールしてください。"
             " 実機側にも sshd が起動している必要があります。"
         )
+
+
+    @classmethod
+    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
+        import subprocess
+        from pathlib import Path
+        config_arg = str(Path.home() / ".ssh" / "config")
+        cmd = ["ssh", "-F", config_arg, target, command]
+        return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
+
+    @classmethod
+    def push_file(cls, target: str, src, dest) -> int:
+        import subprocess
+        from pathlib import Path
+        config_arg = str(Path.home() / ".ssh" / "config")
+        cmd = ["scp", "-F", config_arg, "-r", str(src), f"{target}:{dest}"]
+        return subprocess.run(cmd, check=False).returncode
+
+    @classmethod
+    def pull_file(cls, target: str, src, dest) -> int:
+        import subprocess
+        from pathlib import Path
+        config_arg = str(Path.home() / ".ssh" / "config")
+        cmd = ["scp", "-F", config_arg, "-r", f"{target}:{src}", str(dest)]
+        return subprocess.run(cmd, check=False).returncode

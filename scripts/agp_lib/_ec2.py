@@ -1,6 +1,6 @@
-"""`agp ec2` subcommand: EC2 simulation host start/stop/status over AWS CLI.
+"""Simulation VM control for `agp sim boot/shutdown/status` over AWS CLI.
 
-旧 ``ec2.ps1`` の Python 移植。WSL2 から AWS CLI を呼び、起動後は public IP を
+旧 Windows PowerShell EC2 helper の Python 移植。WSL2 から AWS CLI を呼び、起動後は public IP を
 取得して ``~/.ssh/config`` の対象 Host の ``HostName`` を更新する。
 """
 
@@ -21,6 +21,7 @@ from scripts.agp_lib._config import (
 )
 
 SSH_CONFIG_PATH = Path.home() / ".ssh" / "config"
+COMMAND_LABEL = "agp sim VM"
 
 
 def _aws_available() -> bool:
@@ -88,7 +89,7 @@ def update_ssh_config_hostname(host: str, ip: str, *, path: Path = SSH_CONFIG_PA
     対象 Host ブロックが見つかった場合のみ書き換え、成否を返す。
     """
     if not path.exists():
-        print(f"agp ec2: {path} が見つかりません。SSH config の更新をスキップします。", file=sys.stderr)
+        print(f"{COMMAND_LABEL}: {path} が見つかりません。SSH config の更新をスキップします。", file=sys.stderr)
         return False
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -111,7 +112,7 @@ def update_ssh_config_hostname(host: str, ip: str, *, path: Path = SSH_CONFIG_PA
 
     if not updated:
         print(
-            f"agp ec2: SSH config に 'Host {host}' の HostName 行が見つかりませんでした。",
+            f"{COMMAND_LABEL}: SSH config に 'Host {host}' の HostName 行が見つかりませんでした。",
             file=sys.stderr,
         )
         return False
@@ -156,7 +157,7 @@ def run_ec2_command(
 ) -> int:
     if not _aws_available():
         print(
-            "agp ec2: aws CLI が見つかりません。WSL2 側に AWS CLI を install してください。",
+            f"{COMMAND_LABEL}: aws CLI が見つかりません。WSL2 側に AWS CLI を install してください。",
             file=sys.stderr,
         )
         return 1
@@ -185,7 +186,7 @@ def run_ec2_command(
         if result.returncode != 0:
             print(result.stderr.strip(), file=sys.stderr)
             return result.returncode
-        print(f"agp ec2: stop 要求を送信しました ({resolved_instance_id})")
+        print(f"{COMMAND_LABEL}: shutdown 要求を送信しました ({resolved_instance_id})")
         return 0
 
     if command == "start":
@@ -196,30 +197,30 @@ def run_ec2_command(
         if result.returncode != 0:
             print(result.stderr.strip(), file=sys.stderr)
             return result.returncode
-        print(f"agp ec2: start 要求を送信しました ({resolved_instance_id})。running を待機します...")
+        print(f"{COMMAND_LABEL}: boot 要求を送信しました ({resolved_instance_id})。running を待機します...")
 
         if not _wait_running(resolved_instance_id, resolved_region):
             return 1
 
         ip = ec2_public_ip(resolved_instance_id, resolved_region)
         if ip is None:
-            print("agp ec2: public IP を取得できませんでした。", file=sys.stderr)
+            print(f"{COMMAND_LABEL}: public IP を取得できませんでした。", file=sys.stderr)
             return 1
-        print(f"agp ec2: running. public ip = {ip}")
+        print(f"{COMMAND_LABEL}: running. public ip = {ip}")
 
         if update_ssh:
             if update_ssh_config_hostname(resolved_host, ip):
-                print(f"agp ec2: SSH config の Host {resolved_host} を {ip} に更新しました。")
+                print(f"{COMMAND_LABEL}: SSH config の Host {resolved_host} を {ip} に更新しました。")
 
         if pull:
             repo_dir = ec2_repo_dir(config)
             if repo_dir:
                 return _remote_git_pull(resolved_host, repo_dir)
             print(
-                "agp ec2: --pull が指定されましたが ec2.repo_dir が未設定のため git pull をスキップします。",
+                f"{COMMAND_LABEL}: --pull が指定されましたが ec2.repo_dir が未設定のため git pull をスキップします。",
                 file=sys.stderr,
             )
         return 0
 
-    print(f"unknown ec2 command: {command}", file=sys.stderr)
+    print(f"unknown simulation VM command: {command}", file=sys.stderr)
     return 1

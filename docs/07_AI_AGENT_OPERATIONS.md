@@ -14,8 +14,8 @@ AgentCockpit で AI に任せたい作業は、アプリ機能の実装だけで
 
 | 人間向け | AI エージェント向け |
 |---|---|
-| Web Panel で LED / ボタン / RFID / OLED を見る | `agp sim button/rfid/range/state` で仮想 H/W を操作する |
-| SSH でログを見る | `agp sim log` / `agp sim diag`（AI は `agp sim diag --json`）で観察する |
+| Web Panel で LED / ボタン / RFID / OLED を見る | `agp sim ui button/rfid/range` と `agp sim env status --json` で仮想 H/W を操作・観察する |
+| SSH でログを見る | `agp sim env log` / `agp sim env diag`（AI は `agp sim env diag --json`）で観察する |
 | 手順書を読みながら実行する | `agp` コマンドと Make ターゲットを組み合わせて実行する |
 
 AIに任せたい操作は、なるべく「短く、明示的で、再実行しやすいコマンド」にします。
@@ -31,25 +31,25 @@ AIに任せたい操作は、なるべく「短く、明示的で、再実行し
 
 # EC2 上でテスト用 /dev/* runtime を起動
 # Hardware Panel 用の 8080/8765 port forward も同時に開始
-agp sim start
+agp sim env start
 
 # VS Code terminal profile "EC2 Simulation" などから EC2 へ入り、
 # 本番と同じアプリ起動手順を実行
 ~/sensor_demo
 
 # ログ確認
-agp sim log
+agp sim env log
 
 # プロセス、デバイス、API状態をまとめて確認
-agp sim diag
+agp sim env diag
 
 # 代表操作を実行
-agp sim button press 17
-agp sim rfid tap 04:AB:CD:EF:01:23
-agp sim state --json
+agp sim ui button press 17
+agp sim ui rfid tap 04:AB:CD:EF:01:23
+agp sim env status --json
 
 # 停止
-agp sim stop
+agp sim env stop
 ```
 
 ---
@@ -60,23 +60,23 @@ agp sim stop
 
 ```bash
 # GPIO17 ボタンを短押し
-agp sim button press 17 --duration-ms 150
+agp sim ui button press 17 --duration-ms 150
 
 # ボタン状態を直接セット（0=離す / 1=押す）
-agp sim button set 17 1
+agp sim ui button set 17 1
 
 # RFID カードをタップ / 外す
-agp sim rfid tap 04:AB:CD:EF:01:23
-agp sim rfid remove
+agp sim ui rfid tap 04:AB:CD:EF:01:23
+agp sim ui rfid remove
 
 # VL53L0X 距離センサー値を変更
-agp sim range set 450
+agp sim ui range set 450
 
 # 仮想 H/W の現在状態（OLED framebuf 含む）を取得
-agp sim state --json
+agp sim env status --json
 
 # port forward と bridge の共有状態を確認
-agp sim status
+agp sim env status
 ```
 
 ---
@@ -87,12 +87,12 @@ agp sim status
 
 | Endpoint | Method | 用途 | 対応 `agp` コマンド |
 |---|---|---|---|
-| `/api/state` | GET | 現在の仮想 H/W 状態を取得 | `agp sim state` |
-| `/api/button` | POST | GPIO ボタン状態を直接セット | `agp sim button set` |
-| `/api/button/press` | POST | GPIO ボタンを押して離す | `agp sim button press` |
-| `/api/rfid/tap` | POST | RFID カードを置く | `agp sim rfid tap` |
-| `/api/rfid/remove` | POST | RFID カードを外す | `agp sim rfid remove` |
-| `/api/range` | POST | VL53L0X の距離値をセット | `agp sim range set` |
+| `/api/state` | GET | 現在の仮想 H/W 状態を取得 | `agp sim env status --json` |
+| `/api/button` | POST | GPIO ボタン状態を直接セット | `agp sim ui button set` |
+| `/api/button/press` | POST | GPIO ボタンを押して離す | `agp sim ui button press` |
+| `/api/rfid/tap` | POST | RFID カードを置く | `agp sim ui rfid tap` |
+| `/api/rfid/remove` | POST | RFID カードを外す | `agp sim ui rfid remove` |
+| `/api/range` | POST | VL53L0X の距離値をセット | `agp sim ui range set` |
 
 例（参照用の生コマンド）:
 
@@ -109,9 +109,9 @@ curl -s http://127.0.0.1:8080/api/state
 仮想 H/W 操作は JSON シナリオとして定義できます。AI Agent や CI は、同じシナリオを繰り返し実行することで、手順の再現性を確保できます。
 
 ```bash
-agp sim button press 17
-agp sim rfid tap 04:AB:CD:EF:01:23
-agp sim state --json
+agp sim ui button press 17
+agp sim ui rfid tap 04:AB:CD:EF:01:23
+agp sim env status --json
 ```
 
 シナリオ例:
@@ -152,14 +152,14 @@ sensor_demo を EC2 にデプロイして、シミュレーション用の /dev 
 
 ```bash
 # agp-build-env Codespace でビルドし、成果物を WSL hub 経由で EC2 へ転送済み
-agp sim start
+agp sim env start
 # VS Code terminal profile "EC2 Simulation" などから EC2 へログイン
 ~/sensor_demo
-agp sim button press 17
-agp sim rfid tap 04:AB:CD:EF:01:23
-agp sim state --json
-agp sim status
-agp sim log
+agp sim ui button press 17
+agp sim ui rfid tap 04:AB:CD:EF:01:23
+agp sim env status --json
+agp sim env status
+agp sim env log
 ```
 
 ---
@@ -174,10 +174,10 @@ MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent (Claude Desktop
 
 | 項目 | 内容 | 受益者 |
 |---|---|---|
-| `--json` 出力モード | `agp sim diag --json` を実装済み（processes / devices / api / ok を構造化出力）。他コマンドへも順次展開 | VSCode Agent / CI |
-| 構造化ログ + 末尾 summary | `agp sim diag` の最後に "OK / FAIL: <理由>" の 1 行 summary を出し、Agent が 1 ターンで判断できるようにする | VSCode Agent |
+| `--json` 出力モード | `agp sim env diag --json` を実装済み（processes / devices / api / ok を構造化出力）。他コマンドへも順次展開 | VSCode Agent / CI |
+| 構造化ログ + 末尾 summary | `agp sim env diag` の最後に "OK / FAIL: <理由>" の 1 行 summary を出し、Agent が 1 ターンで判断できるようにする | VSCode Agent |
 | `.vscode/tasks.json` テンプレート | `agp setup` で代表タスク (sim start / stop / deploy / button press 等) を仕込み、Agent の `run_task` から呼べるようにする | VSCode Agent |
-| copilot-instructions.md / AGENT.md の作法強化 | "まず `agp sim status` を確認する" 等の手順を Agent に学習させる | VSCode Agent |
+| copilot-instructions.md / AGENT.md の作法強化 | "まず `agp sim env status` を確認する" 等の手順を Agent に学習させる | VSCode Agent |
 | `agp terminal run` の活用 | 長時間実行やインタラクティブ操作は可視 terminal に出して、人間が割り込めるようにする | 人間 + Agent |
 
 このアプローチは、買い手が普段使う VSCode 環境の中で価値が増えるため、MCP エコシステム全体を保守する責任を負わずに済みます。

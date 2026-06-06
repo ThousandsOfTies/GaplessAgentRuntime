@@ -7,6 +7,7 @@ VSCODE_EXT_VERSION = 0.0.1
 VSCODE_EXT_SRC = tools/vscode-agentcockpit
 VSCODE_EXT_DEST ?= $(HOME)/.vscode-server/extensions/$(VSCODE_EXT_NAME)-$(VSCODE_EXT_VERSION)
 MCP_SERVER = $(CURDIR)/tools/agentcockpit-mcp/server.py
+AGP_REQUIREMENTS = requirements-agp.txt
 
 SSH_DST = $(if $(KEY),ubuntu@$(EC2),$(EC2))
 SSH     = ssh $(if $(KEY),-i $(KEY),)
@@ -18,7 +19,19 @@ agp:
 	$(error make agp は廃止しました。初期構築は make init、日常開始は make start を使ってください)
 
 init:
-	python3 -m venv --without-pip .venv
+	@if [ ! -x .venv/bin/python ]; then \
+	  python3 -m venv .venv || { \
+	    echo "python3 -m venv が pip 付き venv を作成できませんでした。"; \
+	    echo "WSL/Ubuntu では sudo apt-get install python3-venv を実行してから make init を再実行してください。"; \
+	    exit 1; \
+	  }; \
+	fi
+	@.venv/bin/python -m pip --version >/dev/null 2>&1 || { \
+	  echo ".venv に pip がありません。rm -rf .venv 後、python3-venv を導入して make init を再実行してください。"; \
+	  echo "例: sudo apt-get install python3-venv && rm -rf .venv && make init"; \
+	  exit 1; \
+	}
+	.venv/bin/python -m pip install -r $(AGP_REQUIREMENTS)
 	ln -sf $(CURDIR)/scripts/agp .venv/bin/agp
 	mkdir -p $(dir $(VSCODE_EXT_DEST))
 	rm -rf $(VSCODE_EXT_DEST)
@@ -42,7 +55,7 @@ init:
 start:
 	@test -x .venv/bin/agp || { echo "Run 'make init' first."; exit 1; }
 	@echo "Entering AgentCockpit virtual environment... (Type 'exit' to leave)"
-	@bash -c 'TMP_RC=$$(mktemp); echo "source ~/.bashrc" > $$TMP_RC; echo "source $(CURDIR)/.venv/bin/activate" >> $$TMP_RC; echo "rm -f $$TMP_RC" >> $$TMP_RC; exec bash --rcfile $$TMP_RC -i'
+	@bash -c 'TMP_RC=$$(mktemp); echo "source ~/.bashrc" > $$TMP_RC; echo "source $(CURDIR)/.venv/bin/activate" >> $$TMP_RC; echo "source <($(CURDIR)/.venv/bin/agp completion bash)" >> $$TMP_RC; echo "rm -f $$TMP_RC" >> $$TMP_RC; exec bash --rcfile $$TMP_RC -i'
 
 port-forward:
 	tools/forward_ec2_ports.sh --host $(or $(EC2),vibecode-graviton)
@@ -57,12 +70,12 @@ sim-test:
 ifndef EC2
 	$(error EC2 変数を指定してください: make sim-test EC2=vibecode-graviton)
 endif
-	scripts/agp sim button press 17 --duration-ms 150 --host $(EC2)
+	scripts/agp sim ui button press 17 --duration-ms 150 --host $(EC2)
 	@sleep 1
-	scripts/agp sim rfid tap $(UID) --host $(EC2)
+	scripts/agp sim ui rfid tap $(UID) --host $(EC2)
 	@sleep 1
-	scripts/agp sim status --host $(EC2)
-	scripts/agp sim log --host $(EC2)
+	scripts/agp sim env status --host $(EC2)
+	scripts/agp sim env log --host $(EC2)
 
 sim-scenario:
 ifndef EC2

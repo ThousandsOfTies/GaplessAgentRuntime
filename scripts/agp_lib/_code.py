@@ -9,11 +9,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.agp_lib._config import PROJECT_ROOT
+from scripts.agp_lib.environments.discovery import discover_environment_providers
+from scripts.agp_lib.environments.base import DevEnvironment
+
+def _get_dev_provider() -> type[DevEnvironment]:
+    from scripts.agp_lib._config import load_config
+    config = load_config()
+    pid = config.get("selected_providers", {}).get("development")
+    providers = discover_environment_providers()
+    if pid:
+        for p in providers:
+            if p.provider_id == pid:
+                return p
+    for p in providers:
+        if p.provider_id == "github_codespaces":
+            return p
+    raise RuntimeError("No development provider found")
+
+
 from scripts.agp_lib._vscode import (
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
 )
+
+DEFAULT_GH_TIMEOUT_SECONDS = 60
 
 
 def run_code_command(
@@ -25,6 +44,7 @@ def run_code_command(
     settings: str | None = None,
     profile_name: str | None = None,
     no_mount: bool = False,
+    gh_timeout: int | None = None,
 ) -> int:
     if command == "start":
         return start_code_codespace(
@@ -34,6 +54,7 @@ def run_code_command(
             settings=settings,
             profile_name=profile_name,
             no_mount=no_mount,
+            gh_timeout=gh_timeout,
         )
     if command == "stop":
         return stop_code_codespace(
@@ -54,6 +75,7 @@ def start_code_codespace(
     settings: str | None = None,
     profile_name: str | None = None,
     no_mount: bool = False,
+    gh_timeout: int | None = None,
 ) -> int:
     home = Path.home()
     selected_codespace = codespace or os.environ.get("CODESPACE_NAME")
@@ -62,7 +84,7 @@ def start_code_codespace(
         "/workspaces/AgentCockpit",
     )
     selected_mount_dir = Path(
-        mount_dir if mount_dir is not None else PROJECT_ROOT.parent / "codespaces"
+        mount_dir if mount_dir is not None else default_codespaces_mount_dir()
     ).expanduser()
     settings_path = Path(
         settings
@@ -75,6 +97,7 @@ def start_code_codespace(
         "CODESPACE_PROFILE_NAME",
         "Codespaces",
     )
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout)
     state_dir = home / ".config" / "codespace-dev"
     state_file = state_dir / "env"
     terminal_bin = home / ".local" / "bin" / "codespace-terminal"
@@ -95,13 +118,15 @@ def start_code_codespace(
             return 1
 
     if not selected_codespace:
-        list_result = subprocess.run(
+        list_result = run_gh_captured(
             ["gh", "codespace", "list"],
-            check=False,
-            capture_output=True,
-            text=True,
+            timeout=selected_gh_timeout,
+            label="list Codespaces",
         )
+        if list_result is None:
+            return 1
         if list_result.returncode != 0:
+            print_completed_stderr(list_result)
             return list_result.returncode
         selected_codespace = select_codespace_from_list(list_result.stdout)
 
@@ -117,13 +142,16 @@ def start_code_codespace(
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     ssh_dir.chmod(0o700)
 
-    config_result = subprocess.run(
+    print(f"Fetching SSH config for Codespace: {selected_codespace}")
+    config_result = run_gh_captured(
         ["gh", "codespace", "ssh", "-c", selected_codespace, "--config"],
-        check=False,
-        capture_output=True,
-        text=True,
+        timeout=selected_gh_timeout,
+        label=f"generate SSH config for Codespace {selected_codespace}",
     )
+    if config_result is None:
+        return 1
     if config_result.returncode != 0:
+        print_completed_stderr(config_result)
         return config_result.returncode
 
     codespaces_config = ssh_dir / "codespaces"
@@ -199,7 +227,7 @@ def stop_code_codespace(
         mount_dir
         or os.environ.get("CODESPACE_MOUNT_DIR")
         or state.get("CODESPACE_MOUNT_DIR")
-        or str(PROJECT_ROOT.parent / "codespaces")
+        or str(default_codespaces_mount_dir())
     ).expanduser()
     settings_path = Path(
         settings
@@ -271,6 +299,59 @@ def codespace_list_rows(output: str) -> list[list[str]]:
     return rows
 
 
+def default_codespaces_mount_dir() -> Path:
+    return Path.cwd() / "codespaces"
+
+
+def gh_timeout_seconds(value: int | None) -> int | None:
+    raw_value = str(value) if value is not None else os.environ.get("CODESPACE_GH_TIMEOUT", "")
+    if not raw_value:
+        return DEFAULT_GH_TIMEOUT_SECONDS
+    try:
+        timeout = int(raw_value)
+    except ValueError:
+        print(
+            f"agp code start: invalid CODESPACE_GH_TIMEOUT={raw_value!r}; "
+            f"using {DEFAULT_GH_TIMEOUT_SECONDS}s",
+            file=sys.stderr,
+        )
+        return DEFAULT_GH_TIMEOUT_SECONDS
+    return timeout if timeout > 0 else None
+
+
+def run_gh_captured(
+    argv: list[str],
+    *,
+    timeout: int | None,
+    label: str,
+) -> subprocess.CompletedProcess[str] | None:
+    env = os.environ.copy()
+    env.setdefault("GH_PROMPT_DISABLED", "1")
+    try:
+        return subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        timeout_text = "without a timeout" if timeout is None else f"after {timeout}s"
+        print(
+            f"agp code start: timed out {timeout_text} while trying to {label}",
+            file=sys.stderr,
+        )
+        print("Check `gh auth status` and try `gh codespace list` directly.", file=sys.stderr)
+        return None
+
+
+def print_completed_stderr(result: subprocess.CompletedProcess[str]) -> None:
+    message = (result.stderr or "").strip()
+    if message:
+        print(message, file=sys.stderr)
+
+
 def first_ssh_host(config_text: str) -> str | None:
     for line in config_text.splitlines():
         parts = line.strip().split()
@@ -280,26 +361,19 @@ def first_ssh_host(config_text: str) -> str | None:
 
 
 def remote_path_exists(host: str, remote_path: str) -> bool:
-    result = subprocess.run(
-        ["ssh", "-T", host, f"test -d {shlex.quote(remote_path)}"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    provider = _get_dev_provider()
+    result = provider.run_remote(host, f"test -d {shlex.quote(remote_path)}", capture_output=True, check=False)
     return result.returncode == 0
 
 
 def detect_codespace_workspace(host: str) -> str | None:
-    result = subprocess.run(
-        [
-            "ssh",
-            "-T",
-            host,
-            'find /workspaces -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sort | head -n 1',
-        ],
-        check=False,
+    provider = _get_dev_provider()
+    result = provider.run_remote(
+        host,
+        'find /workspaces -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sort | head -n 1',
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode != 0:
         return None

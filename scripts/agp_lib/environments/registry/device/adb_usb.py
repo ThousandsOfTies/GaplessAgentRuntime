@@ -51,3 +51,31 @@ class AdbUsbEnvironment(DevEnvironment):
             return update_result
 
         return cls.run_subprocess(["sudo", "apt-get", "install", "-y", "adb"])
+
+
+    @classmethod
+    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
+        import subprocess
+        cmd = ["adb"]
+        if target:
+            cmd.extend(["-s", target])
+        cmd.extend(["shell", command])
+        return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
+
+    @classmethod
+    def push_file(cls, target: str, src, dest) -> int:
+        import subprocess
+        cmd = ["adb"]
+        if target:
+            cmd.extend(["-s", target])
+        cmd.extend(["push", str(src), str(dest)])
+        return subprocess.run(cmd, check=False).returncode
+
+    @classmethod
+    def pull_file(cls, target: str, src, dest) -> int:
+        import subprocess
+        cmd = ["adb"]
+        if target:
+            cmd.extend(["-s", target])
+        cmd.extend(["pull", str(src), str(dest)])
+        return subprocess.run(cmd, check=False).returncode

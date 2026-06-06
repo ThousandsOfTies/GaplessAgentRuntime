@@ -1,28 +1,65 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
-import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
 VENV_PYTHON = VENV / "bin" / "python"
+AGP_REQUIREMENTS = ROOT / "requirements-agp.txt"
+
+
+def ensure_venv() -> int:
+    if not VENV_PYTHON.exists():
+        result = subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=False)
+        if result.returncode != 0 or not VENV_PYTHON.exists():
+            print(
+                "python3 -m venv が pip 付き venv を作成できませんでした。"
+                " python3-venv を導入して make init を再実行してください。",
+                file=sys.stderr,
+            )
+            return result.returncode or 1
+
+    pip_check = subprocess.run(
+        [str(VENV_PYTHON), "-m", "pip", "--version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if pip_check.returncode != 0:
+        print(
+            ".venv に pip がありません。rm -rf .venv 後、python3-venv を導入して make init を再実行してください。",
+            file=sys.stderr,
+        )
+        return pip_check.returncode or 1
+
+    argcomplete_check = subprocess.run(
+        [str(VENV_PYTHON), "-c", "import argcomplete"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if argcomplete_check.returncode != 0:
+        result = subprocess.run(
+            [str(VENV_PYTHON), "-m", "pip", "install", "-r", str(AGP_REQUIREMENTS)],
+            check=False,
+        )
+        if result.returncode != 0:
+            return result.returncode
+
+    return 0
 
 
 def main() -> int:
     if os.environ.get("AGP_VENV") != str(VENV) and os.environ.get("VIRTUAL_ENV") != str(VENV):
-        if not VENV_PYTHON.exists():
-            result = subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=False)
-            if result.returncode != 0 and not VENV_PYTHON.exists():
-                result = subprocess.run(
-                    [sys.executable, "-m", "venv", "--without-pip", str(VENV)],
-                    check=False,
-                )
-            if result.returncode != 0 and not VENV_PYTHON.exists():
-                return result.returncode
+        result = ensure_venv()
+        if result != 0:
+            return result
 
         env = os.environ.copy()
         env["AGP_VENV"] = str(VENV)

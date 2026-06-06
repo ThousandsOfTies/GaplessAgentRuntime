@@ -81,6 +81,22 @@ class GitHubCodespacesEnvironment(DevEnvironment):
             argv.extend(["-c", target])
         return cls.run_subprocess(argv)
 
+    @classmethod
+    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
+        import subprocess
+        argv = ["gh", "codespace", "ssh", "-c", target, "--", command]
+        return subprocess.run(argv, capture_output=capture_output, text=text, check=check)
+
+    @classmethod
+    def interactive_shell_script(cls, target: str) -> str:
+        import shlex
+        quoted_target = shlex.quote(target)
+        return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+exec gh codespace ssh -c {quoted_target}
+"""
+
 
 def _is_wsl_or_linux() -> bool:
     release = platform.release().lower()

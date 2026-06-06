@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import csv
+import io
 import os
 import shlex
 import subprocess
@@ -11,17 +13,48 @@ import textwrap
 from pathlib import Path
 from urllib.parse import quote
 
+from scripts.agp_lib._sim_cmd import build_gpio_systemd_install_command, build_sim_diag_json_command, build_gpio_sim_setup_command, build_gpio_sim_teardown_command, build_systemd_install_command, build_systemd_start_command, build_systemd_stop_command, build_sim_start_command, build_sim_stop_command, build_sim_status_command, build_sim_log_command, build_gpio_runtime_status_command, build_panel_command
+from scripts.agp_lib._sim_parse import parse_sim_diag, parse_gpio_runtime_status, parse_gpio_sim_check
 from scripts.agp_lib._config import (
     PROJECT_ROOT,
     default_ec2_host,
     load_config,
 )
 from scripts.agp_lib._hw import load_hw_definition
+
+from scripts.agp_lib.environments.discovery import discover_environment_providers
+from scripts.agp_lib.environments.base import DevEnvironment
+
+def _get_sim_provider() -> type[DevEnvironment]:
+    config = load_config()
+    pid = config.get("selected_providers", {}).get("simulation")
+    providers = discover_environment_providers()
+    if pid:
+        for p in providers:
+            if p.provider_id == pid:
+                return p
+    for p in providers:
+        if p.provider_id == "ssh_remote":
+            return p
+    raise RuntimeError("No simulation provider found")
+
 from scripts.agp_lib._vscode import write_vscode_terminal_profile
 
 # Machine-readable diag: emit section markers so the WSL side can parse the
 # remote output into structured JSON. Devices are probed as "<path> 0|1".
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
+AGP_ETC_DIR = "/etc/agentcockpit"
+AGP_HARDWARE_DIR = f"{AGP_ETC_DIR}/hardware"
+AGP_SBIN_DIR = "/usr/local/sbin"
+AGP_LIB_DIR = "/usr/local/lib/agentcockpit"
+AGP_RUN_DIR = "/run/agentcockpit"
+AGP_HW_SIM_SOCK = f"{AGP_RUN_DIR}/hw_sim.sock"
+AGP_BRIDGE_DIR = f"{AGP_LIB_DIR}/web-bridge"
+AGP_BRIDGE_START = f"{AGP_SBIN_DIR}/agp-bridge-start"
+AGP_GPIO_SIM_START = f"{AGP_SBIN_DIR}/agp-gpio-sim-start"
+AGP_GPIO_SIM_STOP = f"{AGP_SBIN_DIR}/agp-gpio-sim-stop"
+AGP_CUSE_I2C = f"{AGP_SBIN_DIR}/cuse_i2c"
+AGP_CUSE_SPI = f"{AGP_SBIN_DIR}/cuse_spi"
 SIM_GPIO_SIM_CHECK_COMMAND = (
     'echo "@@KERNEL@@"; '
     "uname -r; "
@@ -139,404 +172,85 @@ def _sudo_write_file_command(
     return command
 
 
-def build_sim_diag_json_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    devices = _diag_devices(hw) or list(SIM_DIAG_DEVICES)
-    return (
-        'echo "@@PROC@@"; '
-        'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
-        'echo "@@DEV@@"; '
-        "for d in " + " ".join(shlex.quote(dev) for dev in devices) + "; do "
-        'if [ -e "$d" ]; then echo "$d 1"; else echo "$d 0"; fi; done; '
-        'echo "@@API@@"; '
-        "curl -s http://127.0.0.1:8080/api/state || true"
-    )
-
-
-def build_gpio_sim_setup_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+def gpio_sim_plan(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> dict:
     hw = hw_definition or load_hw_definition()
     rows = _gpio_rows(hw)
-    gpiochip_path = _gpiochip_path(hw)
-    gpiochip_name = Path(gpiochip_path).name
     max_line = max([int(row["line"]) for row in rows], default=53)
-    num_lines = max(max_line + 1, 54)
-    line_setup = []
-    pull_chmod = []
+    lines = []
     for row in rows:
         line = int(row["line"])
-        label = _gpio_label(row, line)
-        line_setup.append(
-            f'mkdir "$base/$chip/bank0/line{line}"\n'
-            f'      echo {shlex.quote(label)} > "$base/$chip/bank0/line{line}/name"'
+        lines.append(
+            {
+                "line": line,
+                "label": _gpio_label(row, line),
+                "direction": row.get("direction", ""),
+                "role": row.get("role", ""),
+                "sim_control": row.get("sim_control", ""),
+            }
         )
-        if row.get("direction", "").lower() == "input" or row.get("sim_control", "").lower() == "pull":
-            pull_chmod.append(
-                f'find /sys/devices/platform -path "*/$sim_chip/sim_gpio{line}/pull" '
-                "-exec chmod 666 {} \\; 2>/dev/null || true"
-            )
-
-    line_setup_text = "\n      ".join(line_setup) if line_setup else ":"
-    pull_chmod_text = "\n      ".join(pull_chmod) if pull_chmod else ":"
-
-    return textwrap.dedent(
-        f"""
-        set -eu
-
-        sudo modprobe gpio-sim
-        sudo mount -t configfs none /sys/kernel/config 2>/dev/null || true
-
-        sudo sh -c '
-          set -eu
-          base=/sys/kernel/config/gpio-sim
-          chip=agp
-
-          if mountpoint -q {shlex.quote(gpiochip_path)}; then
-            umount -l {shlex.quote(gpiochip_path)} || true
-          fi
-          if [ ! -e {shlex.quote(gpiochip_path)} ]; then
-            : > {shlex.quote(gpiochip_path)}
-          fi
-
-          if [ -d "$base/$chip" ]; then
-            echo 0 > "$base/$chip/live" 2>/dev/null || true
-            for bank in "$base/$chip"/*; do
-              name=$(basename "$bank")
-              [ "$name" = live ] && continue
-              [ "$name" = dev_name ] && continue
-              for line in "$bank"/line*; do
-                [ -d "$line" ] && rmdir "$line" || true
-              done
-              rmdir "$bank" || true
-            done
-            rmdir "$base/$chip" || true
-          fi
-
-          mkdir "$base/$chip"
-          mkdir "$base/$chip/bank0"
-          echo {num_lines} > "$base/$chip/bank0/num_lines"
-          echo AgentCockpit > "$base/$chip/bank0/label"
-
-          {line_setup_text}
-
-          echo 1 > "$base/$chip/live"
-          sim_chip=$(cat "$base/$chip/bank0/chip_name")
-          chmod 666 "/dev/$sim_chip"
-          {pull_chmod_text}
-
-          if [ "$sim_chip" != {shlex.quote(gpiochip_name)} ]; then
-            if [ ! -e {shlex.quote(gpiochip_path)} ]; then
-              : > {shlex.quote(gpiochip_path)}
-            fi
-            mount --bind "/dev/$sim_chip" {shlex.quote(gpiochip_path)}
-          fi
-          chmod 666 {shlex.quote(gpiochip_path)}
-          echo "gpio-sim ready: {gpiochip_path} -> /dev/$sim_chip"
-        '
-        """
-    ).strip()
-
-
-def build_gpio_sim_teardown_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    gpiochip_path = _gpiochip_path(hw)
-    return textwrap.dedent(
-        f"""
-        sudo sh -c '
-          set -u
-          base=/sys/kernel/config/gpio-sim
-          chip=agp
-
-          if mountpoint -q {shlex.quote(gpiochip_path)}; then
-            umount -l {shlex.quote(gpiochip_path)} || true
-          fi
-
-          if [ -d "$base/$chip" ]; then
-            echo 0 > "$base/$chip/live" 2>/dev/null || true
-            for bank in "$base/$chip"/*; do
-              name=$(basename "$bank")
-              [ "$name" = live ] && continue
-              [ "$name" = dev_name ] && continue
-              for line in "$bank"/line*; do
-                [ -d "$line" ] && rmdir "$line" || true
-              done
-              rmdir "$bank" || true
-            done
-            rmdir "$base/$chip" || true
-          fi
-        '
-        """
-    ).strip()
-
-
-def build_systemd_install_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    services = _runtime_services(hw)
-
-    gpio_start_script = "#!/bin/sh\n" + build_gpio_sim_setup_command(hw) + "\n"
-    gpio_stop_script = "#!/bin/sh\n" + build_gpio_sim_teardown_command(hw) + "\n"
-    gpio_unit = textwrap.dedent(
-        """
-        [Unit]
-        Description=AgentCockpit gpio-sim runtime
-
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/local/bin/agp-gpio-sim-start
-        ExecStop=/usr/local/bin/agp-gpio-sim-stop
-
-        [Install]
-        WantedBy=multi-user.target
-        """
-    ).lstrip()
-    bridge_unit = textwrap.dedent(
-        """
-        [Unit]
-        Description=AgentCockpit hardware bridge
-        After=agp-gpio-sim.service
-        Wants=agp-gpio-sim.service
-
-        [Service]
-        Type=simple
-        ExecStart=__AGP_HOME__/venv/bin/python3 __AGP_HOME__/web-bridge/bridge.py
-        Restart=on-failure
-        RestartSec=1
-
-        [Install]
-        WantedBy=multi-user.target
-        """
-    ).lstrip()
-    i2c_unit = textwrap.dedent(
-        """
-        [Unit]
-        Description=AgentCockpit CUSE I2C runtime for %i
-        After=agp-bridge.service
-        Wants=agp-bridge.service
-
-        [Service]
-        Type=simple
-        ExecStart=__AGP_HOME__/cuse_i2c -f --devname=%i
-        ExecStartPost=/bin/sh -c 'for n in $(seq 1 30); do [ -e /dev/%i ] && chmod 666 /dev/%i && exit 0; sleep 0.1; done; exit 0'
-        Restart=on-failure
-        RestartSec=1
-
-        [Install]
-        WantedBy=multi-user.target
-        """
-    ).lstrip()
-    spi_unit = textwrap.dedent(
-        """
-        [Unit]
-        Description=AgentCockpit CUSE SPI runtime for %i
-        After=agp-bridge.service
-        Wants=agp-bridge.service
-
-        [Service]
-        Type=simple
-        ExecStart=__AGP_HOME__/cuse_spi -f --devname=%i
-        ExecStartPost=/bin/sh -c 'for n in $(seq 1 30); do [ -e /dev/%i ] && chmod 666 /dev/%i && exit 0; sleep 0.1; done; exit 0'
-        Restart=on-failure
-        RestartSec=1
-
-        [Install]
-        WantedBy=multi-user.target
-        """
-    ).lstrip()
-    target_unit = textwrap.dedent(
-        f"""
-        [Unit]
-        Description=AgentCockpit simulation runtime
-        Wants={" ".join(services)}
-        After={" ".join(services)}
-
-        [Install]
-        WantedBy=multi-user.target
-        """
-    ).lstrip()
-
-    commands = [
-        _sudo_write_file_command("/usr/local/bin/agp-gpio-sim-start", gpio_start_script, mode="0755"),
-        _sudo_write_file_command("/usr/local/bin/agp-gpio-sim-stop", gpio_stop_script, mode="0755"),
-        _sudo_write_file_command("/etc/systemd/system/agp-gpio-sim.service", gpio_unit),
-        _sudo_write_file_command("/etc/systemd/system/agp-bridge.service", bridge_unit, expand_remote_home=True),
-        _sudo_write_file_command("/etc/systemd/system/agp-cuse-i2c@.service", i2c_unit, expand_remote_home=True),
-        _sudo_write_file_command("/etc/systemd/system/agp-cuse-spi@.service", spi_unit, expand_remote_home=True),
-        _sudo_write_file_command("/etc/systemd/system/agp-sim.target", target_unit),
-        "sudo systemctl daemon-reload",
-    ]
-    return "; ".join(commands)
-
-
-def build_systemd_start_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    services = " ".join(shlex.quote(service) for service in _runtime_services(hw))
-    return (
-        build_systemd_install_command(hw)
-        + "; "
-        + f"sudo systemctl stop agp-sim.target {services} >/dev/null 2>&1 || true; "
-        + "sudo pkill -x cuse_i2c || true; "
-        + "sudo pkill -x cuse_spi || true; "
-        + "sudo systemctl start agp-sim.target; "
-        + "sleep 3; "
-        + "sudo systemctl --no-pager --full status agp-sim.target; "
-        + 'pgrep -af "bridge.py|cuse_i2c|cuse_spi"'
-    )
-
-
-def build_systemd_stop_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    services = " ".join(shlex.quote(service) for service in reversed(_runtime_services(hw)))
-    return (
-        f"sudo systemctl stop agp-sim.target {services} >/dev/null 2>&1 || true; "
-        "sudo pkill -x cuse_i2c || true; "
-        "sudo pkill -x cuse_spi || true; "
-        "pkill -f '[/]web-bridge/bridge.py' || true; "
-        'echo "Simulation device runtime stopped."'
-    )
-
-
-def build_sim_start_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    return build_systemd_start_command(hw_definition)
-
-
-def build_sim_stop_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    return build_systemd_stop_command(hw_definition)
-
-
-def build_sim_status_command(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-    hw = hw_definition or load_hw_definition()
-    return (
-        'echo "--- processes ---"; '
-        'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
-        'echo "--- devices ---"; '
-        + "ls -l "
-        + " ".join(shlex.quote(dev) for dev in _diag_devices(hw))
-        + " 2>/dev/null || true; "
-        'echo "--- api ---"; '
-        "curl -s http://127.0.0.1:8080/api/state || true"
-    )
-
-
-def build_sim_log_command() -> str:
-    return (
-        'echo "--- journalctl agp runtime ---"; '
-        "journalctl --no-pager -n 120 "
-        "-u agp-sim.target -u agp-gpio-sim.service -u agp-bridge.service "
-        "-u 'agp-cuse-i2c@*.service' -u 'agp-cuse-spi@*.service' || true; "
-        'echo "--- legacy logs ---"; '
-        "tail -n 80 /tmp/bridge.log /tmp/cuse.log /tmp/cuse_spi.log 2>/dev/null || true"
-    )
-
-def parse_sim_diag(raw: str) -> dict:
-    """Parse the marker-delimited simulation diag output into a dict.
-
-    Returns ``{"processes": [...], "devices": {...}, "api": ... | None, "ok": bool}``.
-    ``ok`` is True when at least one runtime process is alive and the bridge API
-    returned parseable JSON.
-    """
-    section = None
-    proc_lines: list[str] = []
-    device_lines: list[str] = []
-    api_lines: list[str] = []
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if stripped == "@@PROC@@":
-            section = "proc"
-            continue
-        if stripped == "@@DEV@@":
-            section = "dev"
-            continue
-        if stripped == "@@API@@":
-            section = "api"
-            continue
-        if section == "proc":
-            if stripped:
-                proc_lines.append(stripped)
-        elif section == "dev":
-            if stripped:
-                device_lines.append(stripped)
-        elif section == "api":
-            api_lines.append(line)
-
-    processes = []
-    for line in proc_lines:
-        pid, _, cmd = line.partition(" ")
-        if pid.isdigit():
-            processes.append({"pid": int(pid), "cmd": cmd.strip()})
-
-    devices: dict[str, bool] = {}
-    for line in device_lines:
-        path, _, flag = line.rpartition(" ")
-        if path:
-            devices[path] = flag == "1"
-
-    api_text = "\n".join(api_lines).strip()
-    api: object | None
-    try:
-        api = json.loads(api_text) if api_text else None
-    except json.JSONDecodeError:
-        api = None
-
-    ok = bool(processes) and api is not None
-    return {"processes": processes, "devices": devices, "api": api, "ok": ok}
-
-
-def parse_gpio_sim_check(raw: str) -> dict:
-    """Parse the marker-delimited gpio-sim capability probe output."""
-    section = None
-    sections: dict[str, list[str]] = {
-        "kernel": [],
-        "modinfo": [],
-        "config": [],
-        "configfs": [],
-        "dev": [],
-    }
-    marker_map = {
-        "@@KERNEL@@": "kernel",
-        "@@MODINFO@@": "modinfo",
-        "@@CONFIG@@": "config",
-        "@@CONFIGFS@@": "configfs",
-        "@@DEV@@": "dev",
-    }
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if stripped in marker_map:
-            section = marker_map[stripped]
-            continue
-        if section is not None:
-            sections[section].append(line)
-
-    modinfo_lines = [line.strip() for line in sections["modinfo"] if line.strip()]
-    modinfo_available = bool(modinfo_lines and modinfo_lines[0] == "1")
-    modinfo = modinfo_lines[1:] if modinfo_lines else []
-    config_lines = [line.strip() for line in sections["config"] if line.strip()]
-    config_mentions_gpio_sim = any(
-        "GPIO_SIM" in line.upper() and "(NOT FOUND)" not in line.upper()
-        for line in config_lines
-    )
-    configfs_available = any(line.strip() == "1" for line in sections["configfs"])
-    gpiochips = [line.strip() for line in sections["dev"] if line.strip()]
-
     return {
-        "kernel": next((line.strip() for line in sections["kernel"] if line.strip()), None),
-        "module_available": modinfo_available,
-        "modinfo": modinfo,
-        "config": config_lines,
-        "config_mentions_gpio_sim": config_mentions_gpio_sim,
-        "configfs_available": configfs_available,
-        "gpiochips": gpiochips,
-        "ok": modinfo_available or config_mentions_gpio_sim,
+        "driver": "gpio-sim",
+        "chip": "agp",
+        "label": "AgentCockpit",
+        "target_device": _gpiochip_path(hw),
+        "num_lines": max(max_line + 1, 54),
+        "lines": lines,
+        "service": "agp-gpio-sim.service",
+        "start_script": AGP_GPIO_SIM_START,
+        "stop_script": AGP_GPIO_SIM_STOP,
     }
+
+
+def _hardware_csv_install_commands(hw_definition: dict[str, list[dict[str, str]]]) -> list[str]:
+    commands = [f"sudo mkdir -p {shlex.quote(AGP_HARDWARE_DIR)}"]
+    for name, rows in hw_definition.items():
+        if not isinstance(rows, list) or not rows:
+            continue
+        fieldnames = list(rows[0].keys())
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in fieldnames})
+        content = output.getvalue()
+        commands.append(_sudo_write_file_command(f"{AGP_HARDWARE_DIR}/{name}.csv", content, mode="0644"))
+    return commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def run_sim_diag_json(host: str) -> int:
-    """Run ``agp sim diag --json``: print structured JSON, exit 0 when ok."""
-    result = subprocess.run(
-        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, build_sim_diag_json_command()],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    """Run ``agp sim env diag --json``: print structured JSON, exit 0 when ok."""
+    provider = _get_sim_provider()
+    result = provider.run_remote(host, build_sim_diag_json_command(), capture_output=True, text=True, check=False)
     if result.returncode != 0:
         payload = {
             "processes": [],
@@ -557,12 +271,8 @@ def run_sim_diag_json(host: str) -> int:
 
 def run_gpio_sim_check(host: str, *, json_output: bool = False) -> int:
     """Probe whether the remote simulation host can use the kernel gpio-sim."""
-    result = subprocess.run(
-        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), host, SIM_GPIO_SIM_CHECK_COMMAND],
-        check=False,
-        capture_output=json_output,
-        text=True,
-    )
+    provider = _get_sim_provider()
+    result = provider.run_remote(host, SIM_GPIO_SIM_CHECK_COMMAND, capture_output=json_output, text=True, check=False)
     if not json_output:
         return result.returncode
 
@@ -588,35 +298,75 @@ def run_gpio_sim_check(host: str, *, json_output: bool = False) -> int:
     return 0 if payload["ok"] else 1
 
 
+def run_sim_gpio_command(
+    command: str,
+    *,
+    host: str | None = None,
+    json_output: bool = False,
+) -> int:
+    hw_definition = load_hw_definition()
+    if command == "plan":
+        payload = gpio_sim_plan(hw_definition)
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"Driver:  {payload['driver']}")
+            print(f"Device:  {payload['target_device']}")
+            print(f"Lines:   {payload['num_lines']}")
+            print(f"Service: {payload['service']}")
+            for line in payload["lines"]:
+                print(
+                    f"  GPIO{line['line']}: {line['label']} "
+                    f"{line['direction']} {line['role']} {line['sim_control']}".rstrip()
+                )
+        return 0
+
+    resolved_host = host or default_ec2_host(load_config())
+    provider = _get_sim_provider()
+    if command == "install":
+        remote_command = build_gpio_systemd_install_command(hw_definition)
+        result = provider.run_remote(resolved_host, remote_command, check=False)
+        return result.returncode
+    if command == "start":
+        remote_command = (
+            build_gpio_systemd_install_command(hw_definition)
+            + "; sudo systemctl restart agp-gpio-sim.service; "
+            + "sudo systemctl --no-pager --full status agp-gpio-sim.service"
+        )
+        result = provider.run_remote(resolved_host, remote_command, check=False)
+        return result.returncode
+    if command == "stop":
+        result = provider.run_remote(
+            resolved_host,
+            "sudo systemctl stop agp-gpio-sim.service",
+            check=False,
+        )
+        return result.returncode
+    if command == "status":
+        result = provider.run_remote(
+            resolved_host,
+            build_gpio_runtime_status_command(hw_definition),
+            check=False,
+            capture_output=json_output,
+            text=True,
+        )
+        if not json_output:
+            return result.returncode
+        if result.returncode != 0:
+            payload = {"ok": False, "error": f"ssh exited {result.returncode}", "stderr": result.stderr.strip()}
+        else:
+            payload = parse_gpio_runtime_status(result.stdout)
+            payload["host"] = resolved_host
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return result.returncode if result.returncode != 0 else (0 if payload["ok"] else 1)
+
+    print(f"unknown sim gpio command: {command}", file=sys.stderr)
+    return 1
+
+
 PANEL_BASE_URL = "http://127.0.0.1:8080"
 
 
-def build_panel_command(action: str, params: dict) -> str:
-    """Build the remote ``curl`` command for a virtual panel action.
-
-    Pure/string-only so it can be unit-tested without SSH. Mirrors the bridge
-    HTTP API served on the simulation host's ``127.0.0.1:8080``.
-    """
-    base = PANEL_BASE_URL
-    if action == "button-press":
-        line = int(params.get("line", 17))
-        duration_ms = max(0, int(params.get("duration_ms", 150)))
-        return f'curl -s -X POST "{base}/api/button/press?line={line}&duration_ms={duration_ms}"'
-    if action == "button-set":
-        line = int(params["line"])
-        value = 1 if int(params.get("value", 1)) else 0
-        return f'curl -s -X POST "{base}/api/button?line={line}&value={value}"'
-    if action == "rfid-tap":
-        uid = quote(str(params["uid"]), safe=":")
-        return f'curl -s -X POST "{base}/api/rfid/tap?uid={uid}"'
-    if action == "rfid-remove":
-        return f'curl -s -X POST "{base}/api/rfid/remove"'
-    if action == "range-set":
-        value = int(params["value"])
-        return f'curl -s -X POST "{base}/api/range?value={value}"'
-    if action == "state":
-        return f'curl -s "{base}/api/state"'
-    raise ValueError(f"unknown panel action: {action}")
 
 
 def run_sim_panel(
@@ -629,10 +379,16 @@ def run_sim_panel(
     """Drive the virtual panel / display over SSH by calling the bridge API."""
     resolved_host = host or default_ec2_host(load_config())
     command = build_panel_command(action, params)
-    ssh_argv = ["ssh", "-F", str(Path.home() / ".ssh" / "config"), resolved_host, command]
+    provider = _get_sim_provider()
 
     if action == "state":
-        result = subprocess.run(ssh_argv, check=False, capture_output=True, text=True)
+        result = provider.run_remote(
+            resolved_host,
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
         if result.returncode != 0:
             print(result.stderr.strip(), file=sys.stderr)
             return result.returncode
@@ -646,7 +402,7 @@ def run_sim_panel(
                 print(raw)
         return 0
 
-    return subprocess.run(ssh_argv, check=False).returncode
+    return provider.run_remote(resolved_host, command, check=False).returncode
 
 
 def run_sim_command(
@@ -669,6 +425,8 @@ def run_sim_command(
 
     if command == "status":
         resolved_host = host or default_ec2_host(load_config())
+        if json_output:
+            return run_sim_panel("state", host=resolved_host, json_output=True)
         port_forward_result = status_sim_port_forward(resolved_host)
         state_result = show_sim_state(resolved_host)
         return port_forward_result or state_result
@@ -688,10 +446,8 @@ def run_sim_command(
 
     resolved_host = host or default_ec2_host(load_config())
 
-    result = subprocess.run(
-        ["ssh", "-F", str(Path.home() / ".ssh" / "config"), resolved_host, remote_command],
-        check=False,
-    )
+    provider = _get_sim_provider()
+    result = provider.run_remote(resolved_host, remote_command, check=False)
     if result.returncode != 0:
         return result.returncode
 
@@ -711,36 +467,38 @@ def run_sim_command(
 
 
 def start_sim_port_forward(host: str) -> int:
-    return subprocess.run(
-        [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", host],
-        check=False,
-    ).returncode
+    provider = _get_sim_provider()
+    try:
+        return provider.start_port_forward(host)
+    except NotImplementedError:
+        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
+        return 1
 
 
 def stop_sim_port_forward(host: str) -> int:
-    return subprocess.run(
-        [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", host, "--stop"],
-        check=False,
-    ).returncode
+    provider = _get_sim_provider()
+    try:
+        return provider.stop_port_forward(host)
+    except NotImplementedError:
+        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
+        return 1
 
 
 def status_sim_port_forward(host: str) -> int:
-    return subprocess.run(
-        [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", host, "--status"],
-        check=False,
-    ).returncode
+    provider = _get_sim_provider()
+    try:
+        return provider.status_port_forward(host)
+    except NotImplementedError:
+        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
+        return 1
 
 
 def show_sim_state(host: str) -> int:
     print("--- bridge state ---")
-    return subprocess.run(
-        [
-            "ssh",
-            "-F",
-            str(Path.home() / ".ssh" / "config"),
-            host,
-            "curl -s http://127.0.0.1:8080/api/state",
-        ],
+    provider = _get_sim_provider()
+    return provider.run_remote(
+        host,
+        "curl -s http://127.0.0.1:8080/api/state",
         check=False,
     ).returncode
 
@@ -773,8 +531,12 @@ def write_sim_terminal_profile(
 
 
 def sim_terminal_script(host: str) -> str:
-    quoted_host = shlex.quote(host)
-    return f"""#!/usr/bin/env bash
+    provider = _get_sim_provider()
+    try:
+        return provider.interactive_shell_script(host)
+    except NotImplementedError:
+        quoted_host = shlex.quote(host)
+        return f"""#!/usr/bin/env bash
 set -euo pipefail
 
 exec ssh -F "$HOME/.ssh/config" -t {quoted_host} "cd ~ && exec bash -l"

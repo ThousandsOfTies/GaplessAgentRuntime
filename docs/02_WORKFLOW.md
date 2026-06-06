@@ -49,7 +49,7 @@ sequenceDiagram
 
     rect rgb(70, 40, 20)
         Note over Dev,EC2: 【EC2】起動 + デプロイ
-        Dev->>EC2: agp ec2 start
+        Dev->>EC2: agp sim boot
         EC2-->>Dev: 起動 + IP 取得 + SSH config 更新（--pull で git pull）
         Dev->>GH: target software ごとのビルド
         GH->>Win: 成果物を WSL hub にコピー
@@ -60,13 +60,13 @@ sequenceDiagram
         Note over Dev,EC2: 【runtime host】simulation runtime 起動
         Dev->>EC2: ssh vibecode-graviton (①)
         Dev->>EC2: ~/venv/bin/python3 ~/web-bridge/bridge.py
-        EC2-->>Dev: [bridge] :8080 / :8765 / /tmp/hw_sim.sock
+        EC2-->>Dev: [bridge] :8080 / :8765 / /run/agentcockpit/hw_sim.sock
         Dev->>EC2: ssh vibecode-graviton (②)
         Dev->>EC2: sudo ~/cuse_i2c -f --devname=i2c-1
         EC2-->>Dev: /dev/i2c-1 created
         Dev->>EC2: sudo ~/cuse_spi -f --devname=spidev0.0
         EC2-->>Dev: /dev/spidev0.0 created
-        Note over Dev,EC2: agp sim start は /dev/* を用意するだけ。アプリは本番と同じ ~/sensor_demo で起動する
+        Note over Dev,EC2: agp sim env start は /dev/* を用意するだけ。アプリは本番と同じ ~/sensor_demo で起動する
     end
 
     rect rgb(40, 60, 30)
@@ -88,9 +88,9 @@ sequenceDiagram
 
     rect rgb(20, 50, 60)
         Note over Dev,RPi: 【RasPi5】デプロイ
-        Dev->>Win: C:\VibeCode\raspi.ps1 deploy
-        Win->>GH: gh codespace cp で取得
-        Win->>RPi: adb push sensor_demo
+        Dev->>Win: agp native sync
+        Win->>GH: gh codespace cp で artifact bundle 取得
+        Win->>RPi: artifact manifest に従って adb push
     end
 
     rect rgb(30, 60, 50)
@@ -125,14 +125,14 @@ agp setup                          # 依存検出・既定 host 保存
 # Codespace build VM: target software ごとの README / build script でビルド
 
 # WSL hub: 成果物配置 → simulation runtime 起動
-agp sim deploy
-agp sim start                      # /dev/* runtime + port forward
+agp sim env deploy
+agp sim env start                      # /dev/* runtime + port forward
 # VS Code terminal profile "EC2 Simulation" から本番と同じ起動手順
 ~/sensor_demo
 
 # 仮想 H/W 操作・観察
-agp sim button press 17
-agp sim rfid tap 04:AB:CD:EF:01:23
-agp sim state --json
-agp sim log
+agp sim ui button press 17
+agp sim ui rfid tap 04:AB:CD:EF:01:23
+agp sim env status --json
+agp sim env log
 ```

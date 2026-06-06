@@ -59,6 +59,37 @@ class AwsSsmEnvironment(DevEnvironment):
 
         return 0
 
+    @classmethod
+    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
+        import subprocess
+        # target should be an instance ID
+        cmd2 = ["aws", "ssm", "start-session", "--target", target, "--document-name", "AWS-StartInteractiveCommand", "--parameters", f'command="{command}"']
+        return subprocess.run(cmd2, capture_output=capture_output, text=text, check=check)
+
+    @classmethod
+    def push_file(cls, target: str, src, dest) -> int:
+        # AWS SSM has no direct scp out of the box, usually S3 or port forwarding is used.
+        # Fallback to raising error or returning 1 for now.
+        print(f"push_file not fully implemented for AWS SSM (requires S3/port forwarding)")
+        return 1
+
+    @classmethod
+    def pull_file(cls, target: str, src, dest) -> int:
+        print(f"pull_file not fully implemented for AWS SSM")
+        return 1
+
+    @classmethod
+    def interactive_shell_script(cls, target: str) -> str:
+        import shlex
+        quoted_target = shlex.quote(target)
+        return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+exec aws ssm start-session --target {quoted_target}
+"""
+
+
+
 
 def _unsupported_reason() -> str | None:
     if platform.system() != "Linux":
