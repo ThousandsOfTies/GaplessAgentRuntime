@@ -12,11 +12,9 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.agp_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
-from scripts.agp_lib.sim.linux import LinuxSimCommandBuilder, gpio_sim_plan
 from scripts.agp_lib.cli import (
     adb_device_available,
     completion_bash_script,
-    ensure_adb_device,
     fetch_codespace_artifacts,
     load_config,
     main,
@@ -39,6 +37,7 @@ from scripts.agp_lib.cli import (
 )
 from scripts.agp_lib.environments.base import DevEnvironment
 from scripts.agp_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
+from scripts.agp_lib.sim.linux import LinuxSimCommandBuilder, gpio_sim_plan
 
 
 class DevelopmentProvider(DevEnvironment):

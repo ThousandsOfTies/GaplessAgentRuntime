@@ -43,6 +43,7 @@ class SshRemoteEnvironment(DevEnvironment):
     @classmethod
     def start_port_forward(cls, target: str) -> int:
         import subprocess
+
         from scripts.agp_lib._config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target],
@@ -52,6 +53,7 @@ class SshRemoteEnvironment(DevEnvironment):
     @classmethod
     def stop_port_forward(cls, target: str) -> int:
         import subprocess
+
         from scripts.agp_lib._config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target, "--stop"],
@@ -61,6 +63,7 @@ class SshRemoteEnvironment(DevEnvironment):
     @classmethod
     def status_port_forward(cls, target: str) -> int:
         import subprocess
+
         from scripts.agp_lib._config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target, "--status"],

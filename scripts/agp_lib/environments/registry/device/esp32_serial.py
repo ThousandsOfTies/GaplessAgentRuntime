@@ -16,7 +16,6 @@ physical device access driver.
 """
 from __future__ import annotations
 
-import platform
 import subprocess
 import sys
 

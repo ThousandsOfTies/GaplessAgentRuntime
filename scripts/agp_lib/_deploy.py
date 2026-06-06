@@ -18,9 +18,9 @@ from scripts.agp_lib._config import (
     load_config,
 )
 from scripts.agp_lib._usb import run_usb_command
-
-from scripts.agp_lib.environments.discovery import discover_environment_providers
 from scripts.agp_lib.environments.base import DevEnvironment
+from scripts.agp_lib.environments.discovery import discover_environment_providers
+
 
 def _get_provider(category: str) -> type[DevEnvironment]:
     config = load_config()

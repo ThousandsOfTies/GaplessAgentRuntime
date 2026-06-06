@@ -1,6 +1,8 @@
 """`agp sim` output parsing."""
 from __future__ import annotations
+
 import json
+
 
 def parse_sim_diag(raw: str) -> dict:
     """Parse the marker-delimited simulation diag output into a dict.

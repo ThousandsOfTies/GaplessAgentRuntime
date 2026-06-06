@@ -9,8 +9,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.agp_lib.environments.discovery import discover_environment_providers
+from scripts.agp_lib._vscode import (
+    remove_vscode_terminal_profile,
+    write_vscode_terminal_profile,
+)
 from scripts.agp_lib.environments.base import DevEnvironment
+from scripts.agp_lib.environments.discovery import discover_environment_providers
+
 
 def _get_dev_provider() -> type[DevEnvironment]:
     from scripts.agp_lib._config import load_config
@@ -25,12 +30,6 @@ def _get_dev_provider() -> type[DevEnvironment]:
         if p.provider_id == "github_codespaces":
             return p
     raise RuntimeError("No development provider found")
-
-
-from scripts.agp_lib._vscode import (
-    remove_vscode_terminal_profile,
-    write_vscode_terminal_profile,
-)
 
 DEFAULT_GH_TIMEOUT_SECONDS = 60
 

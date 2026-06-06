@@ -49,14 +49,14 @@ from scripts.agp_lib._config import (  # noqa: F401
 )
 from scripts.agp_lib._deploy import (  # noqa: F401
     DEFAULT_CODESPACE_ARTIFACT_ROOT,
+    adb_device_available,
     artifact_deploy_files,
     artifact_manifest_deploy_sources,
-    default_codespace_artifact_root,
     default_artifacts_dir,
+    default_codespace_artifact_root,
     deploy_native_artifacts,
     deploy_native_artifacts_ssh,
     deploy_sim_artifacts,
-    adb_device_available,
     ensure_adb_device,
     fetch_codespace_artifacts,
     find_artifact_manifest,

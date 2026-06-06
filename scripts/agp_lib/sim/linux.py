@@ -1,17 +1,18 @@
 """Linux simulation target implementations."""
 from __future__ import annotations
-import json
-import shlex
-import textwrap
-import sys
+
 import csv
 import io
+import json
+import shlex
+import sys
+import textwrap
 from urllib.parse import quote
 
-from scripts.agp_lib.sim.base import SimProvider, SimCommandBuilder
-from scripts.agp_lib.environments.base import DevEnvironment
-from scripts.agp_lib._sim_parse import parse_sim_diag, parse_gpio_sim_check, parse_gpio_runtime_status
 from scripts.agp_lib._hw import load_hw_definition
+from scripts.agp_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.agp_lib.environments.base import DevEnvironment
+from scripts.agp_lib.sim.base import SimCommandBuilder, SimProvider
 
 # Linux constants
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
