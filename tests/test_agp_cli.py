@@ -11,19 +11,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
+from scripts.agp_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.agp_lib.sim.linux import LinuxSimCommandBuilder, gpio_sim_plan
 from scripts.agp_lib.cli import (
     adb_device_available,
-    build_panel_command,
     completion_bash_script,
     ensure_adb_device,
     fetch_codespace_artifacts,
-    gpio_sim_plan,
     load_config,
     main,
     normalize_question_help,
-    parse_gpio_runtime_status,
-    parse_gpio_sim_check,
-    parse_sim_diag,
     parse_usbipd_list,
     run_deploy_command,
     run_ec2_command,
@@ -398,7 +395,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_start_only_starts_device_runtime(self) -> None:
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
@@ -407,7 +404,7 @@ class AgpCliTest(unittest.TestCase):
             result = run_sim_command("start", host="ec2-test", port_forward=False)
 
         self.assertEqual(0, result)
-        remote_command = run.call_args.args[0][-1]
+        remote_command = run.call_args.args[1]
         self.assertIn("bridge.py", remote_command)
         self.assertIn("cuse_i2c", remote_command)
         self.assertIn("agp-sim.target", remote_command)
@@ -423,7 +420,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_start_prepares_gpio_sim_as_gpiochip0(self) -> None:
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
@@ -432,7 +429,7 @@ class AgpCliTest(unittest.TestCase):
             result = run_sim_command("start", host="ec2-test", port_forward=False)
 
         self.assertEqual(0, result)
-        remote_command = run.call_args.args[0][-1]
+        remote_command = run.call_args.args[1]
         self.assertIn("modprobe gpio-sim", remote_command)
         self.assertIn("mount --bind", remote_command)
         self.assertIn("/dev/gpiochip0", remote_command)
@@ -464,7 +461,7 @@ class AgpCliTest(unittest.TestCase):
         }
         with (
             mock.patch("scripts.agp_lib._sim.load_hw_definition", return_value=hw_definition),
-            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
@@ -473,7 +470,7 @@ class AgpCliTest(unittest.TestCase):
             result = run_sim_command("start", host="ec2-test", port_forward=False)
 
         self.assertEqual(0, result)
-        remote_command = run.call_args.args[0][-1]
+        remote_command = run.call_args.args[1]
         self.assertIn("/dev/gpiochip2", remote_command)
         self.assertIn("BTN_GPIO5", remote_command)
         self.assertIn("LED_GPIO6", remote_command)
@@ -513,7 +510,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_gpio_start_installs_and_restarts_gpio_service(self) -> None:
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
@@ -521,7 +518,7 @@ class AgpCliTest(unittest.TestCase):
             result = run_sim_gpio_command("start", host="ec2-test")
 
         self.assertEqual(0, result)
-        remote_command = run.call_args.args[0][-1]
+        remote_command = run.call_args.args[1]
         self.assertIn("modprobe gpio-sim", remote_command)
         self.assertIn("/usr/local/sbin/agp-gpio-sim-start", remote_command)
         self.assertIn("/etc/systemd/system/agp-gpio-sim.service", remote_command)
@@ -530,14 +527,14 @@ class AgpCliTest(unittest.TestCase):
         self.assertNotIn("cuse_i2c", remote_command)
 
     def test_sim_stop_tears_down_gpio_sim(self) -> None:
-        with mock.patch("scripts.agp_lib._sim.subprocess.run") as run:
+        with mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run:
             with mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment):
                 run.return_value.returncode = 0
 
                 result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
 
         self.assertEqual(0, result)
-        remote_command = run.call_args.args[0][-1]
+        remote_command = run.call_args.args[1]
         self.assertIn("systemctl stop agp-sim.target", remote_command)
         self.assertIn("agp-gpio-sim.service", remote_command)
         self.assertIn("sudo pkill -x cuse_i2c", remote_command)
@@ -550,7 +547,7 @@ class AgpCliTest(unittest.TestCase):
 
             with (
                 mock.patch("scripts.agp_lib._sim.Path.home", return_value=home),
-                mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+                mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
                 mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
             ):
                 run.return_value.returncode = 0
@@ -575,7 +572,7 @@ class AgpCliTest(unittest.TestCase):
 
     def test_sim_start_starts_port_forward(self) -> None:
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run") as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.agp_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.agp_lib._sim.start_sim_port_forward", return_value=0) as forward,
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
@@ -599,11 +596,11 @@ class AgpCliTest(unittest.TestCase):
         state.assert_called_once_with("ec2-test")
 
     def test_sim_status_json_returns_bridge_state(self) -> None:
-        with mock.patch("scripts.agp_lib._sim.run_sim_panel", return_value=0) as panel:
+        with mock.patch("scripts.agp_lib.sim.linux.LinuxSystemdSimProvider.panel", return_value=0) as panel:
             result = run_sim_command("status", host="ec2-test", json_output=True)
 
         self.assertEqual(0, result)
-        panel.assert_called_once_with("state", host="ec2-test", json_output=True)
+        panel.assert_called_once_with("state", params={}, json_output=True)
 
     def test_deploy_sim_copies_artifacts_to_configured_ec2_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1593,7 +1590,7 @@ class AgpCliTest(unittest.TestCase):
             stderr="",
         )
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             output = io.StringIO()
@@ -1601,7 +1598,7 @@ class AgpCliTest(unittest.TestCase):
                 result = run_gpio_sim_check("ec2-test", json_output=True)
 
         self.assertEqual(1, result)
-        self.assertIn("gpio-sim", run.call_args.args[0][-1])
+        self.assertIn("gpio-sim", run.call_args.args[1])
         payload = json.loads(output.getvalue())
         self.assertEqual("ec2-test", payload["host"])
         self.assertEqual("6.8.0-test", payload["kernel"])
@@ -1628,7 +1625,7 @@ class AgpCliTest(unittest.TestCase):
             stderr="",
         )
         with (
-            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
             mock.patch("scripts.agp_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             output = io.StringIO()
@@ -1636,7 +1633,7 @@ class AgpCliTest(unittest.TestCase):
                 result = run_sim_gpio_command("status", host="ec2-test", json_output=True)
 
         self.assertEqual(0, result)
-        self.assertIn("@@SERVICE@@", run.call_args.args[0][-1])
+        self.assertIn("@@SERVICE@@", run.call_args.args[1])
         payload = json.loads(output.getvalue())
         self.assertEqual("ec2-test", payload["host"])
         self.assertTrue(payload["ok"])
@@ -1659,14 +1656,14 @@ class AgpCliTest(unittest.TestCase):
         )
         with (
             mock.patch("scripts.agp_lib._sim.load_config", return_value={"selected_providers": {}, "ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = run_sim_command("diag", json_output=True)
 
         self.assertEqual(0, result)
-        self.assertIn("@@PROC@@", run.call_args.args[0][-1])
+        self.assertIn("@@PROC@@", run.call_args.args[1])
         payload = json.loads(output.getvalue())
         self.assertEqual("ec2-test", payload["host"])
         self.assertTrue(payload["ok"])
@@ -1719,41 +1716,40 @@ class AgpCliTest(unittest.TestCase):
 
 class SimPanelTests(unittest.TestCase):
     def test_build_panel_command_button_press(self) -> None:
-        command = build_panel_command("button-press", {"line": 17, "duration_ms": 150})
+        command = LinuxSimCommandBuilder().build_panel("button-press", {"line": 17, "duration_ms": 150})
         self.assertIn("/api/button/press?line=17&duration_ms=150", command)
         self.assertIn("-X POST", command)
 
     def test_build_panel_command_rfid_tap_encodes_uid(self) -> None:
-        command = build_panel_command("rfid-tap", {"uid": "04:AB:CD:EF:01:23"})
+        command = LinuxSimCommandBuilder().build_panel("rfid-tap", {"uid": "04:AB:CD:EF:01:23"})
         self.assertIn("/api/rfid/tap?uid=04:AB:CD:EF:01:23", command)
 
     def test_build_panel_command_state_is_get(self) -> None:
-        command = build_panel_command("state", {})
+        command = LinuxSimCommandBuilder().build_panel("state", {})
         self.assertIn("/api/state", command)
         self.assertNotIn("-X POST", command)
 
     def test_build_panel_command_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):
-            build_panel_command("explode", {})
+            LinuxSimCommandBuilder().build_panel("explode", {})
 
     def test_run_sim_panel_sshes_with_curl(self) -> None:
         completed = mock.Mock(returncode=0)
         with (
             mock.patch("scripts.agp_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
         ):
             result = run_sim_panel("button-press", host="ec2-test", line=17, duration_ms=150)
 
         self.assertEqual(0, result)
-        argv = run.call_args.args[0]
-        self.assertEqual("ec2-test", argv[-2])
-        self.assertIn("/api/button/press?line=17&duration_ms=150", argv[-1])
+        self.assertEqual("ec2-test", run.call_args.args[0])
+        self.assertIn("/api/button/press?line=17&duration_ms=150", run.call_args.args[1])
 
     def test_run_sim_panel_state_pretty_prints_json(self) -> None:
         completed = mock.Mock(returncode=0, stdout='{"led18": 1}', stderr="")
         with (
             mock.patch("scripts.agp_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.agp_lib._sim.subprocess.run", return_value=completed),
+            mock.patch("scripts.agp_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
