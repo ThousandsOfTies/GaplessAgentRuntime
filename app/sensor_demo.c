@@ -8,6 +8,7 @@
  *
  * I2C-1:
  *   SSD1306 OLED (0x3C) — 状態と最後の UID を表示
+ *   VL53L0X (0x29) — 距離測定
  *
  * SPI-0 (CE0):
  *   MFRC-522 (RFID) — ON のときのみスキャン
@@ -18,6 +19,7 @@
 
 #include "ssd1306.h"
 #include "mfrc522.h"
+#include "vl53l0x.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -135,14 +137,27 @@ static int gpio_get(int hfd) {
 }
 
 /* ---- OLED render ---- */
-static void render(int oled_fd, int system_on, const char *uid_text, int scan_count) {
+static void render(
+    int oled_fd,
+    int system_on,
+    const char *uid_text,
+    int scan_count,
+    int range_mm,
+    int range_valid
+) {
     char line[32];
     ssd1306_clear(oled_fd);
     ssd1306_put_centered(0, "SENSOR DEMO");
     ssd1306_put_text(0, 2, "System:");
     ssd1306_put_text(60, 2, system_on ? "ON " : "OFF");
-    ssd1306_put_text(0, 4, "Last UID:");
-    ssd1306_put_text(0, 5, uid_text);
+    if (range_valid) {
+        snprintf(line, sizeof(line), "Range: %d mm", range_mm);
+    } else {
+        snprintf(line, sizeof(line), "Range: -- mm");
+    }
+    ssd1306_put_text(0, 3, line);
+    ssd1306_put_text(0, 4, "UID:");
+    ssd1306_put_text(30, 4, uid_text);
     snprintf(line, sizeof(line), "Scans: %d", scan_count);
     ssd1306_put_text(0, 7, line);
     ssd1306_flush(oled_fd);
@@ -180,18 +195,28 @@ int main(void) {
         mfrc522_init(rfid);
     }
 
+    /* VL53L0X 初期化 */
+    int range = vl53l0x_open(I2C_DEV);
+    if (range < 0) {
+        fprintf(stderr, "VL53L0X open failed (continuing without range sensor)\n");
+    }
+
     int system_on = 0;
     int prev_btn  = 0;
     int scan_count = 0;
     char uid_text[32] = "(none)";
+    int range_mm = 0;
+    int range_valid = 0;
+    int range_tick = 0;
     int activity_blink = 0;
 
-    if (oled >= 0) render(oled, system_on, uid_text, scan_count);
+    if (oled >= 0) render(oled, system_on, uid_text, scan_count, range_mm, range_valid);
 
     printf("Sensor Demo started. Press Ctrl+C to quit.\n");
     printf("  LED1 (status)   = GPIO%d\n", LED1_LINE);
     printf("  LED2 (activity) = GPIO%d\n", LED2_LINE);
     printf("  Button          = GPIO%d\n", BTN_LINE);
+    printf("  Range           = VL53L0X 0x29\n");
 
     while (running) {
         /* Button: 立ち上がりエッジで ON/OFF トグル */
@@ -200,9 +225,24 @@ int main(void) {
             system_on = !system_on;
             gpio_set(led1, system_on);
             printf("[btn] System %s\n", system_on ? "ON" : "OFF");
-            if (oled >= 0) render(oled, system_on, uid_text, scan_count);
+            if (oled >= 0) render(oled, system_on, uid_text, scan_count, range_mm, range_valid);
         }
         prev_btn = b;
+
+        /* Range: 500ms ごとに測定して OLED/ログへ反映 */
+        if (range >= 0 && range_tick++ >= 5) {
+            uint16_t measured = 0;
+            range_tick = 0;
+            if (vl53l0x_read_range(range, &measured) == 0) {
+                range_mm = measured;
+                range_valid = 1;
+                printf("[range] %d mm\n", range_mm);
+            } else {
+                range_valid = 0;
+                printf("[range] read failed\n");
+            }
+            if (oled >= 0) render(oled, system_on, uid_text, scan_count, range_mm, range_valid);
+        }
 
         /* RFID スキャン (system_on のみ) */
         if (system_on && rfid >= 0) {
@@ -214,7 +254,7 @@ int main(void) {
                     uid[0], uid[1], uid[2], uid[3]);
                 scan_count++;
                 printf("[rfid] %s (count=%d)\n", uid_text, scan_count);
-                if (oled >= 0) render(oled, system_on, uid_text, scan_count);
+                if (oled >= 0) render(oled, system_on, uid_text, scan_count, range_mm, range_valid);
                 activity_blink = 6;  /* 6 ticks = 600ms */
             }
         }
@@ -239,6 +279,7 @@ int main(void) {
         ssd1306_close(oled);
     }
     if (rfid >= 0) mfrc522_close(rfid);
+    if (range >= 0) vl53l0x_close(range);
     close(led1); close(led2); close(btn); close(chip);
     printf("\nDone.\n");
     return 0;
