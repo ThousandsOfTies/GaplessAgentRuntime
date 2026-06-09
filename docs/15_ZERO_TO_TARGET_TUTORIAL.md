@@ -1,6 +1,6 @@
-# 0 から実機動作までのチュートリアル
+﻿# 0 から実機動作までのチュートリアル
 
-このチュートリアルは、しばらく間が空いても AgentCockpit を最初から立ち上げ直し、シミュレーションで予行してから RasPi5 実機で `sensor_demo` を動かすための一本道です。
+このチュートリアルは、しばらく間が空いても Gapless Agent Runtime を最初から立ち上げ直し、シミュレーションで予行してから RasPi5 実機で `sensor_demo` を動かすための一本道です。
 
 操作は人間が行います。AI に頼むときは、各チェックポイントの出力を貼って「次は何をすればいい？」と聞けば続きから進められるようにします。
 
@@ -9,8 +9,8 @@
 最終的に次の状態を作ります。
 
 ```text
-WSL Hub (AgentCockpit)
-  agp setup 済み
+WSL Hub (Gapless Agent Runtime)
+  gar setup 済み
   Codespace build VM に接続済み
   EC2 simulation host を起動・deploy・diag 済み
   RasPi5 実機へ target sync 済み
@@ -28,7 +28,7 @@ RasPi5
 |---|---|
 | Windows / WSL2 | WSL2 Ubuntu から `git`, `python3`, `make` が使える |
 | GitHub | Codespaces を使える。`gh auth login` 済み、または途中でログインできる |
-| EC2 simulation host | `agp sim boot` で起動できる EC2 設定がある |
+| EC2 simulation host | `gar sim boot` で起動できる EC2 設定がある |
 | RasPi5 | Raspberry Pi OS が起動し、実 H/W 配線済み |
 | 実機接続 | 既定は USB-C + adb。ネットワーク接続できる場合は SSH/scp でもよい |
 | ビルド成果物 | Codespace 側で AGP artifact bundle を作れる target repo がある |
@@ -37,10 +37,10 @@ RasPi5
 
 ## 1. WSL Hub を初期化する
 
-AgentCockpit repo に移動します。
+Gapless Agent Runtime repo に移動します。
 
 ```bash
-cd ~/Yurufuwa/AgentCockpit
+cd path/to/AgentCockpit
 git pull
 ```
 
@@ -56,13 +56,13 @@ make init
 make start
 ```
 
-`make start` の後は、サブシェル内で `agp` と bash 補完が有効になります。抜けるときは `exit` です。
+`make start` の後は、サブシェル内で `gar` と bash 補完が有効になります。抜けるときは `exit` です。
 
 チェック:
 
 ```bash
-agp ?
-agp setup --no-install
+gar ?
+gar setup --no-install
 ```
 
 `python3-venv` がないと言われた場合:
@@ -77,10 +77,10 @@ make start
 
 ## 2. provider と既定 host を設定する
 
-まず `agp setup` を実行します。
+まず `gar setup` を実行します。
 
 ```bash
-agp setup
+gar setup
 ```
 
 基本の選択は次です。
@@ -93,20 +93,20 @@ agp setup
 
 ネットワーク越しに RasPi5 へ SSH できる場合は、実機環境で `SSH / scp` を選んでもよいです。
 
-ここでの `SSH Remote` は「シミュレータ種別」ではなく、EC2 simulation runtime host へ `ssh` / `scp` で入るための接続 provider です。`AWS SSM` は現状の runtime 操作では非推奨です。
+ここでの `SSH Remote` は「シミュレータ種別」ではなく、EC2 simulation runtime host へ `ssh` / `scp` で入るための接続 provider です。`AWS SSM` は現状の runtime 操作では非推奨なproviderです。
 
 EC2 の既定 host を明示する場合:
 
 ```bash
-agp setup --ec2-host vibecode-graviton
+gar setup --ec2-host vibecode-graviton
 ```
 
 チェック:
 
 ```bash
-agp sim status
-agp code ?
-agp target ?
+gar sim status
+gar code ?
+gar target ?
 ```
 
 ## 3. Codespace build VM に接続する
@@ -114,14 +114,14 @@ agp target ?
 Codespace が 1 つだけなら名前指定なしで進めます。
 
 ```bash
-agp code start
+gar code start
 ```
 
 複数ある場合:
 
 ```bash
 gh codespace list
-agp code start --codespace <codespace-name>
+gar code start --codespace <codespace-name>
 ```
 
 これで WSL Hub から Codespace の workspace が見えるようになり、VS Code の terminal profile も作られます。
@@ -135,25 +135,25 @@ ls ~/codespace-dev 2>/dev/null || true
 
 ## 4. Codespace 側で ARM64 成果物をビルドする
 
-ビルドは AgentCockpit ではなく、`agp-build-env` Codespace 内の target repo で行います。
+ビルドは Gapless Agent Runtime ではなく、`gar-build-env` Codespace 内の target repo で行います。
 
 Codespace のターミナルで:
 
 ```bash
-cd /workspaces/agp-build-env
+cd /workspaces/gar-build-env
 bash scripts/post-create.sh
 ```
 
 その後は target software ごとの README / build script に従ってビルドします。
 
-ビルド後、AGP artifact bundle ができていることを確認します。既定では次の場所を `agp target fetch` / `agp sim env deploy` が見に行きます。
+ビルド後、AGP artifact bundle ができていることを確認します。既定では次の場所を `gar target fetch` / `gar sim env deploy` が見に行きます。
 
 ```bash
-ls -la /workspaces/agp-build-env/artifacts/from-codespace
-cat /workspaces/agp-build-env/artifacts/from-codespace/artifact.json
+ls -la /workspaces/gar-build-env/artifacts/from-codespace
+cat /workspaces/gar-build-env/artifacts/from-codespace/artifact.json
 ```
 
-`artifact.json` には少なくとも `deploy.sim.files` と `deploy.target.files` が必要です。
+`artifact.json` には少なくとも `deploy.app.files` が必要です（VM 専用インフラがある場合は `deploy.sim_env.files` も）。
 
 ## 5. 先に simulation で予行する
 
@@ -162,18 +162,18 @@ cat /workspaces/agp-build-env/artifacts/from-codespace/artifact.json
 WSL Hub 側で:
 
 ```bash
-agp sim boot
-agp sim env deploy
-agp sim env start
-agp sim env diag --json
+gar sim boot
+gar sim env deploy
+gar sim env start
+gar sim env diag --json
 ```
 
 `diag --json` の `"ok": true` が目安です。失敗したら次を確認します。
 
 ```bash
-agp sim env status --json
-agp sim gpio status --json
-agp sim env log
+gar sim env status --json
+gar sim gpio status --json
+gar sim env log
 ```
 
 EC2 にログインしてアプリを起動します。
@@ -186,9 +186,9 @@ ssh vibecode-graviton
 別ターミナルの WSL Hub から仮想 H/W を操作します。
 
 ```bash
-agp sim ui button press 17
-agp sim ui rfid tap 04:AB:CD:EF:01:23
-agp sim env status --json
+gar sim ui button press 17
+gar sim ui rfid tap 04:AB:CD:EF:01:23
+gar sim env status --json
 ```
 
 期待:
@@ -202,8 +202,8 @@ sensor_demo が EC2 上で落ちない
 simulation を止める場合:
 
 ```bash
-agp sim env stop
-agp sim shutdown
+gar sim env stop
+gar sim shutdown
 ```
 
 ## 6. RasPi5 実機を準備する
@@ -249,7 +249,7 @@ sudo apt-get install -y adbd
 sudo systemctl enable --now adbd
 ```
 
-`adbd` package が使えない OS の場合は、無理に adb に寄せず、`agp setup` の実機環境で `SSH / scp` を選びます。
+`adbd` package が使えない OS の場合は、無理に adb に寄せず、`gar setup` の実機環境で `SSH / scp` を選びます。
 
 ## 7. adb USB-C 経路で実機を WSL2 に見せる
 
@@ -258,8 +258,8 @@ sudo systemctl enable --now adbd
 まず WSL Hub 側で確認します。
 
 ```bash
-agp usb list
-agp usb status
+gar usb list
+gar usb status
 adb devices
 ```
 
@@ -272,40 +272,40 @@ usbipd bind --busid <busid>
 その後 WSL Hub 側で:
 
 ```bash
-agp usb attach --busid <busid>
+gar usb attach --busid <busid>
 adb devices
 ```
 
 `device` と表示されれば OK です。
 
-`agp target sync` / `agp target deploy` は adb device が見えないときに `agp usb attach` 相当を自動で試します。ただし初回の `usbipd bind` だけは管理者 PowerShell が必要です。
+`gar target sync` / `gar target deploy` は adb device が見えないときに `gar usb attach` 相当を自動で試します。ただし初回の `usbipd bind` だけは管理者 PowerShell が必要です。
 
 ## 8. 実機へ deploy する
 
 Codespace から artifact bundle を取得し、そのまま RasPi5 へ push します。
 
 ```bash
-agp target sync
+gar target sync
 ```
 
 特定 adb device を指定する場合:
 
 ```bash
 adb devices
-agp target sync --serial <serial>
+gar target sync --serial <serial>
 ```
 
 ネットワーク越し SSH/scp provider を選んだ場合:
 
 ```bash
-agp target sync --host raspi5
+gar target sync --host raspi5
 ```
 
 deploy だけやり直す場合:
 
 ```bash
-agp target fetch
-agp target deploy
+gar target fetch
+gar target deploy
 ```
 
 チェック:
@@ -349,56 +349,56 @@ RFID カードをかざすと UID が読まれる
 
 ## 10. よくある詰まり方
 
-### `agp setup` で不足コマンドが出る
+### `gar setup` で不足コマンドが出る
 
 まず案内に従います。sudo や認証が必要なものは人間が visible terminal で実行します。
 
 ```bash
-agp setup --no-install
+gar setup --no-install
 ```
 
 出力を AI に貼ると、次の手順に分解できます。
 
-### `agp code start` が Codespace を選べない
+### `gar code start` が Codespace を選べない
 
 ```bash
 gh auth status
 gh codespace list
-agp code start --codespace <codespace-name>
+gar code start --codespace <codespace-name>
 ```
 
-### `agp sim env diag --json` が `"ok": false`
+### `gar sim env diag --json` が `"ok": false`
 
 ```bash
-agp sim env status --json
-agp sim gpio status --json
-agp sim env log
-ssh vibecode-graviton 'systemctl --no-pager --full status agp-sim.target agp-bridge.service agp-gpio-sim.service'
+gar sim env status --json
+gar sim gpio status --json
+gar sim env log
+ssh vibecode-graviton 'systemctl --no-pager --full status gar-sim.target gar-bridge.service gar-gpio-sim.service'
 ```
 
 出力を貼って「どこが悪い？」と聞けばよいです。
 
-### `agp target sync` が artifact を見つけられない
+### `gar target sync` が artifact を見つけられない
 
 Codespace 側で artifact bundle の場所を確認します。
 
 ```bash
-ls -la /workspaces/agp-build-env/artifacts/from-codespace
-cat /workspaces/agp-build-env/artifacts/from-codespace/artifact.json
+ls -la /workspaces/gar-build-env/artifacts/from-codespace
+cat /workspaces/gar-build-env/artifacts/from-codespace/artifact.json
 ```
 
 WSL Hub 側で取得元を明示します。
 
 ```bash
-agp target fetch --remote-root /workspaces/agp-build-env/artifacts/from-codespace
-agp target deploy
+gar target fetch --remote-root /workspaces/gar-build-env/artifacts/from-codespace
+gar target deploy
 ```
 
 ### adb device が見えない
 
 ```bash
-agp usb list
-agp usb attach
+gar usb list
+gar usb attach
 adb kill-server
 adb start-server
 adb devices
@@ -427,18 +427,18 @@ chmod +x ~/sensor_demo
 ~/sensor_demo
 ```
 
-`agp target deploy` の manifest に `mode: "0755"` が入っているかも確認します。
+`gar target deploy` の manifest に `mode: "0755"` が入っているかも確認します。
 
 ## 11. AI に頼むときの聞き方
 
 作業中は、次のように聞けば十分です。
 
 ```text
-今 5 章の agp sim env diag --json で失敗しました。出力はこれです。次は何を見ればいい？
+今 5 章の gar sim env diag --json で失敗しました。出力はこれです。次は何を見ればいい？
 ```
 
 ```text
-agp target sync までは通りました。RasPi で sensor_demo が OLED を表示しません。確認順を出して。
+gar target sync までは通りました。RasPi で sensor_demo が OLED を表示しません。確認順を出して。
 ```
 
 ```text
@@ -448,7 +448,7 @@ agp target sync までは通りました。RasPi で sensor_demo が OLED を表
 AI 側は、基本的に次の順で切り分けます。
 
 ```text
-1. WSL Hub の agp 設定
+1. WSL Hub の gar 設定
 2. Codespace artifact bundle
 3. EC2 simulation runtime
 4. USB / adb または SSH/scp 接続
@@ -465,18 +465,18 @@ cd ~/Yurufuwa/AgentCockpit
 git pull
 make init
 make start
-agp setup
-agp code start
+gar setup
+gar code start
 
 # Codespace 側で target repo をビルドし artifact bundle を作る
 
-agp sim boot
-agp sim env deploy
-agp sim env start
-agp sim env diag --json
+gar sim boot
+gar sim env deploy
+gar sim env start
+gar sim env diag --json
 ssh vibecode-graviton '~/sensor_demo'
 
-agp target sync
+gar target sync
 adb shell
 ~/sensor_demo
 ```
@@ -484,7 +484,7 @@ adb shell
 SSH/scp 実機経路の場合:
 
 ```bash
-agp setup                 # 実機環境で SSH / scp を選ぶ
-agp target sync --host raspi5
+gar setup                 # 実機環境で SSH / scp を選ぶ
+gar target sync --host raspi5
 ssh raspi5 '~/sensor_demo'
 ```

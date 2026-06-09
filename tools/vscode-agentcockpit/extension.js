@@ -1,24 +1,24 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 const vscode = require("vscode");
 
-const REQUEST_GLOB = "**/.agp/terminal-requests/*.json";
+const REQUEST_GLOB = "**/.gar/terminal-requests/*.json";
 const terminals = new Map();
 const processedRequests = new Set();
 
 function activate(context) {
   context.subscriptions.push(
-    vscode.commands.registerCommand("agentcockpit.runAgpSetup", () => {
+    vscode.commands.registerCommand("gar.runAgpSetup", () => {
       const folder = workspaceFolder();
       if (!folder) {
-        vscode.window.showErrorMessage("AgentCockpit workspace folder was not found.");
+        vscode.window.showErrorMessage("Gapless Agent Runtime workspace folder was not found.");
         return;
       }
 
       runInTerminal({
-        title: "AgentCockpit",
+        title: "Gapless Agent Runtime",
         cwd: folder.fsPath,
-        command: ".venv/bin/agp setup",
+        command: ".venv/bin/gar setup",
       });
     })
   );
@@ -53,14 +53,14 @@ function processRequest(uri) {
   processedRequests.add(id);
 
   if (typeof request.command !== "string" || request.command.trim() === "") {
-    vscode.window.showWarningMessage(`AgentCockpit terminal request ${id} has no command.`);
+    vscode.window.showWarningMessage(`Gapless Agent Runtime terminal request ${id} has no command.`);
     writeStatus(uri, request, "invalid", "Terminal request has no command.");
     markRequest(uri, "invalid");
     return;
   }
 
   const terminal = runInTerminal({
-    title: request.title || "AgentCockpit",
+    title: request.title || "Gapless Agent Runtime",
     cwd: request.cwd || workspaceFolder()?.fsPath,
     command: request.command,
   });
@@ -69,7 +69,7 @@ function processRequest(uri) {
 }
 
 function runInTerminal(request) {
-  const title = request.title || "AgentCockpit";
+  const title = request.title || "Gapless Agent Runtime";
   let terminal = terminals.get(title);
   let createdNew = false;
   if (!terminal || terminal.exitStatus) {
@@ -114,7 +114,7 @@ function writeStatus(uri, request, status, message) {
     id,
     status,
     message,
-    title: request.title || "AgentCockpit",
+    title: request.title || "Gapless Agent Runtime",
     command: request.command || "",
     cwd: request.cwd || workspaceFolder()?.fsPath || "",
     updated_at: new Date().toISOString(),

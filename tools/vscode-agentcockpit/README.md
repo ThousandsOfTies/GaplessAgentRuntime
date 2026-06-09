@@ -1,13 +1,13 @@
-# AgentCockpit Terminal Bridge
+﻿# Gapless Agent Runtime Terminal Bridge
 
-VSCode integrated terminal に AgentCockpit の実行要求を流すための拡張です。
+VSCode integrated terminal に Gapless Agent Runtime の実行要求を流すための拡張です。
 
-Agent は `.agp/terminal-requests/*.json` に要求を書きます。拡張はそのファイルを監視し、VSCode の見える terminal を開いてコマンドを送ります。`sudo` のパスワード入力が必要な場合は、その terminal に人間が入力します。
+Agent は `.gar/terminal-requests/*.json` に要求を書きます。拡張はそのファイルを監視し、VSCode の見える terminal を開いてコマンドを送ります。`sudo` のパスワード入力が必要な場合は、その terminal に人間が入力します。
 
 ## Agent からの使い方
 
 ```bash
-agp terminal run --title "AgentCockpit" --command ".venv/bin/agp setup"
+gar terminal run --title "Gapless Agent Runtime" --command ".venv/bin/gar setup"
 ```
 
 ## VSCode からの使い方
@@ -23,7 +23,7 @@ make init
 Command Palette で次を実行します。
 
 ```text
-AgentCockpit: Run AGP Setup
+Gapless Agent Runtime: Run AGP Setup
 ```
 
 ## Request / Status
@@ -31,11 +31,11 @@ AgentCockpit: Run AGP Setup
 この拡張は以下を監視します。
 
 ```text
-.agp/terminal-requests/*.json
+.gar/terminal-requests/*.json
 ```
 
 terminal にコマンドを送ったら status を書きます。
 
 ```text
-.agp/terminal-status/<request-id>.json
+.gar/terminal-status/<request-id>.json
 ```

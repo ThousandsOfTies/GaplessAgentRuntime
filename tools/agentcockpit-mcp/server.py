@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -9,16 +9,16 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[2]
-AGP_DIR = ROOT / ".agp"
-REQUEST_DIR = AGP_DIR / "terminal-requests"
-STATUS_DIR = AGP_DIR / "terminal-status"
+GAR_DIR = ROOT / ".gar"
+REQUEST_DIR = GAR_DIR / "terminal-requests"
+STATUS_DIR = GAR_DIR / "terminal-status"
 
 
 TOOLS = [
     {
         "name": "run_in_visible_terminal",
         "description": (
-            "Create an AgentCockpit request that the VSCode extension runs in a "
+            "Create an Gapless Agent Runtime request that the VSCode extension runs in a "
             "visible integrated terminal for human sudo/auth input."
         ),
         "inputSchema": {
@@ -30,12 +30,12 @@ TOOLS = [
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Working directory. Defaults to the AgentCockpit repo root.",
+                    "description": "Working directory. Defaults to the Gapless Agent Runtime repo root.",
                 },
                 "title": {
                     "type": "string",
                     "description": "VSCode terminal title.",
-                    "default": "AgentCockpit User Action",
+                    "default": "Gapless Agent Runtime User Action",
                 },
             },
             "required": ["command"],
@@ -43,7 +43,7 @@ TOOLS = [
     },
     {
         "name": "list_terminal_status",
-        "description": "List AgentCockpit terminal request status files.",
+        "description": "List Gapless Agent Runtime terminal request status files.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -52,7 +52,7 @@ TOOLS = [
     },
     {
         "name": "get_terminal_status",
-        "description": "Read one AgentCockpit terminal request status by id.",
+        "description": "Read one Gapless Agent Runtime terminal request status by id.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -96,7 +96,7 @@ def handle_request(request: dict) -> dict | None:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {
-                    "name": "agentcockpit-mcp",
+                    "name": "gar-mcp",
                     "version": "0.0.1",
                 },
             },
@@ -140,7 +140,7 @@ def create_terminal_request(arguments: dict) -> str:
     if "\x00" in command:
         raise ValueError("command must not contain NUL bytes")
 
-    title = str(arguments.get("title") or "AgentCockpit User Action")
+    title = str(arguments.get("title") or "Gapless Agent Runtime User Action")
     if len(title) > 200:
         raise ValueError("title exceeds 200 character limit")
 
@@ -150,7 +150,7 @@ def create_terminal_request(arguments: dict) -> str:
         cwd.relative_to(ROOT)
     except ValueError as exc:
         raise ValueError(
-            f"cwd must be inside the AgentCockpit repository ({ROOT}); got {cwd}"
+            f"cwd must be inside the Gapless Agent Runtime repository ({ROOT}); got {cwd}"
         ) from exc
 
     request_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

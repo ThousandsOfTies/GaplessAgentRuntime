@@ -1,4 +1,4 @@
-# 開発ワークフロー
+﻿# 開発ワークフロー
 
 SSH/scp + adb を用いたデプロイベースのワークフローです。実機接続は **adb を既定**とし、ネットワーク越し接続が可能な環境では SSH/scp を選択する方針です（詳細: [01_ARCHITECTURE.md](01_ARCHITECTURE.md)）。
 
@@ -49,7 +49,7 @@ sequenceDiagram
 
     rect rgb(70, 40, 20)
         Note over Dev,EC2: 【EC2】起動 + デプロイ
-        Dev->>EC2: agp sim boot
+        Dev->>EC2: gar sim boot
         EC2-->>Dev: 起動 + IP 取得 + SSH config 更新（--pull で git pull）
         Dev->>GH: target software ごとのビルド
         GH->>Win: 成果物を WSL hub にコピー
@@ -60,13 +60,13 @@ sequenceDiagram
         Note over Dev,EC2: 【runtime host】simulation runtime 起動
         Dev->>EC2: ssh vibecode-graviton (①)
         Dev->>EC2: ~/venv/bin/python3 ~/web-bridge/bridge.py
-        EC2-->>Dev: [bridge] :8080 / :8765 / /run/agentcockpit/hw_sim.sock
+        EC2-->>Dev: [bridge] :8080 / :8765 / /run/gar/hw_sim.sock
         Dev->>EC2: ssh vibecode-graviton (②)
         Dev->>EC2: sudo ~/cuse_i2c -f --devname=i2c-1
         EC2-->>Dev: /dev/i2c-1 created
         Dev->>EC2: sudo ~/cuse_spi -f --devname=spidev0.0
         EC2-->>Dev: /dev/spidev0.0 created
-        Note over Dev,EC2: agp sim env start は /dev/* を用意するだけ。アプリは本番と同じ ~/sensor_demo で起動する
+        Note over Dev,EC2: gar sim env start は /dev/* を用意するだけ。アプリは本番と同じ ~/sensor_demo で起動する
     end
 
     rect rgb(40, 60, 30)
@@ -88,7 +88,7 @@ sequenceDiagram
 
     rect rgb(20, 50, 60)
         Note over Dev,RPi: 【RasPi5】デプロイ
-        Dev->>Win: agp target sync
+        Dev->>Win: gar target sync
         Win->>GH: gh codespace cp で artifact bundle 取得
         Win->>RPi: artifact manifest に従って adb push
     end
@@ -113,26 +113,26 @@ sequenceDiagram
 
 ## コマンドリファレンス
 
-`agp` コマンド・Make ターゲット・補助スクリプトの一覧は [11_COMMAND_REFERENCE.md](11_COMMAND_REFERENCE.md) に集約しています（正本）。AI 向けの操作（`agp sim` / Make / HTTP API）の使い方は [07_AI_AGENT_OPERATIONS.md](07_AI_AGENT_OPERATIONS.md) を参照してください。
+`gar` コマンド・Make ターゲット・補助スクリプトの一覧は [11_COMMAND_REFERENCE.md](11_COMMAND_REFERENCE.md) に集約しています（正本）。AI 向けの操作（`gar sim` / Make / HTTP API）の使い方は [07_AI_AGENT_OPERATIONS.md](07_AI_AGENT_OPERATIONS.md) を参照してください。
 
 代表的な流れだけ抜粋すると次の通りです。
 
 ```bash
 # WSL hub: 初回セットアップ
 make init && make start            # venv 作成・有効化
-agp setup                          # 依存検出・既定 host 保存
+gar setup                          # 依存検出・既定 host 保存
 
 # Codespace build VM: target software ごとの README / build script でビルド
 
 # WSL hub: 成果物配置 → simulation runtime 起動
-agp sim env deploy
-agp sim env start                      # /dev/* runtime + port forward
+gar sim env deploy
+gar sim env start                      # /dev/* runtime + port forward
 # VS Code terminal profile "EC2 Simulation" から本番と同じ起動手順
 ~/sensor_demo
 
 # 仮想 H/W 操作・観察
-agp sim ui button press 17
-agp sim ui rfid tap 04:AB:CD:EF:01:23
-agp sim env status --json
-agp sim env log
+gar sim ui button press 17
+gar sim ui rfid tap 04:AB:CD:EF:01:23
+gar sim env status --json
+gar sim env log
 ```

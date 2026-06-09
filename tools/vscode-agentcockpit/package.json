@@ -1,9 +1,9 @@
-{
-  "name": "agentcockpit-terminal-bridge",
-  "displayName": "AgentCockpit Terminal Bridge",
-  "description": "Runs AgentCockpit terminal requests in a visible VSCode integrated terminal.",
+﻿{
+  "name": "gar-terminal-bridge",
+  "displayName": "Gapless Agent Runtime Terminal Bridge",
+  "description": "Runs Gapless Agent Runtime terminal requests in a visible VSCode integrated terminal.",
   "version": "0.0.1",
-  "publisher": "agentcockpit",
+  "publisher": "gar",
   "engines": {
     "vscode": "^1.93.0"
   },
@@ -12,14 +12,14 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:agentcockpit.runAgpSetup"
+    "onCommand:gar.runAgpSetup"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "agentcockpit.runAgpSetup",
-        "title": "AgentCockpit: Run AGP Setup"
+        "command": "gar.runAgpSetup",
+        "title": "Gapless Agent Runtime: Run AGP Setup"
       }
     ]
   }

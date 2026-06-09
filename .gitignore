@@ -1,4 +1,4 @@
-# SSH keys - never commit
+﻿# SSH keys - never commit
 *.pem
 *.key
 id_rsa*
@@ -8,12 +8,12 @@ id_ed25519*
 .ssh/
 
 # Build artifacts
-.agp/
+.gar/
 codespaces/
 .venv/
 __pycache__/
 *.pyc
-tools/vscode-agentcockpit-*.vsix
+tools/gar-terminal-bridge-*.vsix
 app/sensor_demo
 cuse-stubs/i2c-stub/cuse_i2c
 cuse-stubs/test/vl53l0x_read

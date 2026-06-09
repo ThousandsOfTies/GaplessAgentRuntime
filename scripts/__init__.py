@@ -1,1 +1,1 @@
-"""Script-local Python modules for AgentCockpit tooling."""
+﻿"""Script-local Python modules for Gapless Agent Runtime tooling."""

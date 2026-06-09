@@ -1,17 +1,17 @@
-{
+﻿{
   "version": "2.0.0",
   "tasks": [
     {
       "label": "AGP: Init",
       "type": "shell",
-      "command": "source .venv/bin/activate && agp init",
+      "command": "source .venv/bin/activate && gar init",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
         "focus": true,
         "panel": "dedicated",
-        "group": "agp",
+        "group": "gar",
         "clear": false
       }
     },

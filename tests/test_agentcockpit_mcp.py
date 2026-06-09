@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import importlib.util
 import json
@@ -10,9 +10,9 @@ from unittest import mock
 
 def load_server_module():
     path = Path(__file__).resolve().parents[1] / "tools" / "agentcockpit-mcp" / "server.py"
-    spec = importlib.util.spec_from_file_location("agentcockpit_mcp_server", path)
+    spec = importlib.util.spec_from_file_location("gar_mcp_server", path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("Unable to load AgentCockpit MCP server")
+        raise RuntimeError("Unable to load Gapless Agent Runtime MCP server")
 
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -22,7 +22,7 @@ def load_server_module():
 server = load_server_module()
 
 
-class AgentCockpitMcpTest(unittest.TestCase):
+class GarMcpTest(unittest.TestCase):
     def test_tools_list_contains_visible_terminal_tool(self) -> None:
         response = server.handle_request(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
@@ -41,8 +41,8 @@ class AgentCockpitMcpTest(unittest.TestCase):
             tmp_path = Path(tmp)
             with (
                 mock.patch.object(server, "ROOT", tmp_path),
-                mock.patch.object(server, "AGP_DIR", tmp_path / ".agp"),
-                mock.patch.object(server, "REQUEST_DIR", tmp_path / ".agp" / "terminal-requests"),
+                mock.patch.object(server, "GAR_DIR", tmp_path / ".gar"),
+                mock.patch.object(server, "REQUEST_DIR", tmp_path / ".gar" / "terminal-requests"),
             ):
                 response = server.call_tool(
                     "run_in_visible_terminal",

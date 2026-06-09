@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 usage() {
@@ -20,7 +20,7 @@ EOF
 ssh_host="${EC2:-vibecode-graviton}"
 http_port="${HTTP_PORT:-8080}"
 ws_port="${WS_PORT:-8765}"
-state_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/agentcockpit"
+state_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/Gapless Agent Runtime"
 pid_file="$state_dir/ec2-port-forward.pid"
 log_file="$state_dir/ec2-port-forward.log"
 mode="start"
