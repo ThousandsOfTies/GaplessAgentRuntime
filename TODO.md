@@ -7,13 +7,11 @@
 
 ---
 
-## 🔥 いま一番やりたい（Next）
-
-- [ ] **SIM machine 構築を Terraform / Packer / Ansible でレシピ化** — まずは `infra/terraform/` + `user_data` で `linux-modules-extra-$(uname -r)` / `gpiod` / `strace` を入れる。詳細は [docs/03_SIMULATION_SETUP.md](docs/03_SIMULATION_SETUP.md)
+﻿## 🔥 いま一番やりたい（Next）
 
 ---
 
-## ✅ CUSE / gpio-sim 移行完了
+﻿## ✅ CUSE / gpio-sim 移行完了
 
 移行ステップ詳細: [docs/12_CUSE_MIGRATION_PLAN.md §6](docs/12_CUSE_MIGRATION_PLAN.md)
 
@@ -28,7 +26,11 @@
 
 ---
 
-## 💡 アイデア / あとで（Backlog）
+﻿## 💡 アイデア / あとで（Backlog）
+
+- [ ] **OLED framebuffer の期待値チェック追加** — `/api/events` で操作履歴を取得し、OLED canvas の期待値と照合できるようにする
+- [ ] **`gar sim run` / `gar target run` の共通 manifest 化** — `~/sensor_demo` 起動後の検証ログ収集まで `gar` に畳む
+- [ ] **実機 RasPi5 にも `run / logs / diagnose` 抽象を用意する** — シミュレーションと同じ観察コマンド体系を実機にも適用
 
 - [ ] **rtk（トークン削減）の導入** — WSL2 で `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh` 後に `rtk init -g --copilot` を実行。詳細は AGENT.md「オプション: rtk」セクション参照。コストやトークン量が気になったときに対処。
 
@@ -39,8 +41,9 @@
 
 ---
 
-## ✅ 最近やったこと（Done）
+﻿## ✅ 最近やったこと（Done）
 
+- [x] **SIM machine 構築を Terraform でレシピ化（フレーム）** — `infra/terraform/main.tf`（EC2/SG/volume/key）と `user_data.sh`（linux-modules-extra / gpiod / strace）を作成。`gar sim infra plan/apply/destroy/output` コマンドフレームを追加（要実装エラーを返す）。実装方針はエラーメッセージに記載 — 2026-06-09
 - [x] **USB-C の auto-attach は on-demand attach で代替** — Windows タスクスケジューラで挿入瞬間に attach する常駐導線は不要と判断。`gar target deploy/sync` が必要時に `gar usb attach` 相当を自動実行するため、通常運用は gar 操作時の遅延 attach に集約 — 2026-06-06
 - [x] **`gar target deploy`（adb 経路）が実機未検出なら `gar usb attach` を自動先行実行する統合** — adb provider の deploy 前に `adb devices` を確認し、対象 device が見えない場合は `gar usb attach` 相当を自動実行してから再確認する形へ変更。`gar target sync` も既存 deploy 経路を通るため同じ挙動 — 2026-06-06
 - [x] **旧 Windows PowerShell RasPi helper 相当（Codespace から成果物取得 → 実機 push）の `gar` 収容** — `gar target fetch` で Codespace の artifact bundle を WSL hub へ取得し、`gar target sync` で fetch 直後に既存の `gar target deploy` 経路へ渡す一発操作を追加。`--codespace` / `--remote-root` / `--artifacts-dir` と adb/SSH の `--serial` / `--host` / `--dest` に対応 — 2026-06-06
@@ -60,3 +63,4 @@
 - [x] ドキュメント整理（README + docs 01〜12、WSL 中心方針へ）
 - [x] GPIO 解決方式の比較表を docs 12 に整理
 - [x] EC2 の `gpio-sim` 対応確認、`linux-modules-extra-$(uname -r)` 導入、`sensor_demo` GPIO v2 化、`gar sim env start` の fake `/dev/gpiochip0` setup 実装 — 2026-06-03
+

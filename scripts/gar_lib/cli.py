@@ -419,6 +419,16 @@ def build_parser() -> argparse.ArgumentParser:
                 help="結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
 
+    sim_infra_parser = sim_subparsers.add_parser(
+        "infra", help="simulation host インフラを Terraform で管理します（要実装）"
+    )
+    sim_infra_subparsers = sim_infra_parser.add_subparsers(dest="infra_command", metavar="command")
+    for _infra_cmd in ("plan", "apply", "destroy", "output"):
+        _p = sim_infra_subparsers.add_parser(_infra_cmd, help=f"terraform {_infra_cmd}")
+        _p.add_argument("--key-name", default=None, help="EC2 SSH key pair name")
+        _p.add_argument("--region", default=None, help="AWS region")
+        _p.add_argument("--auto-approve", action="store_true", help="--auto-approve を terraform に渡します")
+
     sim_gpio_parser = sim_subparsers.add_parser(
         "gpio", help="GPIO dummy runtime を生成・配置・確認します"
     )
@@ -624,6 +634,7 @@ def build_parser() -> argparse.ArgumentParser:
         "completion": completion_parser,
         "sim": sim_parser,
         "sim_env": sim_env_parser,
+        "sim_infra": sim_infra_parser,
         "sim_gpio": sim_gpio_parser,
         "sim_ui": sim_ui_parser,
         "sim_button": sim_button_parser,
@@ -722,6 +733,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 stop_port_forward=not getattr(args, "keep_port_forward", False),
                 json_output=getattr(args, "json_output", False),
             )
+        if args.sim_command == "infra":
+            if args.infra_command is None:
+                subcommand_parsers["sim_infra"].print_help()
+                return 1
+            print(
+                f"error: gar sim infra {args.infra_command} は未実装です。\n"
+                "  実装方針: infra/terraform/main.tf の terraform コマンドを呼び出し、\n"
+                "  apply 後に出力される instance_id / public_ip を .gar/config.json へ保存し、\n"
+                "  ~/.ssh/config の HostName を更新する（gar sim boot --pull 相当の後処理も行う）。\n"
+                "  infra/terraform/ を整備後に実装してください。",
+                file=__import__("sys").stderr,
+            )
+            return 1
         if args.sim_command == "gpio":
             if args.gpio_command is None:
                 subcommand_parsers["sim_gpio"].print_help()
