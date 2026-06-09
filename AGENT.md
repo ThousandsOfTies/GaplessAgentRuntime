@@ -9,6 +9,9 @@
 **AI（Codex / Copilot 等）も、原則として `gar` のサブコマンド経由で操作する。**
 これは人間が実施する操作と AI の操作を同じ「正解レール」に乗せ、品質と再現性を保つための契約。
 
+> **rtk を使う**: `run_in_terminal` で長い出力が予想されるコマンドには `rtk` を付けてトークンを節約する。
+> 例: `rtk git status` / `rtk git log` / `rtk grep` / `rtk python3 -m pytest`
+
 この契約には三つの目的がある。
 
 1. **人間への透明性** — `gar` のサブコマンド体系を見れば、Gapless Agent Runtime が何をできるかが一覧できる。AI が何をしているかを人間が常に把握できる状態を保つ。
