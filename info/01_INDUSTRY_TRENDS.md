@@ -1,4 +1,4 @@
-﻿# 業界動向と Gapless Agent Runtime の技術的価値
+# 業界動向と Gapless Agent Runtime の技術的価値
 
 Gapless Agent Runtime で構築した「AI エージェントが操作しやすいクラウド・ネイティブな組み込みソフトウェア開発環境」は、現在の組み込み・車載ソフトウェア業界における最新の技術トレンドと極めて高いレベルで合致しています。
 

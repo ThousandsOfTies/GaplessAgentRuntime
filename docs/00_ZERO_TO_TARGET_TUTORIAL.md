@@ -1,4 +1,4 @@
-﻿# 0 から実機動作までのチュートリアル
+# 0 から実機動作までのチュートリアル
 
 このチュートリアルは、しばらく間が空いても Gapless Agent Runtime を最初から立ち上げ直し、シミュレーションで予行してから RasPi5 実機で `sensor_demo` を動かすための一本道です。
 
@@ -31,9 +31,9 @@ RasPi5
 | EC2 simulation host | `gar sim boot` で起動できる EC2 設定がある |
 | RasPi5 | Raspberry Pi OS が起動し、実 H/W 配線済み |
 | 実機接続 | 既定は USB-C + adb。ネットワーク接続できる場合は SSH/scp でもよい |
-| ビルド成果物 | Codespace 側で AGP artifact bundle を作れる target repo がある |
+| ビルド成果物 | Codespace 側で artifact bundle を作れる target repo がある |
 
-配線は [04_HARDWARE_WIRING.md](04_HARDWARE_WIRING.md) を参照します。コマンドの細かい意味は [11_COMMAND_REFERENCE.md](11_COMMAND_REFERENCE.md) が正本です。
+配線は [05_HARDWARE_WIRING.md](05_HARDWARE_WIRING.md) を参照します。コマンドの細かい意味は [01_COMMAND_REFERENCE.md](01_COMMAND_REFERENCE.md) が正本です。
 
 ## 1. WSL Hub を初期化する
 
@@ -146,7 +146,7 @@ bash scripts/post-create.sh
 
 その後は target software ごとの README / build script に従ってビルドします。
 
-ビルド後、AGP artifact bundle ができていることを確認します。既定では次の場所を `gar target fetch` / `gar sim env deploy` が見に行きます。
+ビルド後、artifact bundle ができていることを確認します。既定では次の場所を `gar target fetch` / `gar sim env deploy` が見に行きます。
 
 ```bash
 ls -la /workspaces/gar-build-env/artifacts/from-codespace
@@ -208,7 +208,7 @@ gar sim shutdown
 
 ## 6. RasPi5 実機を準備する
 
-配線は [04_HARDWARE_WIRING.md](04_HARDWARE_WIRING.md) の通りにします。
+配線は [05_HARDWARE_WIRING.md](05_HARDWARE_WIRING.md) の通りにします。
 
 RasPi5 側で I2C / SPI を有効化していない場合:
 

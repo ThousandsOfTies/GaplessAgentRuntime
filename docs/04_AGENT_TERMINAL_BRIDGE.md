@@ -1,13 +1,13 @@
-﻿# Agent Terminal Bridge 設計メモ
+# Agent Terminal Bridge 設計メモ
 
 > このドキュメントは **bridge の仕組み（request ファイル・extension・status）** を扱います。
-> AI の**振る舞いルール**（いつ裏で実行し、いつ handoff するか）は [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLABORATION_RULES.md) を正本とします。
+> AI の**振る舞いルール**（いつ裏で実行し、いつ handoff するか）は [AGENT.md「Terminal 操作の原則」](../AGENT.md) を正本とします。
 
 ## 目的
 
 Gapless Agent Runtime では、AI Agent がビルド、初期化、デプロイ、実行確認を進める。ただし `sudo` パスワード、`gh auth login`、クラウド認証などは AI に渡さず、人間が VSCode integrated terminal 上で直接入力する。
 
-そのため、通常処理は AI 側の裏実行で進め、sudo/auth など人間入力が必要な場面だけ visible terminal へ handoff する（判断基準の詳細は [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLABORATION_RULES.md)）。
+そのため、通常処理は AI 側の裏実行で進め、sudo/auth など人間入力が必要な場面だけ visible terminal へ handoff する（判断基準の詳細は [AGENT.md「Terminal 操作の原則」](../AGENT.md)）。
 AI と VSCode terminal を直接つなぐのではなく、明示的な橋を置く。
 
 ```text
@@ -37,11 +37,11 @@ AI / Codex
   - 要求を受けたら VSCode integrated terminal を作成する。
   - コマンドは `sendText()` で terminal に送る。
   - terminal 出力の捕捉や追加入力送信は行わない。AI は裏で状態確認して復帰する。
-  - `Gapless Agent Runtime: Run AGP Setup` コマンドも提供する。
+  - `Gapless Agent Runtime: Run gar setup` コマンドも提供する。
 
 ## 使い方
 
-AI の振る舞いルールは [10_AGENT_COLLABORATION_RULES.md](10_AGENT_COLLABORATION_RULES.md) を優先する。
+AI の振る舞いルールは [AGENT.md「Terminal 操作の原則」](../AGENT.md) を優先する。
 通常作業は裏で実行し、sudo/auth など人間入力が必要な時だけ visible terminal に handoff する。
 
 ### VSCode extension のローカルインストール
@@ -65,7 +65,7 @@ MCP tool `run_in_visible_terminal` は以下の request を作る。
 ```json
 {
   "command": ".venv/bin/gar setup",
-  "cwd": "/home/user/Yurufuwa/AgentCockpit",
+  "cwd": "/home/user/AI/AgentCockpit",
   "title": "Gapless Agent Runtime"
 }
 ```

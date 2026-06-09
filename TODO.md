@@ -1,19 +1,19 @@
-﻿# Gapless Agent Runtime タスクリスト
+# Gapless Agent Runtime タスクリスト
 
 毎日の「今日なにやろうかな」用のメモ。気軽に書き換えてOK。
 詳細な設計は [docs/](docs/) 各ファイルに、ここは「次の一手」を思い出すための入口。
 
-最終更新: 2026-06-06
+最終更新: 2026-06-09
 
 ---
 
-﻿## 🔥 いま一番やりたい（Next）
+## 🔥 いま一番やりたい（Next）
 
 ---
 
-﻿## ✅ CUSE / gpio-sim 移行完了
+## ✅ CUSE / gpio-sim 移行完了
 
-移行ステップ詳細: [docs/12_CUSE_MIGRATION_PLAN.md §6](docs/12_CUSE_MIGRATION_PLAN.md)
+移行は完了済み。詳細は以下の各項目の記録を参照。
 
 - [x] **G1/G2** GPIO は `gpio-sim` + GPIO chardev v2 ルートに切替。`gar sim env start` が fake `/dev/gpiochip0` を用意し、`sensor_demo` は `/dev/gpiochip0` 固定のまま動く — 2026-06-03
 - [x] **G3** bridge.py と gpio-sim sysfs を同期（Button17 / LED18 / LED24 を panel と接続） — 2026-06-03。Button17 の `pull-up/down` を bridge から gpio-sim に反映、LED18/24 は gpio-sim `value` を poll して panel state に反映
@@ -26,7 +26,7 @@
 
 ---
 
-﻿## 💡 アイデア / あとで（Backlog）
+## 💡 アイデア / あとで（Backlog）
 
 - [ ] **OLED framebuffer の期待値チェック追加** — `/api/events` で操作履歴を取得し、OLED canvas の期待値と照合できるようにする
 - [ ] **`gar sim run` / `gar target run` の共通 manifest 化** — `~/sensor_demo` 起動後の検証ログ収集まで `gar` に畳む
@@ -37,11 +37,11 @@
 - [ ] **検証軸に「ポータビリティ劣化チェック」を追加** — [OK] が押せても成果物の質が落ちていないかを見る目を入れる（押下回数だけ減って質が死ぬのを防ぐ）
 - [ ] **AI の自己判断レイヤ** 実行前に AI が `--json` の結果を見て「やめておく / 直す」を選ぶループ（docs/13 の欠けているピース）
 - [ ] **hardware assignment CSV の分離** — PoC 中は `Gapless Agent Runtime/hardware/` を正本置き場にする。最終的には Excel 代替のアサイン定義 CSV を別 repo に分離し、Gapless Agent Runtime は runtime/systemd/docs 用へ、製品プロセスは app config / device map 用へ、それぞれ変換して利用する
-- [ ] **「装置」化デモ — 距離キープ P 制御 1 ループ** 既存 sim 資産だけで、目標距離を自律で保つ最小フィードバック制御を組む。get=vl53l0x / 制御=誤差×ゲイン（P のみ、I・D は欲しくなってから）/ put=LED 点滅速度 or PWM / 表示=ssd1306 に「目標・現在・誤差」。狙いは「LED が点くだけ」→「目標値を自律で保つ計器」への一段＝デモを機能証明から価値証明へ。自然言語→仮想でゲイン調整→実機 の既存閉ループに乗せる。遠い構想は [docs/14](docs/14_FUTURE_VISION_DEVICE_DISCOVERY.md)、これはその"足元版"
+- [ ] **「装置」化デモ — 距離キープ P 制御 1 ループ** 既存 sim 資産だけで、目標距離を自律で保つ最小フィードバック制御を組む。get=vl53l0x / 制御=誤差×ゲイン（P のみ、I・D は欲しくなってから）/ put=LED 点滅速度 or PWM / 表示=ssd1306 に「目標・現在・誤差」。狙いは「LED が点くだけ」→「目標値を自律で保つ計器」への一段＝デモを機能証明から価値証明へ。自然言語→仮想でゲイン調整→実機 の既存閉ループに乗せる。遠い構想は [info/03_FUTURE_VISION.md](info/03_FUTURE_VISION.md)、これはその"足元版"
 
 ---
 
-﻿## ✅ 最近やったこと（Done）
+## ✅ 最近やったこと（Done）
 
 - [x] **SIM machine 構築を Terraform でレシピ化（フレーム）** — `infra/terraform/main.tf`（EC2/SG/volume/key）と `user_data.sh`（linux-modules-extra / gpiod / strace）を作成。`gar sim infra plan/apply/destroy/output` コマンドフレームを追加（要実装エラーを返す）。実装方針はエラーメッセージに記載 — 2026-06-09
 - [x] **USB-C の auto-attach は on-demand attach で代替** — Windows タスクスケジューラで挿入瞬間に attach する常駐導線は不要と判断。`gar target deploy/sync` が必要時に `gar usb attach` 相当を自動実行するため、通常運用は gar 操作時の遅延 attach に集約 — 2026-06-06

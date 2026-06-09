@@ -1,4 +1,4 @@
-﻿# Gapless Agent Runtime Terminal Bridge
+# Gapless Agent Runtime Terminal Bridge
 
 VSCode integrated terminal に Gapless Agent Runtime の実行要求を流すための拡張です。
 
@@ -23,7 +23,7 @@ make init
 Command Palette で次を実行します。
 
 ```text
-Gapless Agent Runtime: Run AGP Setup
+Gapless Agent Runtime: Run gar setup
 ```
 
 ## Request / Status

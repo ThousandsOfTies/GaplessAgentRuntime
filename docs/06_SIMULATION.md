@@ -1,4 +1,4 @@
-﻿# シミュレーション環境
+# シミュレーション環境
 
 このドキュメントでは、クラウド上（AWS EC2 Graviton）で物理ハードウェアをエミュレートする仕組みについて解説します。
 
@@ -6,9 +6,9 @@ Gapless Agent Runtime のシミュレーションは、EC2 側の device compati
 
 現在は I2C/SPI を CUSE、GPIO を `gpio-sim` + GPIO chardev v2 で実現しています。EC2 側の runtime が実機と同じ `/dev/i2c-1`、`/dev/spidev0.0`、`/dev/gpiochip0` を用意するため、アプリは `~/sensor_demo` を直接起動します。runtime の設定・実行ファイルは `/etc/gar/hardware/`、`/usr/local/sbin/`、`/usr/local/lib/gar/`、`/run/gar/` に保存し、アプリ本体だけを本番と同じユーザー領域の成果物として扱います。
 
-移行の具体的な設計とステップは [12_CUSE_MIGRATION_PLAN.md](12_CUSE_MIGRATION_PLAN.md)、このアプローチがなぜ価値を持つかは [06_INDUSTRY_TRENDS.md](06_INDUSTRY_TRENDS.md) にまとめています。
+I2C/SPI を CUSE、GPIO を `gpio-sim` + GPIO chardev v2 で実現するこの構成への移行は完了済みです。このアプローチがなぜ価値を持つかは [../info/01_INDUSTRY_TRENDS.md](../info/01_INDUSTRY_TRENDS.md) にまとめています。
 
-﻿## 全体構成
+## 全体構成
 
 `sensor_demo` と `bridge.py` は独立したプロセス。`sensor_demo` は標準の `/dev/*` インターフェース（ioctl / read / write）しか使わず、`bridge.py` を直接呼び出さない。
 
@@ -152,7 +152,7 @@ ssh vibecode-graviton
 ```
 
 
-﻿## 設計方針: 起動スクリプトを分岐させない
+## 設計方針: 起動スクリプトを分岐させない
 
 実機検証が始まると、シミュレーション専用スクリプトは人間の注意から外れ、壊れていても気づきにくくなります。Gapless Agent Runtime では、sim/device で起動スクリプトを完全に分けるのではなく、共通の target 定義から runtime adapter が必要な device layer を用意する設計へ寄せます。
 
@@ -178,7 +178,7 @@ device runtime:
 
 ---
 
-﻿## シミュレーションにおける制約とモダンAPIへの移行方針
+## シミュレーションにおける制約とモダンAPIへの移行方針
 
 旧来の組み込み開発では、高速なGPIO制御のために `/dev/gpiomem` などに対して `mmap` を行い、物理メモリ（レジスタ）を直接書き換える手法が一般的でした（`wiringPi` 等）。しかし、**この `mmap` 方式はシミュレーション環境において致命的な制約**を持ちます。
 
@@ -194,11 +194,11 @@ Gapless Agent Runtime では、新規開発および移行において **「Linu
 
 ---
 
-﻿## ブラウザパネルへのアクセス
+## ブラウザパネルへのアクセス
 
 Antigravity から EC2 に Remote SSH 接続している場合、ポートは自動的にフォワードされます。
 
-1. **Open Folder → `/home/ubuntu/Gapless Agent Runtime`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
+1. **Open Folder → `/home/ubuntu/AgentCockpit`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
 2. **PORTS タブ**で `8080` の行を右クリック → "Open in Simple Browser"
 3. HTML パネルが開き、各デバイスの状態がリアルタイム表示される
 
@@ -206,7 +206,7 @@ Antigravity から EC2 に Remote SSH 接続している場合、ポートは自
 
 ---
 
-﻿## 操作と確認
+## 操作と確認
 
 | 操作 | パネル表示 / 期待される挙動 |
 |---|---|
@@ -255,7 +255,7 @@ Antigravity から EC2 に Remote SSH 接続している場合、ポートは自
 
 ---
 
-﻿## トラブルシューティング
+## トラブルシューティング
 
 | 症状 | 原因 | 対処 |
 |------|------|------|

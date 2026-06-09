@@ -1,10 +1,10 @@
-﻿# Gapless Agent Runtime — Agent Instructions
+# Gapless Agent Runtime — Agent Instructions
 
-﻿## プロジェクト概要
+## プロジェクト概要
 
-→ 詳細は [README.md](../README.md) を参照。
+→ 詳細は [README.md](README.md) を参照。
 
-﻿## AI オペレーションの原則（契約）
+## AI オペレーションの原則（契約）
 
 **AI（Codex / Copilot 等）も、原則として `gar` のサブコマンド経由で操作する。**
 これは人間が実施する操作と AI の操作を同じ「正解レール」に乗せ、品質と再現性を保つための契約。
@@ -88,7 +88,7 @@ which adb && adb version
 find .gar -maxdepth 3 -type f | sort
 ```
 
-﻿## 接続設定の確認
+## 接続設定の確認
 
 各環境の接続先は `.gar/config.json` に保存される（`gar setup` で設定）。現在の設定値は `gar setup` または `cat .gar/config.json` で確認すること。
 
@@ -98,7 +98,7 @@ find .gar -maxdepth 3 -type f | sort
 
 ---
 
-﻿## 環境の役割と境界（鉄則）
+## 環境の役割と境界（鉄則）
 
 各環境には固定の役割がある。**SSH で入れること＝そこで何をしてもよい、ではない。**
 特に EC2 は「たまたま今は Linux でログインできる」だけで、本来は **実機のスタンドイン（将来はもっとプア／シェルやログインすら無い実行専用デバイスを想定）**。
@@ -117,7 +117,7 @@ find .gar -maxdepth 3 -type f | sort
 
 ---
 
-﻿## デプロイ手順
+## デプロイ手順
 
 ### 「VM（シミュレーション環境）にデプロイして」と言われたら
 
@@ -163,7 +163,7 @@ gar sim env deploy
 
 ---
 
-﻿## 実行手順
+## 実行手順
 
 ### VM でシミュレーション起動
 
@@ -196,11 +196,11 @@ gar sim env diag --json
 gar sim env stop
 ```
 
-詳細: `docs/07_AI_AGENT_OPERATIONS.md`
+詳細: [docs/06_SIMULATION.md](docs/06_SIMULATION.md)
 
 ### RasPi5 で実機実行
 
-実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`gar setup` の実機環境カテゴリで `SSH / scp` provider を選べ、`gar target deploy --host <ssh-host>` で転送できる（詳細: [docs/11_COMMAND_REFERENCE.md](docs/11_COMMAND_REFERENCE.md)）。
+実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`gar setup` の実機環境カテゴリで `SSH / scp` provider を選べ、`gar target deploy --host <ssh-host>` で転送できる（詳細: [docs/01_COMMAND_REFERENCE.md](docs/01_COMMAND_REFERENCE.md)）。
 
 ```powershell
 adb shell
@@ -212,7 +212,7 @@ adb shell
 
 ---
 
-﻿## Simulation 環境の起動・停止
+## Simulation 環境の起動・停止
 
 ```bash
 gar sim boot       # 起動 + SSH config 自動更新（--pull で git pull も実行）
@@ -222,20 +222,20 @@ gar sim status  # 状態確認
 
 ---
 
-﻿## ビルド成果物
+## ビルド成果物
 
 | ファイル | 用途 |
 |---|---|
 | `app/sensor_demo` | 統合デモアプリ（GPIO + I2C OLED + SPI RFID） |
-| `gar-tools/cuse-stubs/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
-| `gar-tools/cuse-stubs/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
-| `gar-tools/cuse-stubs/test/gpio_led_button` | GPIO 単機能デモ |
-| `gar-tools/cuse-stubs/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
-| `gar-tools/cuse-stubs/web-bridge/` | Web ブリッジ + HTML パネル |
+| `agp-tools/cuse-stubs/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
+| `agp-tools/cuse-stubs/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
+| `agp-tools/cuse-stubs/test/gpio_led_button` | GPIO 単機能デモ |
+| `agp-tools/cuse-stubs/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
+| `agp-tools/cuse-stubs/web-bridge/` | Web ブリッジ + HTML パネル |
 
 ---
 
-﻿## 既知の制約・トラブルシューティング
+## 既知の制約・トラブルシューティング
 
 ### Antigravity-IDE (Windows) からの FUSE マウントへのアクセス制限 (EPERM)
 Antigravity-IDE は Windows ネイティブなアプリケーションであり、WSL 内のファイルには Windows のファイル共有（9Pプロトコル経由: `\\wsl.localhost\...`）でアクセスします。
@@ -249,7 +249,7 @@ WSL 内で `sshfs` 等の FUSE でマウントしたディレクトリ（例: `g
 
 ---
 
-﻿## オプション: rtk（トークン削減プロキシ）
+## オプション: rtk（トークン削減プロキシ）
 
 [rtk](https://github.com/rtk-ai/rtk) は LLM のトークン消費を 60-90% 削減する CLI プロキシ。
 `git status` や `cargo test` などのコマンド出力をフィルタ・圧縮してから LLM に渡す。

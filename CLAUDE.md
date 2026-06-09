@@ -1,4 +1,4 @@
-﻿# Claude Entry Point
+# Claude Entry Point
 
 このリポジトリで作業する前に、必ず [`AGENT.md`](AGENT.md) を読んでください。
 

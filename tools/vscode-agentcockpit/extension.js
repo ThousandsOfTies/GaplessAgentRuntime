@@ -1,4 +1,4 @@
-﻿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const vscode = require("vscode");
 
@@ -8,7 +8,7 @@ const processedRequests = new Set();
 
 function activate(context) {
   context.subscriptions.push(
-    vscode.commands.registerCommand("gar.runAgpSetup", () => {
+    vscode.commands.registerCommand("gar.runSetup", () => {
       const folder = workspaceFolder();
       if (!folder) {
         vscode.window.showErrorMessage("Gapless Agent Runtime workspace folder was not found.");

@@ -18,7 +18,7 @@ TOOLS = [
     {
         "name": "run_in_visible_terminal",
         "description": (
-            "Create an Gapless Agent Runtime request that the VSCode extension runs in a "
+            "Create a Gapless Agent Runtime request that the VSCode extension runs in a "
             "visible integrated terminal for human sudo/auth input."
         ),
         "inputSchema": {

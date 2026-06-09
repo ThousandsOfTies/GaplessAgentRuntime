@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "gar-terminal-bridge",
   "displayName": "Gapless Agent Runtime Terminal Bridge",
   "description": "Runs Gapless Agent Runtime terminal requests in a visible VSCode integrated terminal.",
@@ -12,14 +12,14 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:gar.runAgpSetup"
+    "onCommand:gar.runSetup"
   ],
   "main": "./extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "gar.runAgpSetup",
-        "title": "Gapless Agent Runtime: Run AGP Setup"
+        "command": "gar.runSetup",
+        "title": "Gapless Agent Runtime: Run gar setup"
       }
     ]
   }
