@@ -429,32 +429,7 @@ chmod +x ~/sensor_demo
 
 `gar target deploy` の manifest に `mode: "0755"` が入っているかも確認します。
 
-## 11. AI に頼むときの聞き方
 
-作業中は、次のように聞けば十分です。
-
-```text
-今 5 章の gar sim env diag --json で失敗しました。出力はこれです。次は何を見ればいい？
-```
-
-```text
-gar target sync までは通りました。RasPi で sensor_demo が OLED を表示しません。確認順を出して。
-```
-
-```text
-このチュートリアルの 8 章まで進みました。ここから実機実行の手順を短く再掲して。
-```
-
-AI 側は、基本的に次の順で切り分けます。
-
-```text
-1. WSL Hub の gar 設定
-2. Codespace artifact bundle
-3. EC2 simulation runtime
-4. USB / adb または SSH/scp 接続
-5. RasPi5 の /dev/* と配線
-6. sensor_demo のログ / 画面 / OLED / RFID の反応
-```
 
 ## 12. 最短コマンドまとめ
 
@@ -487,30 +462,4 @@ SSH/scp 実機経路の場合:
 gar setup                 # 実機環境で SSH / scp を選ぶ
 gar target sync --host raspi5
 ssh raspi5 '~/sensor_demo'
-```
-
----
-
-## AI への依頼例
-
-自然言語で指示すると AI が以下のように分解して実行する:
-
-```text
-sensor_demo を EC2 にデプロイして、シミュレーション用の /dev runtime を起動し、
-EC2 にログインして ~/sensor_demo を起動してください。
-そのあと GPIO17 を押して System ON にしてから RFID をタップし、
-OLED とログを確認して UID が表示されるか見てください。
-```
-
-AI の実行手順:
-
-```bash
-gar sim env deploy       # runtime インフラを配置
-gar sim deploy           # アプリを転送
-gar sim env start        # /dev/* runtime + port forward 起動
-# EC2 にログインして ~/sensor_demo を起動（terminal profile "EC2 Simulation"）
-gar sim ui button press 17
-gar sim ui rfid tap 04:AB:CD:EF:01:23
-gar sim env status --json
-gar sim env log
 ```

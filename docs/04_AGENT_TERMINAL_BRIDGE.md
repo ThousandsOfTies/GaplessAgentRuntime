@@ -106,8 +106,10 @@ MCP 設定は `make init` が `.gar/mcp-config.json` に生成する。
 
 ## 次のAIへの作業指針
 
+> Terminal Bridge の振る舞いルール（いつ裏で実行し、いつ handoff するか）は `AGENT.md` の「Terminal 操作の原則」を参照。
+
 1. まず `python3 -m unittest discover -s tests` を通す。
 2. `make init` を実行し、VSCode window を reload する。
 3. MCP 設定に `.gar/mcp-config.json` の内容を登録する。
 4. `run_in_visible_terminal` で visible terminal にコマンドが流れるところを確認する。
-5. handoff 後は `gar setup --no-install` や `which ... --version` を裏で実行して復帰する。
+5. handoff 後は `gar setup --no-install` や `which ... --version` を裏で実行して復帰する（詳細は `AGENT.md`）。
