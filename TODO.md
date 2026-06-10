@@ -60,6 +60,25 @@
 - [x] docs/13 設計思想（なぜ仮想と実機を両方持つのか）を新規作成 — 2026-06-03
 - [x] 旧 Windows PowerShell EC2 helper を `gar sim boot/shutdown/status` に移植（SSH config HostName 自動更新付き） — 2026-06-02
 - [x] USB-C を `gar usb attach` で WSL2 へ（busid 自動検出・記憶） — 2026-06-02
+
+---
+
+## 📌 リネーム作業時にまとめて行うこと（今はやらない）
+
+最終目標は全名称を `gar` ベースに統一すること（製品名「Gapless Agent Runtime」/ CLI `gar`）。
+正本リポは `ThousandsOfTies/AgentCockpit`、ツールは `ThousandsOfTies/gar-tools`（build-env / embedded-poc-app も同 org）。
+トップ 4 フォルダの物理リネームと連動するため、以下は **リネーム作業時に一括**で実施する。
+
+- [ ] **トップ 4 フォルダの物理リネーム** — `AgentCockpit` / `agp-tools` / `agp-build-env` / `embedded-poc-app` → `gar-*` 名へ
+- [ ] **リポ跨ぎ参照を URL 化** — サブリポの参照スタブの相対リンク `../../AgentCockpit/...` を GitHub の絶対 URL に変更（リポ跨ぎは URL が正、同一リポ内リンクは相対のまま）
+- [ ] **フォルダ名を含むパス記述の統一** — `agp-tools/...` / `agp-build-env` / `gar-build-env` などの混在を `gar-*` に一括統一
+
+## 🔌 Renode / MCU 拡張（着手済み・ランタイム統合は今後）
+
+- [x] **`gar setup` に Renode(MCU/ベアメタル) simulation プロバイダを追加** — `scripts/gar_lib/environments/registry/simulation/renode_mcu.py`。Linux/WSL2 で最新 portable build を user-local 導入。プラグイン自動発見でコア無改修。ランタイム統合は未配線スタブ（`gar sim env` は当面 `ssh_remote` 利用） — 2026-06-10
+- [ ] **Renode ランタイム統合（本配線）** — `.resc` 生成・ペリフェラルモデル起動で `gar sim env` を Renode 上で回す。最小実験として Pico の `.elf` を Renode と実機で同一バイナリ実行（sim↔実機パリティのデモ）＝製品が必要とする「2 件目の汎用性実証」
+- [ ] **ターゲット抽象の引き直し（本配線と同時に）** — 現状の simulation/device 抽象（`run_remote`/`push_file`/`start_port_forward`）は「SSH/adb で Linux に繋ぐ」前提に最適化されており、Renode（ローカルプロセス＋ファームロード）や専用 SoC 評価ボード（JTAG/SWD 書き込み・電源/リセット・シリアル/RTT）で破綻する。What（検証対象）と How（接続方法）を分離し、操作を能力（lifecycle / provision / execute / observe）で捉え直す。「SSH」は execute の一実装に格下げ。これは「同一バイナリが sim と実機で動く（バイナリ透過性）」を Linux SBC 以外へ持ち越せるかの試金石。YAGNI に従い、実例 2 つを手にする本配線時に痛みとともに引き直す
+- [ ] **既存テストのほころび** — `tests/test_gar_cli.py` の target deploy 系 3 件が（Renode 追加と無関係に）失敗中。回帰検知のセーフティネットの穴なので別途調査
 - [x] ドキュメント整理（README + docs 01〜12、WSL 中心方針へ）
 - [x] GPIO 解決方式の比較表を docs 12 に整理
 - [x] EC2 の `gpio-sim` 対応確認、`linux-modules-extra-$(uname -r)` 導入、`sensor_demo` GPIO v2 化、`gar sim env start` の fake `/dev/gpiochip0` setup 実装 — 2026-06-03
