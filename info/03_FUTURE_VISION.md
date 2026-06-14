@@ -113,7 +113,7 @@ FB ループの出力がハードウェア要求仕様になる。
 
 | 既存資産 | この構想での役割 |
 |---|---|
-| `agp-tools/cuse-stubs/`（cuse_gpio / cuse_i2c / cuse_spi） | **存在しないデバイスを OS に生やす捺造装置** |
+| `gar-tools/cuse-stubs/`（cuse_gpio / cuse_i2c / cuse_spi） | **存在しないデバイスを OS に生やす捺造装置** |
 | `vl53l0x_sim.c` / `mfrc522_sim.c` / `ssd1306_sim.c` | デバイスの振る舞いをコードで定義 ＝ 新デバイスも同じ枠で「発明」できる |
 | `web-bridge/` | 人間が観察・介入する窓（コックピット） |
 | `scenarios/*.json` | ループの初期条件を宣言的に与える仕組み |

@@ -227,11 +227,11 @@ gar sim status  # 状態確認
 | ファイル | 用途 |
 |---|---|
 | `app/sensor_demo` | 統合デモアプリ（GPIO + I2C OLED + SPI RFID） |
-| `agp-tools/cuse-stubs/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
-| `agp-tools/cuse-stubs/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
-| `agp-tools/cuse-stubs/test/gpio_led_button` | GPIO 単機能デモ |
-| `agp-tools/cuse-stubs/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
-| `agp-tools/cuse-stubs/web-bridge/` | Web ブリッジ + HTML パネル |
+| `gar-tools/cuse-stubs/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
+| `gar-tools/cuse-stubs/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
+| `gar-tools/cuse-stubs/test/gpio_led_button` | GPIO 単機能デモ |
+| `gar-tools/cuse-stubs/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
+| `gar-tools/cuse-stubs/web-bridge/` | Web ブリッジ + HTML パネル |
 
 ---
 
@@ -288,4 +288,3 @@ rtk init -g --uninstall
 > `Read` / `Grep` など Copilot 組み込みツールはフックを経由しないため、明示的に `rtk read` / `rtk grep` と書いた場合のみ削減される。
 >
 > **Codex での動作**: フックではなく `AGENTS.md` + `RTK.md` へのインストラクション注入。Codex が判断して rtk を使う形になるため、自動書き換えではない。
-

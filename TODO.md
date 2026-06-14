@@ -69,9 +69,9 @@
 正本リポは `ThousandsOfTies/GaplessAgentRuntime`、ツールは `ThousandsOfTies/gar-tools`（build-env / embedded-poc-app も同 org）。
 トップ 4 フォルダの物理リネームと連動するため、以下は **リネーム作業時に一括**で実施する。
 
-- [ ] **トップ 4 フォルダの物理リネーム** — `AgentCockpit` / `agp-tools` / `agp-build-env` / `embedded-poc-app` → `GaplessAgentRuntime` / `gar-*` 名へ
+- [ ] **残るフォルダの物理リネーム** — `embedded-poc-app` → `gar-*` 名へ（`GaplessAgentRuntime` / `gar-tools` / `gar-build-env` は変更済み）
 - [ ] **リポ跨ぎ参照を URL 化** — サブリポの参照スタブのリポ跨ぎ相対リンクを GitHub の絶対 URL に変更（リポ跨ぎは URL が正、同一リポ内リンクは相対のまま）
-- [ ] **フォルダ名を含むパス記述の統一** — `agp-tools/...` / `agp-build-env` / `gar-build-env` などの混在を `gar-*` に一括統一
+- [ ] **フォルダ名を含むパス記述の統一** — 残る旧名や `gar-*` 混在を一括確認
 
 ## 🔌 Renode / MCU 拡張（着手済み・ランタイム統合は今後）
 
