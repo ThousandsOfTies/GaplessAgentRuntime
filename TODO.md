@@ -66,11 +66,11 @@
 ## 📌 リネーム作業時にまとめて行うこと（今はやらない）
 
 最終目標は全名称を `gar` ベースに統一すること（製品名「Gapless Agent Runtime」/ CLI `gar`）。
-正本リポは `ThousandsOfTies/AgentCockpit`、ツールは `ThousandsOfTies/gar-tools`（build-env / embedded-poc-app も同 org）。
+正本リポは `ThousandsOfTies/GaplessAgentRuntime`、ツールは `ThousandsOfTies/gar-tools`（build-env / embedded-poc-app も同 org）。
 トップ 4 フォルダの物理リネームと連動するため、以下は **リネーム作業時に一括**で実施する。
 
-- [ ] **トップ 4 フォルダの物理リネーム** — `AgentCockpit` / `agp-tools` / `agp-build-env` / `embedded-poc-app` → `gar-*` 名へ
-- [ ] **リポ跨ぎ参照を URL 化** — サブリポの参照スタブの相対リンク `../../AgentCockpit/...` を GitHub の絶対 URL に変更（リポ跨ぎは URL が正、同一リポ内リンクは相対のまま）
+- [ ] **トップ 4 フォルダの物理リネーム** — `AgentCockpit` / `agp-tools` / `agp-build-env` / `embedded-poc-app` → `GaplessAgentRuntime` / `gar-*` 名へ
+- [ ] **リポ跨ぎ参照を URL 化** — サブリポの参照スタブのリポ跨ぎ相対リンクを GitHub の絶対 URL に変更（リポ跨ぎは URL が正、同一リポ内リンクは相対のまま）
 - [ ] **フォルダ名を含むパス記述の統一** — `agp-tools/...` / `agp-build-env` / `gar-build-env` などの混在を `gar-*` に一括統一
 
 ## 🔌 Renode / MCU 拡張（着手済み・ランタイム統合は今後）
@@ -82,4 +82,3 @@
 - [x] ドキュメント整理（README + docs 01〜12、WSL 中心方針へ）
 - [x] GPIO 解決方式の比較表を docs 12 に整理
 - [x] EC2 の `gpio-sim` 対応確認、`linux-modules-extra-$(uname -r)` 導入、`sensor_demo` GPIO v2 化、`gar sim env start` の fake `/dev/gpiochip0` setup 実装 — 2026-06-03
-

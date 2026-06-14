@@ -13,7 +13,7 @@ AI の運用ルールは [`../../AGENT.md`「Terminal 操作の原則」](../../
   "mcpServers": {
     "gar": {
       "command": "python3",
-      "args": ["/home/user/AI/AgentCockpit/tools/agentcockpit-mcp/server.py"]
+      "args": ["/home/user/AI/GaplessAgentRuntime/tools/agentcockpit-mcp/server.py"]
     }
   }
 }
@@ -34,7 +34,7 @@ VSCode integrated terminal で実行する request を作成します。
 ```json
 {
   "command": ".venv/bin/gar setup",
-  "cwd": "/home/user/AI/AgentCockpit",
+  "cwd": "/home/user/AI/GaplessAgentRuntime",
   "title": "Gapless Agent Runtime"
 }
 ```

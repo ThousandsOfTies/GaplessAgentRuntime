@@ -80,7 +80,7 @@ def start_code_codespace(
     selected_codespace = codespace or os.environ.get("CODESPACE_NAME")
     selected_remote_path = remote_path or os.environ.get(
         "CODESPACE_REMOTE_PATH",
-        "/workspaces/AgentCockpit",
+        "/workspaces/GaplessAgentRuntime",
     )
     selected_mount_dir = Path(
         mount_dir if mount_dir is not None else default_codespaces_mount_dir()

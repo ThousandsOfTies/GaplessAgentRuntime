@@ -198,7 +198,7 @@ Gapless Agent Runtime では、新規開発および移行において **「Linu
 
 Antigravity から EC2 に Remote SSH 接続している場合、ポートは自動的にフォワードされます。
 
-1. **Open Folder → `/home/ubuntu/AgentCockpit`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
+1. **Open Folder → `/home/ubuntu/GaplessAgentRuntime`** を開く（`.vscode/settings.json` の自動転送設定が有効化される）
 2. **PORTS タブ**で `8080` の行を右クリック → "Open in Simple Browser"
 3. HTML パネルが開き、各デバイスの状態がリアルタイム表示される
 
@@ -266,4 +266,3 @@ Antigravity から EC2 に Remote SSH 接続している場合、ポートは自
 | パネルが Disconnected のまま | ポート 8765 未転送 | PORTS タブで 8765 を Add Port |
 | OLED に表示が出ない | I2C アドレス 0x3C 未認識 | `i2cdetect -y 1` で 0x3C があるか確認 |
 | `Last UID` が更新されない | system_on が OFF | パネルの GPIO17 PUSH で ON に切替 |
-

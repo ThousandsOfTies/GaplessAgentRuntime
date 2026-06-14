@@ -1209,7 +1209,7 @@ class AgpCliTest(unittest.TestCase):
     def test_code_stop_unmounts_codespace_and_removes_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            mount_dir = home / "codespaces" / "AgentCockpit"
+            mount_dir = home / "codespaces" / "GaplessAgentRuntime"
             mount_dir.mkdir(parents=True)
             state_dir = home / ".config" / "codespace-dev"
             state_dir.mkdir(parents=True)
@@ -1217,7 +1217,7 @@ class AgpCliTest(unittest.TestCase):
                 "\n".join(
                     [
                         "CODESPACE_SSH_HOST='codespace-host'",
-                        "CODESPACE_REMOTE_PATH='/workspaces/AgentCockpit'",
+                        "CODESPACE_REMOTE_PATH='/workspaces/GaplessAgentRuntime'",
                         f"CODESPACE_MOUNT_DIR='{mount_dir}'",
                         "",
                     ]
@@ -1244,7 +1244,7 @@ class AgpCliTest(unittest.TestCase):
                 completed.returncode = 0
                 completed.stdout = ""
                 if argv[:4] == ["findmnt", "-n", "-o", "SOURCE"]:
-                    completed.stdout = "codespace-host:/workspaces/AgentCockpit\n"
+                    completed.stdout = "codespace-host:/workspaces/GaplessAgentRuntime\n"
                 return completed
 
             with (

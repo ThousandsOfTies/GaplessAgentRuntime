@@ -65,7 +65,7 @@ MCP tool `run_in_visible_terminal` は以下の request を作る。
 ```json
 {
   "command": ".venv/bin/gar setup",
-  "cwd": "/home/user/AI/AgentCockpit",
+  "cwd": "/home/user/AI/GaplessAgentRuntime",
   "title": "Gapless Agent Runtime"
 }
 ```

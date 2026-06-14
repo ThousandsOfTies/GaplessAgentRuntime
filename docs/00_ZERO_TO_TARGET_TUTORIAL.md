@@ -40,7 +40,7 @@ RasPi5
 Gapless Agent Runtime repo に移動します。
 
 ```bash
-cd path/to/AgentCockpit
+cd path/to/GaplessAgentRuntime
 git pull
 ```
 
@@ -436,7 +436,7 @@ chmod +x ~/sensor_demo
 思い出し用の最短版です。
 
 ```bash
-cd ~/Yurufuwa/AgentCockpit
+cd ~/Yurufuwa/GaplessAgentRuntime
 git pull
 make init
 make start
