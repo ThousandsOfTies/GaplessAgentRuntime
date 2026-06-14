@@ -473,7 +473,7 @@ def deploy_sim_artifacts(root: Path, *, host: str | None, section: str = "app") 
 
 
 def deploy_target_artifacts(root: Path, *, serial: str | None, dest: str) -> int:
-    loaded = load_deploy_files(root, "target")
+    loaded = load_deploy_files(root, "app")
     if loaded is None:
         return 1
 
@@ -597,7 +597,7 @@ def adb_device_available(output: str, *, serial: str | None) -> bool:
 
 
 def deploy_target_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
-    loaded = load_deploy_files(root, "target")
+    loaded = load_deploy_files(root, "app")
     if loaded is None:
         return 1
 
