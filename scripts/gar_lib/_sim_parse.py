@@ -1,4 +1,4 @@
-﻿"""`gar sim` output parsing."""
+"""`gar sim` output parsing."""
 from __future__ import annotations
 
 import json

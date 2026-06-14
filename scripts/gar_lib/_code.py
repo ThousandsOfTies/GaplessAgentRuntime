@@ -1,4 +1,4 @@
-﻿"""`gar code` subcommand: Codespace SSHFS mount and VSCode terminal profile."""
+"""`gar code` subcommand: Codespace SSHFS mount and VSCode terminal profile."""
 
 from __future__ import annotations
 

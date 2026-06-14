@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 echo "tools/setup_codespace_wsl.sh is deprecated. Use: gar code start" >&2

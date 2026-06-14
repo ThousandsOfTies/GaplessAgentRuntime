@@ -1,4 +1,4 @@
-﻿"""`gar sim` subcommand: simulation runtime control over SSH."""
+"""`gar sim` subcommand: simulation runtime control over SSH."""
 
 from __future__ import annotations
 

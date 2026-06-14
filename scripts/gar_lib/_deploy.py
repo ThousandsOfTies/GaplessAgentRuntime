@@ -1,4 +1,4 @@
-﻿"""`gar sim deploy` / `gar sim env deploy` / `gar target deploy`: artifact manifest deploy.
+"""`gar sim deploy` / `gar sim env deploy` / `gar target deploy`: artifact manifest deploy.
 
 artifact.json スキーマ:
   deploy.app     — target app バイナリ（VM ・実機共通）

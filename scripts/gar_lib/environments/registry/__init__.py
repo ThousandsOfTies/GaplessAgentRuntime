@@ -1,4 +1,4 @@
-﻿"""Drop-in development environment providers.
+"""Drop-in development environment providers.
 
 Each Python module in this package may define one DevEnvironment subclass.
 gar setup discovers these modules directly, so there is no separate provider

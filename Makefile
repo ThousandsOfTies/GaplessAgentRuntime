@@ -1,4 +1,4 @@
-﻿# Gapless Agent Runtime WSL hub commands.
+# Gapless Agent Runtime WSL hub commands.
 
 UID ?= 04:AB:CD:EF:01:23
 SCENARIO ?= scenarios/sensor_demo_rfid.json

@@ -1,4 +1,4 @@
-﻿# SSH keys - never commit
+# SSH keys - never commit
 *.pem
 *.key
 id_rsa*

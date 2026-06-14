@@ -1,4 +1,4 @@
-﻿"""Wokwi Simulation Provider (Stub/Skeleton).
+"""Wokwi Simulation Provider (Stub/Skeleton).
 
 This file is a placeholder/stub to guide future implementation of the ESP32 (Wokwi)
 simulation target.

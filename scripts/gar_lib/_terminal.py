@@ -1,4 +1,4 @@
-﻿"""`gar terminal` subcommand: VSCode integrated terminal request bridge."""
+"""`gar terminal` subcommand: VSCode integrated terminal request bridge."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-﻿"""`gar setup` subcommand: interactive provider selection + dependency check."""
+"""`gar setup` subcommand: interactive provider selection + dependency check."""
 
 from __future__ import annotations
 

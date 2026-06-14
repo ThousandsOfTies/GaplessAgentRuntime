@@ -1,4 +1,4 @@
-﻿"""Windows-native ADB device provider (called from WSL via interop).
+"""Windows-native ADB device provider (called from WSL via interop).
 
 方式2: USB-C 実機は Windows がネイティブ認識し、WSL からは Windows の
 ``adb.exe`` を直接呼ぶ。``usbipd-win`` による attach/bind は不要。

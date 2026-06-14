@@ -1,4 +1,4 @@
-﻿"""VSCode terminal profile management and Terminal Bridge extension install."""
+"""VSCode terminal profile management and Terminal Bridge extension install."""
 
 from __future__ import annotations
 

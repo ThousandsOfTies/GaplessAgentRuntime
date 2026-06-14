@@ -1,4 +1,4 @@
-﻿"""Hardware definition CSV helpers for ``gar hw``."""
+"""Hardware definition CSV helpers for ``gar hw``."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-﻿"""`gar usb` subcommand: USB-C passthrough to WSL2 via usbipd-win.
+"""`gar usb` subcommand: USB-C passthrough to WSL2 via usbipd-win.
 
 WSL2 から Windows interop で ``usbipd.exe`` を呼び出し、USB-C 実機（ADB）を
 WSL2 に attach する。busid は自動検出し、一度確定したものは ``.gar/config.json``

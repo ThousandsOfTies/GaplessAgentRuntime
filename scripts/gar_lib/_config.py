@@ -1,4 +1,4 @@
-﻿"""Project paths, config IO, and EC2 host helpers."""
+"""Project paths, config IO, and EC2 host helpers."""
 
 from __future__ import annotations
 

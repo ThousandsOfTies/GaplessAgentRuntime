@@ -1,4 +1,4 @@
-﻿"""`gar` CLI entry point. Argument parsing and dispatch only.
+"""`gar` CLI entry point. Argument parsing and dispatch only.
 
 Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib._ui` — color / safe_input helpers

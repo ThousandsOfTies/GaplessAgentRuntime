@@ -1,4 +1,4 @@
-﻿"""Linux simulation target implementations."""
+"""Linux simulation target implementations."""
 from __future__ import annotations
 
 import csv

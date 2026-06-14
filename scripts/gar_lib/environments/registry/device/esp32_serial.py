@@ -1,4 +1,4 @@
-﻿"""ESP32 Physical Device Serial Provider (Stub/Skeleton).
+"""ESP32 Physical Device Serial Provider (Stub/Skeleton).
 
 This file is a placeholder/stub to guide future implementation of the ESP32
 physical device access driver.

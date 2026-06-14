@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from scripts.gar_lib.environments.base import DevEnvironment
 
