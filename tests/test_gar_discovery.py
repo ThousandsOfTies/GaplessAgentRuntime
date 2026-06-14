@@ -17,7 +17,7 @@ from scripts.gar_lib.environments.registry.device.adb_usb import AdbUsbEnvironme
 from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 
 
-class AgpDiscoveryTest(unittest.TestCase):
+class GarDiscoveryTest(unittest.TestCase):
     def test_discovers_registry_providers(self) -> None:
         providers = discover_environment_providers()
         provider_ids = {provider.provider_id for provider in providers}

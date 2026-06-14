@@ -30,7 +30,7 @@
 
 Gapless Agent Runtime の主戦場は **VSCode Agent モード**。独自プロトコルを増やすのではなく、**`gar` CLI を Agent から叩きやすい形に磨く**ことを差別化の軸とする。
 
-MCP server (`tools/agentcockpit-mcp`) は VSCode 以外の Agent（Claude Desktop / Cursor 等）向けの補助的な互換口として最小限維持し、機能の主役にはしない。
+MCP server (`tools/gar-mcp`) は VSCode 以外の Agent（Claude Desktop / Cursor 等）向けの補助的な互換口として最小限維持し、機能の主役にはしない。
 
 | 改善項目 | 内容 |
 |---|---|

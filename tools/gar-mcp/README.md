@@ -2,7 +2,7 @@
 
 Gapless Agent Runtime 用の最小 MCP server です。
 
-VSCode integrated terminal を直接制御するのではなく、`.gar/terminal-requests/*.json` に request を作成します。`tools/vscode-agentcockpit` の VSCode extension がそれを拾い、人間が見える integrated terminal にコマンドを送ります。
+VSCode integrated terminal を直接制御するのではなく、`.gar/terminal-requests/*.json` に request を作成します。`tools/vscode-gar` の VSCode extension がそれを拾い、人間が見える integrated terminal にコマンドを送ります。
 
 AI の運用ルールは [`../../AGENT.md`「Terminal 操作の原則」](../../AGENT.md) を優先します。通常作業は裏で実行し、sudo password / GitHub 認証 / cloud auth など人間入力が必要な時だけ、この MCP server で visible terminal に handoff します。
 
@@ -13,7 +13,7 @@ AI の運用ルールは [`../../AGENT.md`「Terminal 操作の原則」](../../
   "mcpServers": {
     "gar": {
       "command": "python3",
-      "args": ["/home/user/AI/GaplessAgentRuntime/tools/agentcockpit-mcp/server.py"]
+      "args": ["/home/user/AI/GaplessAgentRuntime/tools/gar-mcp/server.py"]
     }
   }
 }

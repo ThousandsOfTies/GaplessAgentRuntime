@@ -9,7 +9,7 @@ from unittest import mock
 
 
 def load_server_module():
-    path = Path(__file__).resolve().parents[1] / "tools" / "agentcockpit-mcp" / "server.py"
+    path = Path(__file__).resolve().parents[1] / "tools" / "gar-mcp" / "server.py"
     spec = importlib.util.spec_from_file_location("gar_mcp_server", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load Gapless Agent Runtime MCP server")

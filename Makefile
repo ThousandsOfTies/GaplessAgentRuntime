@@ -4,9 +4,9 @@ UID ?= 04:AB:CD:EF:01:23
 SCENARIO ?= scenarios/sensor_demo_rfid.json
 VSCODE_EXT_NAME = gar-terminal-bridge
 VSCODE_EXT_VERSION = 0.0.1
-VSCODE_EXT_SRC = tools/vscode-agentcockpit
+VSCODE_EXT_SRC = tools/vscode-gar
 VSCODE_EXT_DEST ?= $(HOME)/.vscode-server/extensions/$(VSCODE_EXT_NAME)-$(VSCODE_EXT_VERSION)
-MCP_SERVER = $(CURDIR)/tools/agentcockpit-mcp/server.py
+MCP_SERVER = $(CURDIR)/tools/gar-mcp/server.py
 GAR_REQUIREMENTS = requirements-gar.txt
 
 SSH_DST = $(if $(KEY),ubuntu@$(EC2),$(EC2))

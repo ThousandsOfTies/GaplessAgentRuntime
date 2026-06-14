@@ -76,7 +76,7 @@ class MissingProvider(DevEnvironment):
     required_commands = ("missing-command",)
 
 
-class AgpCliTest(unittest.TestCase):
+class GarCliTest(unittest.TestCase):
     def test_question_mark_prints_contextual_help(self) -> None:
         cases = [
             (["?"], "usage: gar", "code"),

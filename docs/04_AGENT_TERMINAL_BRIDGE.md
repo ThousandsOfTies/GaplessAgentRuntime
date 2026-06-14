@@ -32,7 +32,7 @@ AI / Codex
 - `gar terminal run` は `.gar/terminal-requests/*.json` を作る。
 - provider が sudo/auth handoff を必要とした場合は、visible terminal request も作る。
 - `gar setup` は VSCode Terminal Bridge の導入状況を表示する。
-- `tools/vscode-agentcockpit/` に最小 VSCode extension プロトタイプがある。
+- `tools/vscode-gar/` に最小 VSCode extension プロトタイプがある。
   - `.gar/terminal-requests/*.json` を監視する。
   - 要求を受けたら VSCode integrated terminal を作成する。
   - コマンドは `sendText()` で terminal に送る。

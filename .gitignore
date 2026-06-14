@@ -18,7 +18,7 @@ app/sensor_demo
 cuse-stubs/i2c-stub/cuse_i2c
 cuse-stubs/test/vl53l0x_read
 
-# Local AGP runtime state
-.agp/mcp-config.json
-.agp/terminal-requests/
-.agp/terminal-status/
+# Local GAR runtime state
+.gar/mcp-config.json
+.gar/terminal-requests/
+.gar/terminal-status/
