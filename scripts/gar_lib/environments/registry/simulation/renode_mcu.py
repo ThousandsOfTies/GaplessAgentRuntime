@@ -16,6 +16,7 @@ Linux SBC だけでなく MCU / ベアメタル領域へ拡張できる。
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -33,8 +34,10 @@ RENODE_RELEASES_PAGE = "https://github.com/renode/renode/releases/latest"
 RENODE_DOCS = "https://renode.readthedocs.io/en/latest/introduction/installing.html"
 
 INSTALL_ROOT = Path.home() / ".local" / "share" / "gar" / "renode"
+TEST_VENV = Path.home() / ".local" / "share" / "gar" / "renode-test-venv"
 BIN_DIR = Path.home() / ".local" / "bin"
 LAUNCHER = BIN_DIR / "renode"
+TEST_LAUNCHER = BIN_DIR / "renode-test"
 
 
 class RenodeMcuEnvironment(DevEnvironment):
@@ -45,7 +48,20 @@ class RenodeMcuEnvironment(DevEnvironment):
         "（未改変バイナリを sim と実機で共有。ランタイム統合は今後対応）"
     )
     display_order = 10
-    required_commands = ("renode",)
+    required_commands = ("renode", "renode-test")
+
+    @classmethod
+    def dependency_status(cls):
+        renode_path = shutil.which("renode")
+        renode_test_path = shutil.which("renode-test")
+        if renode_test_path and not _renode_test_works(renode_test_path):
+            renode_test_path = None
+        from scripts.gar_lib.environments.base import CommandStatus
+
+        return [
+            CommandStatus(name="renode", path=renode_path),
+            CommandStatus(name="renode-test", path=renode_test_path),
+        ]
 
     @classmethod
     def install_hint(cls, missing: list[str]) -> str:
@@ -73,6 +89,9 @@ class RenodeMcuEnvironment(DevEnvironment):
             print(cls.install_hint(missing))
             print(f"未対応の CPU アーキテクチャです: {platform.machine()}")
             return 1
+
+        if "renode" not in missing and INSTALL_ROOT.exists():
+            return _finish_existing_install()
 
         try:
             release = _fetch_latest_release()
@@ -277,23 +296,45 @@ def _install_portable(asset: dict, tag: str) -> int:
         INSTALL_ROOT.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(launcher.parent), str(INSTALL_ROOT))
 
-    installed_launcher = INSTALL_ROOT / "renode"
-    if not installed_launcher.exists():
-        # tarball 内のスクリプト名が renode でない場合に備えて探索
-        found = _find_renode_launcher(INSTALL_ROOT)
-        if found is None:
+        installed_launcher = _find_renode_launcher(INSTALL_ROOT)
+        if installed_launcher is None:
             print("導入先に renode 起動スクリプトが見つかりませんでした。")
             return 1
-        installed_launcher = found
 
+    return _finish_launcher_install(installed_launcher)
+
+
+def _finish_existing_install() -> int:
+    installed_launcher = _find_renode_launcher(INSTALL_ROOT)
+    if installed_launcher is None:
+        print("既存の Renode 導入先から renode 起動スクリプトを特定できませんでした。")
+        return 1
+    return _finish_launcher_install(installed_launcher)
+
+
+def _finish_launcher_install(installed_launcher: Path) -> int:
     installed_launcher.chmod(0o755)
+    installed_test_launcher = _find_renode_test_launcher(INSTALL_ROOT)
+    if installed_test_launcher is not None:
+        installed_test_launcher.chmod(0o755)
+
     BIN_DIR.mkdir(parents=True, exist_ok=True)
-    if LAUNCHER.exists() or LAUNCHER.is_symlink():
-        LAUNCHER.unlink()
-    LAUNCHER.symlink_to(installed_launcher)
+    _write_launcher(LAUNCHER, installed_launcher, set_globalization_invariant=True)
+    if installed_test_launcher is not None:
+        if _install_renode_test_dependencies() != 0:
+            return 1
+        _write_launcher(TEST_LAUNCHER, installed_test_launcher, test_venv=TEST_VENV)
 
     print(f"導入完了: {LAUNCHER} -> {installed_launcher}")
-    if shutil.which("renode") is None:
+    if installed_test_launcher is not None:
+        print(f"導入完了: {TEST_LAUNCHER} -> {installed_test_launcher}")
+    else:
+        print("注意: renode-test 起動スクリプトは tarball 内に見つかりませんでした。")
+
+    _ensure_bin_dir_on_path()
+    _ensure_bashrc_path()
+
+    if shutil.which("renode") is None or shutil.which("renode-test") is None:
         print(
             f"注意: PATH に {BIN_DIR} が含まれていません。"
             "シェル設定に追加してから `gar setup` を再実行してください。\n"
@@ -328,3 +369,111 @@ def _find_renode_launcher(root: Path) -> Path | None:
         if match.is_file():
             return match
     return None
+
+
+def _find_renode_test_launcher(root: Path) -> Path | None:
+    direct = root / "renode-test"
+    if direct.is_file():
+        return direct
+    matches = sorted(root.rglob("renode-test"))
+    for match in matches:
+        if match.is_file():
+            return match
+    return None
+
+
+def _write_launcher(
+    path: Path,
+    target: Path,
+    *,
+    set_globalization_invariant: bool = True,
+    test_venv: Path | None = None,
+) -> None:
+    if path.exists() or path.is_symlink():
+        path.unlink()
+
+    exports = ""
+    if set_globalization_invariant:
+        # Portable .NET build can fail on minimal WSL images without libicu.
+        # Users may still override this by exporting the variable themselves.
+        exports = 'export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT="${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-1}"\n'
+    if test_venv is not None:
+        exports += f'source "{test_venv / "bin" / "activate"}"\n'
+
+    path.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"{exports}"
+        f'exec "{target}" "$@"\n',
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def _ensure_bin_dir_on_path() -> None:
+    path_entries = os.environ.get("PATH", "").split(":")
+    bin_dir = str(BIN_DIR)
+    if bin_dir not in path_entries:
+        os.environ["PATH"] = f"{bin_dir}:{os.environ.get('PATH', '')}"
+
+
+def _ensure_bashrc_path() -> None:
+    bashrc = Path.home() / ".bashrc"
+    line = 'export PATH="$HOME/.local/bin:$PATH"'
+    try:
+        current = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+    except OSError:
+        return
+    if line in current:
+        return
+    suffix = "" if not current or current.endswith("\n") else "\n"
+    try:
+        bashrc.write_text(current + suffix + line + "\n", encoding="utf-8")
+    except OSError:
+        return
+
+
+def _renode_test_works(path: str) -> bool:
+    env = os.environ.copy()
+    env.setdefault("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
+    result = subprocess.run(
+        [path, "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+    return result.returncode == 0
+
+
+def _install_renode_test_dependencies() -> int:
+    TEST_VENV.parent.mkdir(parents=True, exist_ok=True)
+    if not (TEST_VENV / "bin" / "python").exists():
+        print(f"renode-test 用 Python venv を作成します: {TEST_VENV}")
+        result = subprocess.run(
+            [sys.executable, "-m", "venv", str(TEST_VENV)],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(
+                "renode-test 用 venv の作成に失敗しました。"
+                "python3-venv を導入してから `gar setup` を再実行してください。"
+            )
+            return result.returncode
+
+    pip = TEST_VENV / "bin" / "pip"
+    packages = [
+        "robotframework==6.1",
+        "robotframework-retryfailed==0.2.0",
+        "psutil>=6.1",
+        "pyyaml>=6.0",
+        "telnetlib3==2.0.*",
+        "construct==2.10.68",
+        "pyelftools==0.30",
+    ]
+    print("renode-test 用 Python 依存関係を導入します。")
+    return subprocess.run(
+        [str(pip), "install", "--upgrade", *packages],
+        check=False,
+    ).returncode

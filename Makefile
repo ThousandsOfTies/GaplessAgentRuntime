@@ -32,6 +32,7 @@ init:
 	  exit 1; \
 	}
 	.venv/bin/python -m pip install -r $(GAR_REQUIREMENTS)
+	chmod +x scripts/gar
 	ln -sf $(CURDIR)/scripts/gar .venv/bin/gar
 	mkdir -p $(dir $(VSCODE_EXT_DEST))
 	rm -rf $(VSCODE_EXT_DEST)

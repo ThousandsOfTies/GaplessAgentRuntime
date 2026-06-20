@@ -19,6 +19,25 @@ Windows ネイティブ: 原則不要。USB 経路など残存依存のみ、減
 
 これにより、PowerShell / Bash 差分、パス表現、環境変数、Unix コマンド互換などを吸収するためだけのメンテナンスを増やさない方針とします。
 
+### sibling repo と workspace の扱い
+
+GAR は複数リポジトリで構成されるため、VS Code / AI agent の CWD や
+アクティブファイルが `gar-tools` や `gar-build-env` などを指していることがある。
+その場合でも、運用境界と環境役割の正本は `GaplessAgentRuntime` 側に置く。
+
+```text
+Yurufuwa/
+  GaplessAgentRuntime/   # gar CLI、操作規約、アーキテクチャ正本
+  gar-tools/             # simulation/runtime tools
+  gar-build-env/         # Codespaces build hub
+  embedded-poc-app/      # target app
+```
+
+AI agent は sibling repo で作業を始める場合でも、
+`GaplessAgentRuntime/AGENT.md`、`docs/02_ARCHITECTURE.md`、
+本ファイルを先に確認する。CWD や開いているファイルだけを根拠に、
+Codespaces / WSL / EC2 / 実機の役割を推測しない。
+
 ---
 
 ## WSL2 の位置づけ

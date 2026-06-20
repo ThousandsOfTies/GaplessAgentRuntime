@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -18,10 +19,14 @@ from scripts.gar_lib.cli import (
     fetch_codespace_artifacts,
     load_config,
     main,
+    normalize_esp32_serial_port,
     normalize_question_help,
+    parse_esp32_build_artifact_path,
     parse_usbipd_list,
     run_deploy_command,
     run_ec2_command,
+    run_esp32_build_command,
+    run_esp32_flash_command,
     run_gpio_sim_check,
     run_setup,
     run_sim_command,
@@ -197,6 +202,23 @@ class GarCliTest(unittest.TestCase):
             {"selected_providers": {"development": "development_test"}}
         )
 
+    def test_setup_provider_selection_accepts_quit(self) -> None:
+        providers = [DevelopmentProvider]
+        config = {"selected_providers": {}}
+
+        with (
+            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("builtins.input", side_effect=["", "q"]),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True)
+
+        self.assertEqual(1, result)
+        self.assertIn("未完了のセットアップ", output.getvalue())
+
     def test_terminal_run_creates_vscode_terminal_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -369,6 +391,52 @@ class GarCliTest(unittest.TestCase):
         run_usbipd.assert_called_once_with(["attach", "--wsl", "--busid", "2-3"])
         self.assertEqual("2-3", saved.get("usb", {}).get("busid"))
 
+    def test_usb_attach_can_match_ch9102_serial_device(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE                         STATE\n"
+            "3-4    1a86:55d4  USB-Enhanced-SERIAL CH9102      Shared\n"
+        )
+        saved: dict = {}
+        with (
+            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch(
+                "scripts.gar_lib._usb.list_usb_devices",
+                return_value=parse_usbipd_list(output),
+            ),
+            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib._usb.save_config", side_effect=lambda c: saved.update(c)),
+            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+        ):
+            run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            result = run_usb_command("attach", match="CH9102")
+
+        self.assertEqual(0, result)
+        run_usbipd.assert_called_once_with(["attach", "--wsl", "--busid", "3-4"])
+        self.assertEqual("3-4", saved.get("usb", {}).get("busid"))
+
+    def test_usb_bind_can_match_ch9102_serial_device(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE                         STATE\n"
+            "3-4    1a86:55d4  USB-Enhanced-SERIAL CH9102      Not shared\n"
+        )
+        with (
+            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch(
+                "scripts.gar_lib._usb.list_usb_devices",
+                return_value=parse_usbipd_list(output),
+            ),
+            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib._usb.save_config"),
+            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+        ):
+            run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+            result = run_usb_command("bind", match="CH9102")
+
+        self.assertEqual(0, result)
+        run_usbipd.assert_called_once_with(["bind", "--busid", "3-4"])
+
     def test_usb_attach_hints_bind_when_not_shared(self) -> None:
         output = (
             "Connected:\n"
@@ -390,7 +458,43 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(1, result)
         run_usbipd.assert_not_called()
+        self.assertIn("gar usb bind --busid 2-3", err_buffer.getvalue())
         self.assertIn("usbipd bind --busid 2-3", err_buffer.getvalue())
+        self.assertIn("Host OS", err_buffer.getvalue())
+        self.assertIn("管理者権限", err_buffer.getvalue())
+
+    def test_usb_bind_admin_error_hints_windows_usbipd_command(self) -> None:
+        output = (
+            "Connected:\n"
+            "BUSID  VID:PID    DEVICE                      STATE\n"
+            "4-2    1a86:55d4  USB-Enhanced-SERIAL CH9102  Not shared\n"
+        )
+        with (
+            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch(
+                "scripts.gar_lib._usb.list_usb_devices",
+                return_value=parse_usbipd_list(output),
+            ),
+            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+        ):
+            run_usbipd.return_value = mock.Mock(
+                returncode=1,
+                stdout="",
+                stderr="usbipd: error: Access denied; this operation requires administrator privileges.",
+            )
+            err_buffer = io.StringIO()
+            with contextlib.redirect_stderr(err_buffer):
+                result = run_usb_command("bind", match="CH9102")
+
+        self.assertEqual(1, result)
+        run_usbipd.assert_called_once_with(["bind", "--busid", "4-2"])
+        self.assertIn("Access denied", err_buffer.getvalue())
+        self.assertIn("Host OS の usbipd bind", err_buffer.getvalue())
+        self.assertIn("管理者権限不足でエラー", err_buffer.getvalue())
+        self.assertIn("管理者権限で開いて", err_buffer.getvalue())
+        self.assertIn("usbipd bind --busid 4-2", err_buffer.getvalue())
+        self.assertIn("gar usb attach --busid 4-2", err_buffer.getvalue())
 
     def test_sim_start_only_starts_device_runtime(self) -> None:
         with (
@@ -1040,6 +1144,265 @@ class GarCliTest(unittest.TestCase):
             serial="raspi",
             host=None,
             dest="/home/user",
+        )
+
+    def test_esp32_serial_port_maps_windows_com_to_wsl_tty(self) -> None:
+        self.assertEqual("/dev/ttyS3", normalize_esp32_serial_port("COM3"))
+
+    def test_esp32_build_output_parses_artifact_path(self) -> None:
+        output = "\n".join(
+            [
+                "[3/3] Done",
+                "Artifact: /workspaces/project/artifacts/20260620-001750-m5stickc-plus2-vibe-min",
+                "Next: ./scripts/install_artifact.sh ...",
+            ]
+        )
+
+        self.assertEqual(
+            "/workspaces/project/artifacts/20260620-001750-m5stickc-plus2-vibe-min",
+            parse_esp32_build_artifact_path(output),
+        )
+
+    def test_target_build_esp32_builds_fetches_and_flashes(self) -> None:
+        build_output = (
+            "[1/3] Build firmware in VM\n"
+            "Artifact: /workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client/"
+            "artifacts/20260620-001750-m5stickc-plus2-vibe-min\n"
+        )
+        completed = mock.Mock(returncode=0, stdout=build_output, stderr="")
+        local_artifact = Path("/tmp/local-artifacts/20260620-001750-m5stickc-plus2-vibe-min")
+
+        with (
+            mock.patch("scripts.gar_lib._esp32_flash.select_codespace", return_value="codespace-test"),
+            mock.patch("scripts.gar_lib._esp32_flash.subprocess.run", return_value=completed) as run,
+            mock.patch(
+                "scripts.gar_lib._esp32_flash.fetch_esp32_codespace_artifact",
+                return_value=local_artifact,
+            ) as fetch,
+            mock.patch("scripts.gar_lib._esp32_flash.run_esp32_flash_command", return_value=0) as flash,
+        ):
+            result = run_esp32_build_command(
+                codespace=None,
+                remote_project_root="/workspaces/project",
+                pio_env="m5stickc-plus2-vibe-min",
+                local_artifact_root="/tmp/local-artifacts",
+                flash=True,
+                port="/dev/ttyACM0",
+                baud=460800,
+                chip="esp32",
+                verify=False,
+                install_esptool=False,
+            )
+
+        self.assertEqual(0, result)
+        run.assert_called_once()
+        self.assertEqual(
+            ["gh", "codespace", "ssh", "-c", "codespace-test", "--"],
+            run.call_args.args[0][:6],
+        )
+        self.assertIn("./scripts/vm_build_and_package.sh m5stickc-plus2-vibe-min", run.call_args.args[0][-1])
+        fetch.assert_called_once_with(
+            "/workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client/"
+            "artifacts/20260620-001750-m5stickc-plus2-vibe-min",
+            codespace="codespace-test",
+            local_artifact_root=Path("/tmp/local-artifacts"),
+        )
+        flash.assert_called_once_with(
+            artifact_dir=str(local_artifact),
+            port="/dev/ttyACM0",
+            baud=460800,
+            chip="esp32",
+            verify=False,
+            install_esptool=False,
+        )
+
+    def test_target_flash_esp32_verifies_and_invokes_esptool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for filename in (
+                "bootloader.bin",
+                "partitions.bin",
+                "boot_app0.bin",
+                "firmware.bin",
+            ):
+                (root / filename).write_bytes(f"{filename}\n".encode())
+            sums = []
+            for filename in (
+                "boot_app0.bin",
+                "bootloader.bin",
+                "firmware.bin",
+                "partitions.bin",
+            ):
+                digest = hashlib.sha256((root / filename).read_bytes()).hexdigest()
+                sums.append(f"{digest}  {filename}\n")
+            (root / "SHA256SUMS").write_text("".join(sums), encoding="utf-8")
+
+            completed = mock.Mock(returncode=0)
+            with (
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.ensure_esptool_python",
+                    return_value=Path("/opt/gar-esptool/bin/python"),
+                ),
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.subprocess.run",
+                    return_value=completed,
+                ) as run,
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = run_esp32_flash_command(
+                        artifact_dir=str(root),
+                        port="COM3",
+                        baud=460800,
+                    )
+
+        self.assertEqual(0, result)
+        args = run.call_args.args[0]
+        self.assertEqual("/opt/gar-esptool/bin/python", args[0])
+        self.assertIn("--port", args)
+        self.assertEqual("/dev/ttyS3", args[args.index("--port") + 1])
+        self.assertIn("--baud", args)
+        self.assertEqual("460800", args[args.index("--baud") + 1])
+        self.assertIn("0x10000", args)
+        self.assertTrue(str(root / "firmware.bin") in args)
+        self.assertIn("write-flash", args)
+        self.assertIn("Flash complete.", output.getvalue())
+
+    def test_target_flash_esp32_stops_before_esptool_when_serial_port_is_inaccessible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for filename in (
+                "bootloader.bin",
+                "partitions.bin",
+                "boot_app0.bin",
+                "firmware.bin",
+            ):
+                (root / filename).write_bytes(b"ok")
+
+            with (
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    return_value="serial port is not readable/writable by current user: /dev/ttyS3",
+                ),
+                mock.patch("scripts.gar_lib._esp32_flash.ensure_esptool_python") as ensure_esptool,
+            ):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    result = run_esp32_flash_command(
+                        artifact_dir=str(root),
+                        port="COM3",
+                        verify=False,
+                    )
+
+        self.assertEqual(1, result)
+        ensure_esptool.assert_not_called()
+        self.assertIn("not readable/writable", err.getvalue())
+
+    def test_target_flash_esp32_hints_usbipd_when_wsl_com_flash_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for filename in (
+                "bootloader.bin",
+                "partitions.bin",
+                "boot_app0.bin",
+                "firmware.bin",
+            ):
+                (root / filename).write_bytes(b"ok")
+
+            completed = mock.Mock(returncode=2)
+            with (
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.ensure_esptool_python",
+                    return_value=Path("/opt/gar-esptool/bin/python"),
+                ),
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "scripts.gar_lib._esp32_flash.subprocess.run",
+                    return_value=completed,
+                ),
+            ):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    result = run_esp32_flash_command(
+                        artifact_dir=str(root),
+                        port="COM3",
+                        verify=False,
+                    )
+
+        self.assertEqual(2, result)
+        self.assertIn("usbipd", err.getvalue())
+        self.assertIn("/dev/ttyUSB0", err.getvalue())
+
+    def test_target_flash_esp32_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_esp32_flash_command", return_value=0) as flash:
+            result = main(
+                [
+                    "target",
+                    "flash-esp32",
+                    "--artifact-dir",
+                    "/tmp/m5-artifact",
+                    "--port",
+                    "COM3",
+                    "--baud",
+                    "460800",
+                    "--no-verify",
+                    "--no-install-esptool",
+                ]
+            )
+
+        self.assertEqual(0, result)
+        flash.assert_called_once_with(
+            artifact_dir="/tmp/m5-artifact",
+            port="COM3",
+            baud=460800,
+            chip="esp32",
+            verify=False,
+            install_esptool=False,
+        )
+
+    def test_target_build_esp32_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_esp32_build_command", return_value=0) as build:
+            result = main(
+                [
+                    "target",
+                    "build-esp32",
+                    "--codespace",
+                    "codespace-test",
+                    "--remote-project-root",
+                    "/workspaces/project",
+                    "--pio-env",
+                    "m5stickc-plus2-vibe-min",
+                    "--artifact-root",
+                    "/tmp/artifacts",
+                    "--flash",
+                    "--port",
+                    "/dev/ttyACM0",
+                    "--baud",
+                    "460800",
+                    "--no-verify",
+                    "--no-install-esptool",
+                ]
+            )
+
+        self.assertEqual(0, result)
+        build.assert_called_once_with(
+            codespace="codespace-test",
+            remote_project_root="/workspaces/project",
+            pio_env="m5stickc-plus2-vibe-min",
+            local_artifact_root="/tmp/artifacts",
+            flash=True,
+            port="/dev/ttyACM0",
+            baud=460800,
+            chip="esp32",
+            verify=False,
+            install_esptool=False,
         )
 
     def test_code_start_is_available_from_cli(self) -> None:

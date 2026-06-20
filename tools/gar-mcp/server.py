@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import sys
 import uuid
-
+from datetime import UTC, datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GAR_DIR = ROOT / ".gar"
@@ -153,14 +152,14 @@ def create_terminal_request(arguments: dict) -> str:
             f"cwd must be inside the Gapless Agent Runtime repository ({ROOT}); got {cwd}"
         ) from exc
 
-    request_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    request_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     request_id = f"{request_id}-{uuid.uuid4().hex[:8]}"
 
     REQUEST_DIR.mkdir(parents=True, exist_ok=True)
     request_path = REQUEST_DIR / f"{request_id}.json"
     request = {
         "id": request_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "title": title,
         "cwd": str(cwd),
         "command": command,

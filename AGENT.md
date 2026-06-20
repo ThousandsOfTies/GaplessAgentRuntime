@@ -12,6 +12,60 @@
 > **rtk を使う**: `run_in_terminal` で長い出力が予想されるコマンドには `rtk` を付けてトークンを節約する。
 > 例: `rtk git status` / `rtk git log` / `rtk grep` / `rtk python3 -m pytest`
 
+### Workspace / sibling repo 注意
+
+GAR 関連作業では、VS Code のアクティブファイルや CWD が
+`gar-tools` / `gar-build-env` / `embedded-poc-app` などの兄弟リポジトリを
+指していても、本ファイルと `docs/02_ARCHITECTURE.md` /
+`docs/03_DEVELOPMENT_ENVIRONMENT.md` を運用正本として先に読むこと。
+
+`/home/user/Yurufuwa` 配下の代表的な sibling repo:
+
+- `GaplessAgentRuntime/`: 操作規約・アーキテクチャ正本
+- `gar-tools/`: CUSE stubs、ESP32/M5Stack firmware runner、Renode/QEMU足場
+- `gar-build-env/`: Codespaces/devcontainer build hub
+- `embedded-poc-app/`: ARM64 target app
+
+AI は CWD やエディタのアクティブファイルだけから運用境界を推測しない。
+GAR 系 sibling repo に入ったら、まず本リポジトリの規約へ戻って環境の役割
+（WSL=control plane、Codespaces=build、EC2/RasPi5=execution）を確認する。
+
+### GAR を「使う作業」と GAR 自体の修正を混ぜない
+
+GAR は **開発環境・操作面・検証足場** であり、完成させたいシステムそのものの
+実行環境ではない。GAR のコマンドに実行時コンポーネントのプロセス管理を安易に
+取り込まないこと。
+
+この区別が必要になった背景:
+
+- M5StickC Plus2 / Vibe Remote の検証中、Local Bridge を安定起動したくなり、
+  一度 `gar vibe-remote bridge start/status/stop` のような案を実装しかけた。
+- しかし Local Bridge は、Vibe Remote extension と Host OS 上の bridge が構成する
+  **Vibe Remote 実行時コンポーネント**であり、GAR の責務ではない。
+- GAR から実行時コンポーネントを管理し始めると、GAR が開発支援ツールではなく
+  アプリ本体の process manager になってしまい、責務境界が崩れる。
+
+判断基準:
+
+| 作業 | 所在 |
+|---|---|
+| Codespaces でビルドする、artifact を取得する、flash する、usbipd attach を支援する | GAR に置いてよい |
+| シミュレーション対象を操作する、仮想デバイスを押す、診断ログを取る | GAR に置いてよい |
+| VS Code extension の UI/command、Local Bridge の開始・停止・状態表示、mDNS/LAN proxy の実行管理 | Vibe Remote 側に置く |
+| M5 firmware のアプリ挙動、ボタン割り当て、画面表示、WebSocket protocol | Vibe Remote / m5stack-client 側に置く |
+
+次のエージェントへの注意:
+
+- 「GAR を使って開発を進める」ことと「GAR 自身を拡張する」ことを分けて考える。
+- GAR に機能を足す前に、それが **開発支援/仮想操作/成果物搬送** なのか、
+  **対象システムの実行時機能** なのかを確認する。
+- 対象システムの実行時機能なら、まず対象リポジトリ側
+  （例: `gar-vibe-ui/vibe-remote` の VS Code extension / npm scripts / firmware）へ置く。
+- GAR 側には、必要なら「その対象リポジトリの開発手順を呼び出す薄い入口」や
+  「artifact/flash/diagnostic」だけを置く。
+- 迷った場合は、ユーザーに「これは GAR の開発環境機能として残すべきか、
+  対象システム側の実行時機能として移すべきか」を確認する。
+
 この契約には三つの目的がある。
 
 1. **人間への透明性** — `gar` のサブコマンド体系を見れば、Gapless Agent Runtime が何をできるかが一覧できる。AI が何をしているかを人間が常に把握できる状態を保つ。

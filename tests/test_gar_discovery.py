@@ -15,6 +15,12 @@ from scripts.gar_lib.environments.registry.development.github_codespaces import 
 )
 from scripts.gar_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
 from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
+from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
+    RenodeMcuEnvironment,
+)
+from scripts.gar_lib.environments.registry.simulation.vibe_remote_device import (
+    VibeRemoteVirtualDeviceEnvironment,
+)
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -25,6 +31,9 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("github_codespaces", provider_ids)
         self.assertIn("aws_ssm", provider_ids)
         self.assertIn("ssh_remote", provider_ids)
+        self.assertIn("renode_mcu", provider_ids)
+        self.assertIn("esp32_qemu_firmware", provider_ids)
+        self.assertIn("vibe_remote_device", provider_ids)
         self.assertIn("local", provider_ids)
         self.assertIn("adb_usb", provider_ids)
         self.assertIn("ssh_scp", provider_ids)
@@ -44,6 +53,9 @@ class GarDiscoveryTest(unittest.TestCase):
             categories_by_provider["github_codespaces"],
         )
         self.assertEqual("simulation", categories_by_provider["aws_ssm"])
+        self.assertEqual("simulation", categories_by_provider["renode_mcu"])
+        self.assertEqual("simulation", categories_by_provider["esp32_qemu_firmware"])
+        self.assertEqual("simulation", categories_by_provider["vibe_remote_device"])
         self.assertEqual("device", categories_by_provider["adb_usb"])
         self.assertEqual("device", categories_by_provider["ssh_scp"])
 
@@ -52,6 +64,65 @@ class GarDiscoveryTest(unittest.TestCase):
         provider_ids = [provider.provider_id for provider in providers]
 
         self.assertEqual(len(provider_ids), len(set(provider_ids)))
+
+    def test_vibe_remote_device_uses_node_sh_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            node_sh = Path(tmp) / "node.sh"
+            node_sh.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+            with mock.patch.dict(
+                "os.environ",
+                {"VIBE_REMOTE_NODE_SH": str(node_sh)},
+            ):
+                statuses = VibeRemoteVirtualDeviceEnvironment.dependency_status()
+
+        self.assertEqual(1, len(statuses))
+        self.assertEqual(str(node_sh), statuses[0].name)
+        self.assertEqual(str(node_sh), statuses[0].path)
+
+    def test_vibe_remote_device_requires_node_without_node_sh(self) -> None:
+        missing_node_sh = Path(tempfile.gettempdir()) / "gar-missing-node.sh"
+        with (
+            mock.patch.dict(
+                "os.environ",
+                {"VIBE_REMOTE_NODE_SH": str(missing_node_sh)},
+            ),
+            mock.patch(
+                "scripts.gar_lib.environments.registry.simulation.vibe_remote_device._find_node",
+                return_value=None,
+            ),
+        ):
+            statuses = VibeRemoteVirtualDeviceEnvironment.dependency_status()
+
+        self.assertEqual(1, len(statuses))
+        self.assertEqual("node", statuses[0].name)
+        self.assertIsNone(statuses[0].path)
+
+    def test_renode_mcu_requires_renode_and_renode_test(self) -> None:
+        self.assertEqual(
+            ("renode", "renode-test"),
+            RenodeMcuEnvironment.required_commands,
+        )
+
+    def test_renode_mcu_installer_writes_globalization_safe_launchers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "renode-real"
+            target.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+            launcher = root / "renode"
+
+            from scripts.gar_lib.environments.registry.simulation import renode_mcu
+
+            renode_mcu._write_launcher(
+                launcher,
+                target,
+                set_globalization_invariant=True,
+            )
+
+            text = launcher.read_text(encoding="utf-8")
+
+        self.assertIn("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", text)
+        self.assertIn(str(target), text)
 
     def test_github_codespaces_installs_gh_with_apt_get(self) -> None:
         commands: list[list[str]] = []

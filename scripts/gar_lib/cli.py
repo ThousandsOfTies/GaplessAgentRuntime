@@ -76,6 +76,22 @@ from scripts.gar_lib._ec2 import (  # noqa: F401
     run_ec2_command,
     update_ssh_config_hostname,
 )
+from scripts.gar_lib._esp32_flash import (  # noqa: F401
+    DEFAULT_ESP32_ARTIFACT_ROOT,
+    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+    DEFAULT_ESP32_PIO_ENV,
+    ensure_esptool_python,
+    esp32_serial_port_access_error,
+    fetch_esp32_codespace_artifact,
+    find_latest_esp32_artifact,
+    normalize_esp32_serial_port,
+    parse_esp32_build_artifact_path,
+    resolve_esp32_artifact_dir,
+    run_esp32_build_command,
+    run_esp32_flash_command,
+    validate_esp32_artifact,
+    verify_esp32_artifact_checksums,
+)
 from scripts.gar_lib._hw import (  # noqa: F401
     HW_TEMPLATE_FILES,
     run_hw_command,
@@ -584,13 +600,85 @@ def build_parser() -> argparse.ArgumentParser:
         default="/home/user",
         help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
     )
+    target_build_esp32_parser = target_subparsers.add_parser(
+        "build-esp32",
+        help="Codespaces で ESP32/M5Stack firmware をビルドし artifact を取得します",
+    )
+    target_build_esp32_parser.add_argument(
+        "--codespace",
+        default=None,
+        help="ビルド元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
+    )
+    target_build_esp32_parser.add_argument(
+        "--remote-project-root",
+        default=DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+        help=f"Codespace 上の PlatformIO project root（既定: {DEFAULT_ESP32_CODESPACE_PROJECT_ROOT}）",
+    )
+    target_build_esp32_parser.add_argument(
+        "--pio-env",
+        default=DEFAULT_ESP32_PIO_ENV,
+        help=f"PlatformIO environment（既定: {DEFAULT_ESP32_PIO_ENV}）",
+    )
+    target_build_esp32_parser.add_argument(
+        "--artifact-root",
+        default=None,
+        help=f"WSL 側に保存する artifact root（既定: {DEFAULT_ESP32_ARTIFACT_ROOT}）",
+    )
+    target_build_esp32_parser.add_argument(
+        "--flash",
+        action="store_true",
+        help="artifact 取得後にそのまま flash-esp32 を実行します",
+    )
+    target_build_esp32_parser.add_argument(
+        "--port",
+        default=None,
+        help="--flash 時の serial port。例: /dev/ttyACM0, /dev/ttyUSB0, COM3",
+    )
+    target_build_esp32_parser.add_argument("--baud", type=int, default=921600, help="--flash 時の baud rate")
+    target_build_esp32_parser.add_argument("--chip", default="esp32", help="--flash 時の esptool --chip 値")
+    target_build_esp32_parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="--flash 時に SHA256SUMS 検証を省略します",
+    )
+    target_build_esp32_parser.add_argument(
+        "--no-install-esptool",
+        action="store_true",
+        help="--flash 時に esptool 不在でも GAR 管理 venv へ自動導入しません",
+    )
+    target_flash_esp32_parser = target_subparsers.add_parser(
+        "flash-esp32",
+        help="ESP32/M5Stack firmware artifact を esptool で実機へ書き込みます",
+    )
+    target_flash_esp32_parser.add_argument(
+        "--artifact-dir",
+        default=None,
+        help=f"書き込む artifact directory（省略時は {DEFAULT_ESP32_ARTIFACT_ROOT} の最新）",
+    )
+    target_flash_esp32_parser.add_argument(
+        "--port",
+        default=None,
+        help="serial port。WSL では COM3 を /dev/ttyS3 に自動変換します",
+    )
+    target_flash_esp32_parser.add_argument("--baud", type=int, default=921600, help="書き込み baud rate")
+    target_flash_esp32_parser.add_argument("--chip", default="esp32", help="esptool --chip 値")
+    target_flash_esp32_parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="SHA256SUMS があっても checksum 検証を省略します",
+    )
+    target_flash_esp32_parser.add_argument(
+        "--no-install-esptool",
+        action="store_true",
+        help="esptool 不在時に GAR 管理 venv へ自動導入しません",
+    )
 
     usb_parser = subparsers.add_parser(
         "usb",
         help="USB-C 実機を usbipd-win 経由で WSL2 に attach します",
     )
     usb_subparsers = usb_parser.add_subparsers(dest="usb_command", metavar="command")
-    for usb_command_name in ("attach", "detach", "status", "list"):
+    for usb_command_name in ("attach", "detach", "status", "list", "bind"):
         usb_command_parser = usb_subparsers.add_parser(
             usb_command_name,
             help=f"USB: {usb_command_name}",
@@ -601,11 +689,16 @@ def build_parser() -> argparse.ArgumentParser:
                 default=None,
                 help="usbipd の busid。省略時は保存済み busid → Android 自動検出",
             )
-        if usb_command_name == "attach":
+            usb_command_parser.add_argument(
+                "--match",
+                default=None,
+                help="USB device description / VID:PID / BUSID の部分一致で対象を選びます（例: CH9102）",
+            )
+        if usb_command_name in ("attach", "bind"):
             usb_command_parser.add_argument(
                 "--no-remember",
                 action="store_true",
-                help="attach した busid を .gar/config.json に記憶しません",
+                help="対象 busid を .gar/config.json に記憶しません",
             )
 
     hw_parser = subparsers.add_parser(
@@ -824,6 +917,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 host=args.host,
                 dest=args.dest,
             )
+        if args.target_command == "build-esp32":
+            return run_esp32_build_command(
+                codespace=args.codespace,
+                remote_project_root=args.remote_project_root,
+                pio_env=args.pio_env,
+                local_artifact_root=args.artifact_root,
+                flash=args.flash,
+                port=args.port,
+                baud=args.baud,
+                chip=args.chip,
+                verify=not args.no_verify,
+                install_esptool=not args.no_install_esptool,
+            )
+        if args.target_command == "flash-esp32":
+            return run_esp32_flash_command(
+                artifact_dir=args.artifact_dir,
+                port=args.port,
+                baud=args.baud,
+                chip=args.chip,
+                verify=not args.no_verify,
+                install_esptool=not args.no_install_esptool,
+            )
 
     if args.command == "usb":
         if args.usb_command is None:
@@ -832,6 +947,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_usb_command(
             args.usb_command,
             busid=getattr(args, "busid", None),
+            match=getattr(args, "match", None),
             remember=not getattr(args, "no_remember", False),
         )
 

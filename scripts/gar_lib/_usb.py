@@ -141,14 +141,34 @@ def _resolve_target(
     devices: list[UsbDevice],
     *,
     busid: str | None,
+    match: str | None = None,
     config: dict,
 ) -> UsbDevice | None:
-    """attach 対象を決定する。明示 busid > 保存済み busid > Android 自動検出。"""
+    """attach 対象を決定する。明示 busid > match > 保存済み busid > Android 自動検出。"""
     if busid:
         for device in devices:
             if device.busid == busid:
                 return device
         print(f"gar usb: busid {busid} のデバイスが見つかりません。", file=sys.stderr)
+        return None
+
+    if match:
+        lowered_match = match.lower()
+        candidates = [
+            device
+            for device in devices
+            if lowered_match in device.description.lower()
+            or lowered_match in device.vid_pid.lower()
+            or lowered_match == device.busid.lower()
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            print(f"gar usb: match {match!r} の候補が複数あります。--busid で指定してください:", file=sys.stderr)
+            for device in candidates:
+                print(f"  {_format_device(device)}", file=sys.stderr)
+            return None
+        print(f"gar usb: match {match!r} のデバイスが見つかりません。", file=sys.stderr)
         return None
 
     remembered = saved_usb_busid(config)
@@ -177,8 +197,25 @@ def _resolve_target(
 def _print_bind_hint(busid: str) -> None:
     print(
         "gar usb: このデバイスはまだ share されていません。\n"
-        "  Windows の管理者 PowerShell で一度だけ次を実行してください（再起動後も保持されます）:\n"
+        "  USB 機器を WSL に接続できるようにするため、Host OS の usbipd bind が必要です。\n"
+        "  まず WSL から次を試してください（Host OS 側の管理者権限が必要な場合があります）:\n"
+        f"    gar usb bind --busid {busid}\n"
+        "  管理者権限不足でエラーになる場合は、Host OS 上でコマンドプロンプトまたは "
+        "PowerShell を管理者権限で開いて、次を実行してください:\n"
         f"    usbipd bind --busid {busid}",
+        file=sys.stderr,
+    )
+
+
+def _print_bind_admin_hint(busid: str) -> None:
+    print(
+        "gar usb: USB 機器を WSL に接続するために Host OS の usbipd bind を実行しましたが、"
+        "管理者権限不足でエラーになりました。\n"
+        "  Host OS 上でコマンドプロンプトまたは PowerShell を管理者権限で開いて、"
+        "次を実行してください:\n"
+        f"    usbipd bind --busid {busid}\n"
+        "  bind が成功した後は、WSL 側で次を実行してください:\n"
+        f"    gar usb attach --busid {busid}",
         file=sys.stderr,
     )
 
@@ -187,6 +224,7 @@ def run_usb_command(
     command: str,
     *,
     busid: str | None = None,
+    match: str | None = None,
     remember: bool = True,
 ) -> int:
     if _usbipd_executable() is None:
@@ -214,14 +252,33 @@ def run_usb_command(
     config = load_config()
 
     if command == "status":
-        target = _resolve_target(devices, busid=busid, config=config)
+        target = _resolve_target(devices, busid=busid, match=match, config=config)
         if target is None:
             return 1
         print(_format_device(target))
         return 0 if target.is_attached else 1
 
+    if command == "bind":
+        target = _resolve_target(devices, busid=busid, match=match, config=config)
+        if target is None:
+            return 1
+        if target.is_shared:
+            print(f"gar usb: 既に share/attach 済みです: {_format_device(target)}")
+            if remember:
+                _remember(config, target.busid)
+            return 0
+        result = _run_usbipd(["bind", "--busid", target.busid])
+        if result.returncode != 0:
+            print(result.stderr.strip() or "bind に失敗しました。", file=sys.stderr)
+            _print_bind_admin_hint(target.busid)
+            return result.returncode
+        print(f"gar usb: share しました: {target.busid} ({target.description})")
+        if remember:
+            _remember(config, target.busid)
+        return 0
+
     if command == "attach":
-        target = _resolve_target(devices, busid=busid, config=config)
+        target = _resolve_target(devices, busid=busid, match=match, config=config)
         if target is None:
             return 1
 
@@ -249,7 +306,7 @@ def run_usb_command(
         return 0
 
     if command == "detach":
-        target = _resolve_target(devices, busid=busid, config=config)
+        target = _resolve_target(devices, busid=busid, match=match, config=config)
         if target is None:
             return 1
         result = _run_usbipd(["detach", "--busid", target.busid])

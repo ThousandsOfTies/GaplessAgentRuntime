@@ -298,6 +298,8 @@ def select_provider_for_category(
         raw = safe_input("番号を入力してください [1]: ")
         if raw == "":
             return providers[0]
+        if raw.lower() in ("q", "quit", "exit"):
+            return None
 
         try:
             selected_index = int(raw)
