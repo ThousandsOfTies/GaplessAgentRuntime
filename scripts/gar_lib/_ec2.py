@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -154,6 +155,7 @@ def run_ec2_command(
     region: str | None = None,
     update_ssh: bool = True,
     pull: bool = False,
+    json_output: bool = False,
 ) -> int:
     if not _aws_available():
         print(
@@ -169,9 +171,26 @@ def run_ec2_command(
 
     if command == "status":
         state = ec2_instance_state(resolved_instance_id, resolved_region)
+        ip = ec2_public_ip(resolved_instance_id, resolved_region) if state is not None else None
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "command": "sim status",
+                        "instance_id": resolved_instance_id,
+                        "region": resolved_region,
+                        "state": state,
+                        "public_ip": ip,
+                        "running": state == "running",
+                        "ok": state is not None,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0 if state is not None else 1
         if state is None:
             return 1
-        ip = ec2_public_ip(resolved_instance_id, resolved_region)
         print(f"instance : {resolved_instance_id}")
         print(f"region   : {resolved_region}")
         print(f"state    : {state}")

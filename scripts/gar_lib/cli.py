@@ -17,6 +17,8 @@ Implementation lives in sibling submodules:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -239,6 +241,24 @@ def parser_completion_words(cword: int, words: Sequence[str]) -> list[str]:
     return sorted(candidate for candidate in candidates if candidate.startswith(current))
 
 
+def _run_with_json_summary(command_label: str, json_output: bool, func) -> int:
+    """``func`` (終了コードを返す) を実行する。``json_output`` 時は人間向けの
+    進捗出力を stderr へ退避し、最後に機械可読な結果サマリ JSON を stdout へ
+    1 個だけ出力する（AI / CI 向け）。"""
+    if not json_output:
+        return func()
+    with contextlib.redirect_stdout(sys.stderr):
+        exit_code = func()
+    print(
+        json.dumps(
+            {"command": command_label, "ok": exit_code == 0, "exit_code": exit_code},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return exit_code
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gar")
     subparsers = parser.add_subparsers(dest="command", metavar="command")
@@ -357,6 +377,13 @@ def build_parser() -> argparse.ArgumentParser:
             default=None,
             help="AWS region。省略時は保存済み設定",
         )
+        if sim_vm_command_name == "status":
+            sim_vm_command_parser.add_argument(
+                "--json",
+                dest="json_output",
+                action="store_true",
+                help="結果を機械可読な JSON で出力します（AI / CI 向け）",
+            )
         if ec2_command_name == "start":
             sim_vm_command_parser.add_argument(
                 "--no-update-ssh",
@@ -600,6 +627,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="/home/user",
         help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
     )
+    target_sync_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="結果を機械可読な JSON で出力します（進捗は stderr / AI ・ CI 向け）",
+    )
     target_build_esp32_parser = target_subparsers.add_parser(
         "build-esp32",
         help="Codespaces で ESP32/M5Stack firmware をビルドし artifact を取得します",
@@ -672,6 +705,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="esptool 不在時に GAR 管理 venv へ自動導入しません",
     )
+    target_flash_esp32_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="結果を機械可読な JSON で出力します（進捗は stderr / AI ・ CI 向け）",
+    )
 
     usb_parser = subparsers.add_parser(
         "usb",
@@ -693,6 +732,13 @@ def build_parser() -> argparse.ArgumentParser:
                 "--match",
                 default=None,
                 help="USB device description / VID:PID / BUSID の部分一致で対象を選びます（例: CH9102）",
+            )
+        if usb_command_name in ("status", "list"):
+            usb_command_parser.add_argument(
+                "--json",
+                dest="json_output",
+                action="store_true",
+                help="結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
         if usb_command_name in ("attach", "bind"):
             usb_command_parser.add_argument(
@@ -800,6 +846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 region=args.region,
                 update_ssh=not getattr(args, "no_update_ssh", False),
                 pull=getattr(args, "pull", False),
+                json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "deploy":
             return run_deploy_command(
@@ -909,13 +956,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 remote_root=args.remote_root,
             )
         if args.target_command == "sync":
-            return run_target_sync_command(
-                artifacts_dir=args.artifacts_dir,
-                codespace=args.codespace,
-                remote_root=args.remote_root,
-                serial=args.serial,
-                host=args.host,
-                dest=args.dest,
+            return _run_with_json_summary(
+                "target sync",
+                getattr(args, "json_output", False),
+                lambda: run_target_sync_command(
+                    artifacts_dir=args.artifacts_dir,
+                    codespace=args.codespace,
+                    remote_root=args.remote_root,
+                    serial=args.serial,
+                    host=args.host,
+                    dest=args.dest,
+                ),
             )
         if args.target_command == "build-esp32":
             return run_esp32_build_command(
@@ -931,13 +982,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 install_esptool=not args.no_install_esptool,
             )
         if args.target_command == "flash-esp32":
-            return run_esp32_flash_command(
-                artifact_dir=args.artifact_dir,
-                port=args.port,
-                baud=args.baud,
-                chip=args.chip,
-                verify=not args.no_verify,
-                install_esptool=not args.no_install_esptool,
+            return _run_with_json_summary(
+                "target flash-esp32",
+                getattr(args, "json_output", False),
+                lambda: run_esp32_flash_command(
+                    artifact_dir=args.artifact_dir,
+                    port=args.port,
+                    baud=args.baud,
+                    chip=args.chip,
+                    verify=not args.no_verify,
+                    install_esptool=not args.no_install_esptool,
+                ),
             )
 
     if args.command == "usb":
@@ -949,6 +1004,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             busid=getattr(args, "busid", None),
             match=getattr(args, "match", None),
             remember=not getattr(args, "no_remember", False),
+            json_output=getattr(args, "json_output", False),
         )
 
     if args.command == "hw":

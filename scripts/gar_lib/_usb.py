@@ -12,6 +12,7 @@ WSL2 に attach する。busid は自動検出し、一度確定したものは 
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -220,12 +221,25 @@ def _print_bind_admin_hint(busid: str) -> None:
     )
 
 
+def _device_to_dict(device: UsbDevice) -> dict:
+    return {
+        "busid": device.busid,
+        "vid_pid": device.vid_pid,
+        "description": device.description,
+        "state": device.state,
+        "is_shared": device.is_shared,
+        "is_attached": device.is_attached,
+        "looks_like_android": device.looks_like_android,
+    }
+
+
 def run_usb_command(
     command: str,
     *,
     busid: str | None = None,
     match: str | None = None,
     remember: bool = True,
+    json_output: bool = False,
 ) -> int:
     if _usbipd_executable() is None:
         print(
@@ -242,6 +256,20 @@ def run_usb_command(
         return 1
 
     if command == "list":
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "command": "usb list",
+                        "devices": [_device_to_dict(d) for d in devices],
+                        "count": len(devices),
+                        "ok": True,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         if not devices:
             print("接続中の USB デバイスがありません。")
             return 0
@@ -254,7 +282,34 @@ def run_usb_command(
     if command == "status":
         target = _resolve_target(devices, busid=busid, match=match, config=config)
         if target is None:
+            if json_output:
+                print(
+                    json.dumps(
+                        {
+                            "command": "usb status",
+                            "ok": False,
+                            "device": None,
+                            "error": "target device not found",
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
             return 1
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "command": "usb status",
+                        "ok": True,
+                        "device": _device_to_dict(target),
+                        "attached": target.is_attached,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0 if target.is_attached else 1
         print(_format_device(target))
         return 0 if target.is_attached else 1
 
