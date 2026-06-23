@@ -22,7 +22,7 @@ DEFAULT_ARTIFACT = (
     / "artifacts"
     / "20260617-152624-m5stack-core2"
 )
-DEFAULT_TOOLS = Path.home() / "Yurufuwa" / "gar-tools" / "firmware-runners" / "esp32"
+DEFAULT_TOOLS = Path.home() / "Yurufuwa" / "gar-tools" / "targets" / "esp32"
 
 
 class Esp32QemuFirmwareEnvironment(DevEnvironment):
@@ -109,11 +109,11 @@ def _tools_root() -> Path:
 
 
 def _flash_builder() -> Path:
-    return _tools_root() / "bin" / "gar-esp32-flash-image"
+    return _tools_root() / "qemu" / "bin" / "gar-esp32-flash-image"
 
 
 def _qemu_runner() -> Path:
-    return _tools_root() / "bin" / "gar-esp32-qemu-run"
+    return _tools_root() / "qemu" / "bin" / "gar-esp32-qemu-run"
 
 
 def _artifact_path(target: str | None) -> Path:
@@ -125,4 +125,3 @@ def _flash_image_path(artifact_or_flash: Path) -> Path:
     if artifact_or_flash.is_file():
         return artifact_or_flash
     return Path(os.environ.get("GAR_ESP32_FLASH", "/tmp/gar-esp32-flash.bin")).expanduser()
-

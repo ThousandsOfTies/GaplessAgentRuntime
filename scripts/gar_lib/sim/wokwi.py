@@ -17,6 +17,8 @@ simulation target.
 """
 from __future__ import annotations
 
+import json
+
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 
@@ -29,46 +31,43 @@ class WokwiSimCommandBuilder(SimCommandBuilder):
     """
 
     def build_gpio_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi does not use systemd.")
+        return ":"
 
     def build_sim_diag_json(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return "printf '%s\n' '{\"provider\":\"wokwi\",\"ok\":true,\"noop\":true}'"
 
     def build_gpio_sim_setup(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        # Instead of Linux gpio-sim, this might generate diagram.json elements.
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
     def build_gpio_sim_teardown(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
     def build_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi does not use systemd.")
+        return ":"
 
     def build_systemd_start(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi does not use systemd.")
+        return ":"
 
     def build_systemd_stop(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi does not use systemd.")
+        return ":"
 
     def build_sim_start(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        # Might return "wokwi-cli ."
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
     def build_sim_stop(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        # Might return "pkill wokwi-cli"
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
     def build_sim_status(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return "printf '%s\n' '{\"provider\":\"wokwi\",\"status\":\"noop\",\"ok\":true}'"
 
     def build_sim_log(self) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
     def build_gpio_runtime_status(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return "printf '%s\n' '{\"provider\":\"wokwi\",\"gpio\":\"noop\",\"ok\":true}'"
 
     def build_panel(self, action: str, params: dict) -> str:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return ":"
 
 
 class WokwiSimProvider(SimProvider):
@@ -79,6 +78,13 @@ class WokwiSimProvider(SimProvider):
         self.host = host
         self.builder = WokwiSimCommandBuilder()
 
+    def _print_payload(self, payload: dict, *, json_output: bool = False) -> None:
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+        for key, value in payload.items():
+            print(f"{key}: {value}")
+
     def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
         """Starts the Wokwi simulation.
 
@@ -86,25 +92,45 @@ class WokwiSimProvider(SimProvider):
         1. Parse hw_definition and generate diagram.json.
         2. Execute `wokwi-cli` via self.dev_env.run_remote (or locally).
         """
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return 0
 
     def stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return 0
 
     def status(self, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        self._print_payload(
+            {"provider": "wokwi", "status": "noop", "ok": True},
+            json_output=json_output,
+        )
+        return 0
 
     def log(self) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        return 0
 
     def diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        self._print_payload(
+            {"provider": "wokwi", "ok": True, "noop": True},
+            json_output=True,
+        )
+        return 0
 
     def gpio_sim_check(self, json_output: bool = False) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        self._print_payload(
+            {"provider": "wokwi", "gpio_sim": "noop", "ok": True},
+            json_output=json_output,
+        )
+        return 0
 
     def gpio_command(self, command: str, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        self._print_payload(
+            {"provider": "wokwi", "command": command, "ok": True, "noop": True},
+            json_output=json_output,
+        )
+        return 0
 
     def panel(self, action: str, params: dict, json_output: bool = False) -> int:
-        raise NotImplementedError("Wokwi integration is planned but not yet implemented.")
+        self._print_payload(
+            {"provider": "wokwi", "action": action, "ok": True, "noop": True},
+            json_output=json_output,
+        )
+        return 0

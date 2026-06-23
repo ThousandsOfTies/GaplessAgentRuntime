@@ -22,7 +22,7 @@
 - [x] **S4** `cuse_spi` 実装（MFRC-522 register sim を移植） — 2026-06-03。Codespace cross-build、EC2 deploy、`/dev/spidev0.0` 作成、`gar sim ui rfid tap ...` で UID ログ、`rfid remove` 復帰まで確認
 - [x] **S5** SPI 旧 shim を削除、起動コマンドを `~/sensor_demo` のみに（S4 の実機確認が取れ次第） — 2026-06-03。追加環境変数なしの `~/sensor_demo` で GPIO/I2C/SPI 経路確認済み
 - [x] **S6** docs の旧 shim 言及を「移行完了」に更新 — 2026-06-03。主要 docs は CUSE + gpio-sim 完了形へ更新し、`docs/12` は移行記録として保持
-- [x] **S7** 旧 `gpio_shim` / `spi_shim` を削除 — `gar-tools/cuse-stubs/{gpio-shim,spi-shim}/` を削除、`cuse-stubs/Makefile` SUBDIRS・`.gitignore`・`.vscode/tasks.json`（GPIO デモ）・AGENT.md 成果物表から参照除去（git 履歴に残るので復元可） — 2026-06-03
+- [x] **S7** 旧 `gpio_shim` / `spi_shim` を削除 — `gar-tools/targets/linux-device/runtime/{gpio-shim,spi-shim}/` を削除、`targets/linux-device/runtime/Makefile` SUBDIRS・`.gitignore`・`.vscode/tasks.json`（GPIO デモ）・AGENT.md 成果物表から参照除去（git 履歴に残るので復元可） — 2026-06-03
 
 ---
 

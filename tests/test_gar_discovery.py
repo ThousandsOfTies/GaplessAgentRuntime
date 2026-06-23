@@ -21,6 +21,8 @@ from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
 from scripts.gar_lib.environments.registry.simulation.vibe_remote_device import (
     VibeRemoteVirtualDeviceEnvironment,
 )
+from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
+from scripts.gar_lib.sim.wokwi import WokwiSimProvider
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -33,6 +35,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("ssh_remote", provider_ids)
         self.assertIn("renode_mcu", provider_ids)
         self.assertIn("esp32_qemu_firmware", provider_ids)
+        self.assertIn("wokwi", provider_ids)
         self.assertIn("vibe_remote_device", provider_ids)
         self.assertIn("local", provider_ids)
         self.assertIn("adb_usb", provider_ids)
@@ -55,6 +58,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual("simulation", categories_by_provider["aws_ssm"])
         self.assertEqual("simulation", categories_by_provider["renode_mcu"])
         self.assertEqual("simulation", categories_by_provider["esp32_qemu_firmware"])
+        self.assertEqual("simulation", categories_by_provider["wokwi"])
         self.assertEqual("simulation", categories_by_provider["vibe_remote_device"])
         self.assertEqual("device", categories_by_provider["adb_usb"])
         self.assertEqual("device", categories_by_provider["ssh_scp"])
@@ -97,6 +101,19 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual(1, len(statuses))
         self.assertEqual("node", statuses[0].name)
         self.assertIsNone(statuses[0].path)
+
+    def test_wokwi_sim_provider_is_noop(self) -> None:
+        provider = WokwiSimProvider(WokwiEnvironment, host=None)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, provider.start({}))
+            self.assertEqual(0, provider.stop({}))
+            self.assertEqual(0, provider.log())
+            self.assertEqual(0, provider.status({}, json_output=True))
+            self.assertEqual(0, provider.diag_json({}))
+            self.assertEqual(0, provider.gpio_sim_check(json_output=True))
+            self.assertEqual(0, provider.gpio_command("status", {}, json_output=True))
+            self.assertEqual(0, provider.panel("state", {}, json_output=True))
 
     def test_renode_mcu_requires_renode_and_renode_test(self) -> None:
         self.assertEqual(

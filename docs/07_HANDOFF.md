@@ -126,28 +126,28 @@ M5 firmware の PlatformIO build は WSL ではなく Codespaces で確認する
 
 `gar-tools` 側で Bluetooth SPP / Renode 関連の足場を追加・整理済み。
 
-- `firmware-runners/esp32/bin/gar-spp-jsonl-probe`
+- `targets/esp32/probes/spp-jsonl/bin/gar-spp-jsonl-probe`
   - POSIX serial device 向け JSONL probe。
   - `/dev/rfcomm0` などに接続し、`hello` / `agentStatus` / `ping` を送れる。
-- `firmware-runners/esp32/README.md`
+- `targets/esp32/README.md`
   - Bluetooth SPP probe の使い方を追記。
-- `firmware-runners/esp32/renode/INVENTORY.md`
+- `targets/esp32/renode/INVENTORY.md`
   - ESP32/M5Stack Renode 対応に必要な部品棚卸しを追加。
-- `firmware-runners/esp32/renode/ROADMAP.md`
+- `targets/esp32/renode/ROADMAP.md`
   - network-or-SPP 境界と inventory 参照を追記。
-- `firmware-runners/esp32/renode/m5status-tiny/`
+- `targets/esp32/renode/m5status-tiny/`
   - Renode の `xtensa-sample-controller` と upstream Zephyr hello-world ELF を使う
     最小 firmware smoke target を追加。
-  - `renode-test firmware-runners/esp32/renode/m5status-tiny/m5status-tiny.robot`
+  - `renode-test targets/esp32/renode/m5status-tiny/m5status-tiny.robot`
     で UART 出力を待つ Robot test が通る。
 
 確認済みコマンド:
 
 ```bash
 cd /home/user/Yurufuwa/gar-tools
-python3 -m py_compile firmware-runners/esp32/bin/gar-spp-jsonl-probe
-firmware-runners/esp32/bin/gar-spp-jsonl-probe --help
-renode-test firmware-runners/esp32/renode/m5status-tiny/m5status-tiny.robot
+python3 -m py_compile targets/esp32/probes/spp-jsonl/bin/gar-spp-jsonl-probe
+targets/esp32/probes/spp-jsonl/bin/gar-spp-jsonl-probe --help
+renode-test targets/esp32/renode/m5status-tiny/m5status-tiny.robot
 ```
 
 ### Codespaces build

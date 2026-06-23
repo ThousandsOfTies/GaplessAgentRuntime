@@ -17,6 +17,7 @@ from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.sim.base import SimProvider
 from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, LinuxSystemdSimProvider
+from scripts.gar_lib.sim.wokwi import WokwiSimProvider
 
 
 def _get_sim_provider() -> type[DevEnvironment]:
@@ -35,7 +36,8 @@ def _get_sim_provider() -> type[DevEnvironment]:
 
 def _get_sim_target(host: str) -> SimProvider:
     provider = _get_sim_provider()
-    # For now, default to Linux target
+    if provider.provider_id == "wokwi":
+        return WokwiSimProvider(provider, host)
     return LinuxSystemdSimProvider(provider, host, LinuxSimCommandBuilder())
 
 

@@ -281,11 +281,11 @@ gar sim status  # 状態確認
 | ファイル | 用途 |
 |---|---|
 | `app/sensor_demo` | 統合デモアプリ（GPIO + I2C OLED + SPI RFID） |
-| `gar-tools/cuse-stubs/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
-| `gar-tools/cuse-stubs/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
-| `gar-tools/cuse-stubs/test/gpio_led_button` | GPIO 単機能デモ |
-| `gar-tools/cuse-stubs/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
-| `gar-tools/cuse-stubs/web-bridge/` | Web ブリッジ + HTML パネル |
+| `gar-tools/targets/linux-device/runtime/spi-stub/cuse_spi` | SPI CUSE スタブ（MFRC-522 sim、EC2 用） |
+| `gar-tools/targets/linux-device/runtime/i2c-stub/cuse_i2c` | I2C CUSE スタブ（VL53L0X + SSD1306、EC2 用） |
+| `gar-tools/targets/linux-device/runtime/test/gpio_led_button` | GPIO 単機能デモ |
+| `gar-tools/targets/linux-device/runtime/test/vl53l0x_read` | VL53L0X 距離センサーテスト |
+| `gar-tools/targets/linux-device/runtime/web-bridge/` | Web ブリッジ + HTML パネル |
 
 ---
 
