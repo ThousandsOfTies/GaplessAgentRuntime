@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.gar_lib._targets import TargetManifest, discover_target_manifests
 from scripts.gar_lib.cli import (
     adb_device_available,
     completion_bash_script,
@@ -42,6 +43,7 @@ from scripts.gar_lib.cli import (
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
+from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
 from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, gpio_sim_plan
 
 
@@ -58,6 +60,15 @@ class SimulationProvider(DevEnvironment):
     provider_id = "simulation_test"
     display_name = "Simulation Test"
     description = "simulation"
+    category_id = "simulation"
+    category_name = "シミュレート環境"
+    required_commands = ()
+
+
+class WokwiProvider(DevEnvironment):
+    provider_id = "wokwi"
+    display_name = "Wokwi"
+    description = "wokwi"
     category_id = "simulation"
     category_name = "シミュレート環境"
     required_commands = ()
@@ -201,6 +212,243 @@ class GarCliTest(unittest.TestCase):
         save_config.assert_called_once_with(
             {"selected_providers": {"development": "development_test"}}
         )
+
+    def test_provider_dependency_success_message_names_provider(self) -> None:
+        from scripts.gar_lib._setup import ensure_provider_dependencies
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = ensure_provider_dependencies(DevelopmentProvider, no_install=True)
+
+        self.assertEqual(0, result)
+        self.assertIn("Development Test に必要なコマンドは見つかりました。", output.getvalue())
+        self.assertNotIn("必要なコマンドはすべて見つかりました。", output.getvalue())
+
+    def test_setup_saves_selected_target_when_interactive(self) -> None:
+        providers = [DevelopmentProvider]
+        targets = [
+            TargetManifest(
+                id="linux-device",
+                display_name="Linux Device",
+                description="linux",
+                tools_root="targets/linux-device",
+                default_backends={"simulation": "ssh_remote"},
+                backend_notes={},
+            ),
+            TargetManifest(
+                id="esp32",
+                display_name="ESP32",
+                description="esp32",
+                tools_root="targets/esp32",
+                default_backends={"development": "development_test", "simulation": "wokwi"},
+                backend_notes={},
+            ),
+        ]
+        config = {"selected_providers": {"development": "development_test"}}
+
+        with (
+            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib._setup.configure_default_ec2_host"),
+            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
+            mock.patch("sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=["n", "2", ""]),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True)
+
+        self.assertEqual(0, result)
+        save_config.assert_called_once_with(
+            {
+                "selected_target": "esp32",
+                "selected_providers": {"development": "development_test", "simulation": "wokwi"},
+            }
+        )
+        prepare_project.assert_called_once()
+        self.assertIn("Target を保存しました", output.getvalue())
+
+    def test_setup_prepares_existing_wokwi_target(self) -> None:
+        providers = [DevelopmentProvider]
+        targets = [
+            TargetManifest(
+                id="esp32",
+                display_name="ESP32",
+                description="esp32",
+                tools_root="targets/esp32",
+                default_backends={"simulation": "wokwi"},
+                backend_notes={},
+            ),
+        ]
+        config = {
+            "selected_target": "esp32",
+            "selected_providers": {"development": "development_test"},
+        }
+
+        with (
+            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
+            mock.patch("sys.stdin.isatty", return_value=False),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True)
+
+        self.assertEqual(0, result)
+        save_config.assert_called_once_with(
+            {
+                "selected_target": "esp32",
+                "selected_providers": {"development": "development_test", "simulation": "wokwi"},
+            }
+        )
+        prepare_project.assert_called_once()
+
+    def test_setup_wokwi_flow_explains_required_and_optional_steps(self) -> None:
+        providers = [DevelopmentProvider, WokwiProvider, MissingProvider]
+        targets = [
+            TargetManifest(
+                id="esp32",
+                display_name="ESP32 / M5Stack",
+                description="esp32",
+                tools_root="targets/esp32",
+                default_backends={
+                    "development": "development_test",
+                    "simulation": "wokwi",
+                    "boot": "esp32_qemu_firmware",
+                    "hostLink": "fake-idf",
+                    "device": "missing_test",
+                    "probe": "spp-jsonl",
+                },
+                backend_notes={},
+            ),
+        ]
+        config = {
+            "selected_target": "esp32",
+            "selected_providers": {"development": "development_test", "simulation": "wokwi", "device": "missing_test"},
+        }
+
+        with (
+            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib._setup.save_config"),
+            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0),
+            mock.patch("sys.stdin.isatty", return_value=False),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True)
+
+        self.assertEqual(0, result)
+        text = output.getvalue()
+        self.assertIn("このTargetで使う接続先:", text)
+        self.assertIn("画面上で動かすシミュレータ: Wokwi (wokwi)", text)
+        self.assertIn("実機へ書き込む接続先: Missing Test (missing_test)", text)
+        self.assertNotIn("ファームウェア起動確認", text)
+        self.assertNotIn("PC上でリンク確認", text)
+        self.assertNotIn("esp32_qemu_firmware", text)
+        self.assertNotIn("fake-idf", text)
+        self.assertNotIn("spp-jsonl", text)
+        self.assertNotIn("recommended:", text)
+        self.assertIn("このsetupで行うこと:", text)
+        self.assertIn("Wokwi project + Wokwi CLI", text)
+        self.assertIn("任意の設定:", text)
+        self.assertIn("このsetup内で続けて設定することも、後で追加することもできます。", text)
+        self.assertIn("実機環境", text)
+        self.assertIn("後で設定可", text)
+        self.assertIn("あとで設定できる項目", text)
+        self.assertNotIn("未完了のセットアップ", text)
+
+    def test_setup_defaults_to_optional_category_after_required_items(self) -> None:
+        from scripts.gar_lib._setup import first_unconfigured_category_index
+
+        categories = [
+            ("development", "開発環境", [DevelopmentProvider]),
+            ("simulation", "シミュレート環境", [WokwiProvider]),
+            ("device", "実機環境", [MissingProvider]),
+        ]
+        config = {
+            "selected_providers": {
+                "development": "development_test",
+                "simulation": "wokwi",
+                "device": "missing_test",
+            }
+        }
+
+        selected_index = first_unconfigured_category_index(
+            categories,
+            config,
+            optional_categories={"device"},
+        )
+
+        self.assertEqual(3, selected_index)
+
+    def test_setup_target_change_overwrites_target_backends(self) -> None:
+        providers = [DevelopmentProvider, SimulationProvider, DeviceProvider]
+        targets = [
+            TargetManifest(
+                id="esp32",
+                display_name="ESP32",
+                description="esp32",
+                tools_root="targets/esp32",
+                default_backends={"development": "development_test", "simulation": "wokwi", "device": "esp32_serial"},
+                backend_notes={},
+            ),
+            TargetManifest(
+                id="linux-device",
+                display_name="Linux Device",
+                description="linux",
+                tools_root="targets/linux-device",
+                default_backends={"development": "development_test", "simulation": "simulation_test", "device": "device_test"},
+                backend_notes={},
+            ),
+        ]
+        config = {
+            "selected_target": "esp32",
+            "selected_providers": {
+                "development": "development_test",
+                "simulation": "wokwi",
+                "device": "esp32_serial",
+                "boot": "esp32_qemu_firmware",
+                "hostLink": "fake-idf",
+                "probe": "spp-jsonl",
+            },
+        }
+
+        with (
+            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib._setup.configure_default_ec2_host"),
+            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("sys.stdin.isatty", return_value=True),
+            mock.patch("builtins.input", side_effect=["y", "2", ""]),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True)
+
+        self.assertEqual(0, result)
+        save_config.assert_called_once_with(
+            {
+                "selected_target": "linux-device",
+                "selected_providers": {
+                    "development": "development_test",
+                    "simulation": "simulation_test",
+                    "device": "device_test",
+                },
+            }
+        )
+        self.assertIn("Target を保存しました", output.getvalue())
 
     def test_setup_provider_selection_accepts_quit(self) -> None:
         providers = [DevelopmentProvider]
@@ -673,6 +921,35 @@ class GarCliTest(unittest.TestCase):
                 profile["terminal.integrated.profiles.linux"]["EC2 Simulation"],
             )
 
+    def test_wokwi_sim_start_writes_wokwi_terminal_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            settings = home / "settings.json"
+
+            with (
+                mock.patch("scripts.gar_lib._sim.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=WokwiEnvironment),
+                mock.patch.dict(os.environ, {"GAR_WOKWI_PROJECT_DIR": str(home / "wokwi")}, clear=False),
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = run_sim_command(
+                        "start",
+                        host="wokwi",
+                        settings=str(settings),
+                        port_forward=False,
+                    )
+
+            self.assertEqual(0, result)
+            terminal = home / ".local" / "bin" / "gar-sim-terminal"
+            self.assertIn("Wokwi simulation provider", terminal.read_text(encoding="utf-8"))
+            profile = json.loads(settings.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {"path": str(terminal)},
+                profile["terminal.integrated.profiles.linux"]["Wokwi Simulation"],
+            )
+            self.assertIn("Profile:   Wokwi Simulation", output.getvalue())
+
     def test_sim_start_starts_port_forward(self) -> None:
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
@@ -699,7 +976,10 @@ class GarCliTest(unittest.TestCase):
         state.assert_called_once_with("ec2-test")
 
     def test_sim_status_json_returns_bridge_state(self) -> None:
-        with mock.patch("scripts.gar_lib.sim.linux.LinuxSystemdSimProvider.panel", return_value=0) as panel:
+        with (
+            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.sim.linux.LinuxSystemdSimProvider.panel", return_value=0) as panel,
+        ):
             result = run_sim_command("status", host="ec2-test", json_output=True)
 
         self.assertEqual(0, result)
@@ -802,7 +1082,10 @@ class GarCliTest(unittest.TestCase):
                     )
                 return subprocess.CompletedProcess(args=argv, returncode=0)
 
-            with mock.patch("scripts.gar_lib._deploy.subprocess.run", side_effect=run_side_effect) as run:
+            with (
+                mock.patch("scripts.gar_lib._deploy.load_config", return_value={"selected_providers": {"device": "adb_usb"}}),
+                mock.patch("scripts.gar_lib._deploy.subprocess.run", side_effect=run_side_effect) as run,
+            ):
 
                 result = run_deploy_command(
                     "target",
@@ -869,6 +1152,7 @@ class GarCliTest(unittest.TestCase):
                 return subprocess.CompletedProcess(args=argv, returncode=0)
 
             with (
+                mock.patch("scripts.gar_lib._deploy.load_config", return_value={"selected_providers": {"device": "adb_usb"}}),
                 mock.patch("scripts.gar_lib._deploy.subprocess.run", side_effect=run_side_effect) as run,
                 mock.patch("scripts.gar_lib._deploy.run_usb_command", return_value=0) as usb_attach,
                 contextlib.redirect_stderr(io.StringIO()),
@@ -1709,6 +1993,23 @@ class GarCliTest(unittest.TestCase):
             }
         )
 
+    def test_setup_skips_runtime_host_prompt_for_wokwi(self) -> None:
+        config = {
+            "selected_providers": {"simulation": "wokwi"},
+            "ec2": {"host": "not-a-runtime-host"},
+        }
+
+        with mock.patch("sys.stdin.isatty", return_value=True), mock.patch("builtins.input") as input_mock:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                from scripts.gar_lib._setup import configure_default_ec2_host
+
+                configure_default_ec2_host(config, ec2_host=None)
+
+        input_mock.assert_not_called()
+        self.assertIn("ローカルCLIからクラウドシミュレーション", output.getvalue())
+        self.assertIn("SSH runtime host は不要", output.getvalue())
+
     def test_load_config_keeps_legacy_config_compatible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
@@ -1723,6 +2024,30 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual("wsl", config["selected_providers"]["development"])
         self.assertEqual("vibecode-graviton", config["ec2"]["host"])
+
+    def test_discover_target_manifests_reads_gar_tools_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target_dir = Path(tmp) / "esp32"
+            target_dir.mkdir()
+            (target_dir / "target.json").write_text(
+                json.dumps(
+                    {
+                        "id": "esp32",
+                        "displayName": "ESP32",
+                        "description": "test target",
+                        "toolsRoot": "targets/esp32",
+                        "defaultBackends": {"simulation": "wokwi"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.dict(os.environ, {"GAR_TOOLS_TARGETS": tmp}):
+                targets = discover_target_manifests()
+
+        self.assertEqual(1, len(targets))
+        self.assertEqual("esp32", targets[0].id)
+        self.assertEqual({"simulation": "wokwi"}, targets[0].default_backends)
 
     def test_load_config_warns_on_invalid_json(self) -> None:
         from scripts.gar_lib.cli import default_config

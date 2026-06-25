@@ -75,7 +75,7 @@ make init
 make start
 ```
 
-## 2. provider と既定 host を設定する
+## 2. target / provider / 既定 host を設定する
 
 まず `gar setup` を実行します。
 
@@ -83,13 +83,18 @@ make start
 gar setup
 ```
 
+最初に target（何を動かしたいか）を選びます。target ごとの推奨 backend が表示され、その後に接続 provider を選びます。
+
 基本の選択は次です。
 
 | カテゴリ | 推奨 |
 |---|---|
+| Target | Linux device / RasPi-compatible |
 | 開発環境 | GitHub Codespaces |
 | シミュレート環境 | EC2 runtime host へ接続するための SSH Remote |
 | 実機環境 | ADB USB-C |
+
+ESP32 / M5Stack を扱う場合は Target で `ESP32 / M5Stack` を選びます。Wokwi が主な simulation backend、Espressif QEMU が boot smoke backend、fake-idf が host link backend として表示されます。
 
 ネットワーク越しに RasPi5 へ SSH できる場合は、実機環境で `SSH / scp` を選んでもよいです。
 

@@ -10,7 +10,7 @@
 |---|---|
 | `make init` | `.venv` 作成・`gar` symlink・VSCode extension install |
 | `make start` | venv + bash completion を有効化したサブシェルを開く |
-| `gar setup` | 依存コマンド確認・接続プロバイダ選択・既定 host 保存 |
+| `gar setup` | target 選択・推奨 backend 表示・接続プロバイダ選択・依存コマンド確認・既定 host 保存 |
 | `gar hw init` | `hardware/` に CSV テンプレートを生成 |
 
 ---

@@ -183,6 +183,7 @@ def write_sim_terminal_profile(
     profile_name: str | None = None,
 ) -> None:
     home = Path.home()
+    provider = _get_sim_provider()
     settings_path = Path(
         settings
         or os.environ.get(
@@ -190,9 +191,10 @@ def write_sim_terminal_profile(
             str(home / ".vscode-server" / "data" / "Machine" / "settings.json"),
         )
     ).expanduser()
+    default_profile_name = "Wokwi Simulation" if provider.provider_id == "wokwi" else "EC2 Simulation"
     selected_profile_name = profile_name or os.environ.get(
         "GAR_SIM_PROFILE_NAME",
-        "EC2 Simulation",
+        default_profile_name,
     )
     terminal_bin = home / ".local" / "bin" / "gar-sim-terminal"
     terminal_bin.parent.mkdir(parents=True, exist_ok=True)

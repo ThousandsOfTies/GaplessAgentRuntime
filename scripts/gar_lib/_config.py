@@ -55,6 +55,10 @@ def load_config() -> dict:
     if not isinstance(selected_providers, dict):
         selected_providers = {}
 
+    selected_target = data.get("selected_target")
+    if not isinstance(selected_target, str) or not selected_target:
+        selected_target = None
+
     ec2 = data.get("ec2")
     ec2_host = None
     ec2_instance_id = None
@@ -85,6 +89,7 @@ def load_config() -> dict:
             adb_version = adb["version"]
 
     return {
+        **({"selected_target": selected_target} if selected_target else {}),
         "selected_providers": {
             str(category_id): str(provider_id)
             for category_id, provider_id in selected_providers.items()
@@ -139,6 +144,7 @@ def save_config(config: dict) -> None:
 
 def default_config() -> dict:
     return {
+        "selected_target": "linux-device",
         "selected_providers": {},
         "ec2": {
             "host": DEFAULT_EC2_HOST,

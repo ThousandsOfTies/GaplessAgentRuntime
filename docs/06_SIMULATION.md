@@ -90,6 +90,45 @@ gar sim env diag --json   # プロセス・デバイス・API 状態
 
 ---
 
+## Wokwi / M5StackC シミュレーション
+
+ESP32 / M5StackC 系ターゲットでは simulation backend に `wokwi` を選ぶと、`gar sim env start` がローカルに Wokwi プロジェクトを生成します。シミュレーション実行そのものは、ローカルの `wokwi-cli` から Wokwi CI のクラウドシミュレーションを呼び出します。既定の生成先は次の通りです。
+
+```text
+.gar/wokwi/m5stackc/
+  diagram.json
+  wokwi.toml
+  platformio.ini
+  src/main.cpp
+  README.md
+```
+
+生成される `diagram.json` は ESP32 DevKit、SPI TFT、BtnA/BtnB、LED を持つ M5StackC 相当の構成です。`wokwi.toml` は PlatformIO の成果物 `.pio/build/m5stackc/firmware.bin` / `.pio/build/m5stackc/firmware.elf` を参照します。
+
+```bash
+gar setup                         # target で ESP32 / M5Stack 系、simulation で Wokwi を選ぶ
+gar sim env start --no-port-forward
+cd .gar/wokwi/m5stackc
+pio run
+export WOKWI_CLI_TOKEN=...
+wokwi-cli .
+```
+
+`wokwi-cli`、`WOKWI_CLI_TOKEN`、firmware が揃っている場合、`gar sim env start --no-port-forward` は Wokwi CLI をバックグラウンド起動し、Wokwi CI のクラウドシミュレーションへ送信します。PID とログは `.gar/wokwi/m5stackc/state.json` / `wokwi.log` に記録します。まだ CLI や firmware がない場合も、プロジェクト生成までは成功として扱い、次に必要な手順を表示します。
+
+Wokwi CI はクラウド上で実行されるため、完全なローカル/オフライン実行ではありません。無料プランでも CI simulation の月間枠がありますが、長時間・商用・オフライン用途では有料プランの確認が必要です。
+
+必要に応じて次の環境変数で上書きできます。
+
+```bash
+GAR_WOKWI_PROJECT_DIR=/path/to/wokwi-project
+GAR_WOKWI_FIRMWARE=.pio/build/custom/firmware.bin
+GAR_WOKWI_ELF=.pio/build/custom/firmware.elf
+GAR_WOKWI_TIMEOUT_MS=30000
+```
+
+---
+
 ## 起動手順
 
 `gar-build-env` Codespace で ARM64 ビルドし、成果物を WSL hub 経由で EC2 に転送済みの前提です。

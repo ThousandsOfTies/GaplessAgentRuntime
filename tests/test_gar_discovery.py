@@ -14,6 +14,9 @@ from scripts.gar_lib.environments.registry.development.github_codespaces import 
     GitHubCodespacesEnvironment,
 )
 from scripts.gar_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
+from scripts.gar_lib.environments.registry.device.esp32_serial import (
+    Esp32SerialEnvironment,
+)
 from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
     RenodeMcuEnvironment,
@@ -102,18 +105,97 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual("node", statuses[0].name)
         self.assertIsNone(statuses[0].path)
 
-    def test_wokwi_sim_provider_is_noop(self) -> None:
-        provider = WokwiSimProvider(WokwiEnvironment, host=None)
+    def test_wokwi_sim_provider_generates_m5stackc_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict("os.environ", {"GAR_WOKWI_PROJECT_DIR": tmp}, clear=False):
+                provider = WokwiSimProvider(WokwiEnvironment, host=None)
 
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(0, provider.start({}))
-            self.assertEqual(0, provider.stop({}))
-            self.assertEqual(0, provider.log())
-            self.assertEqual(0, provider.status({}, json_output=True))
-            self.assertEqual(0, provider.diag_json({}))
-            self.assertEqual(0, provider.gpio_sim_check(json_output=True))
-            self.assertEqual(0, provider.gpio_command("status", {}, json_output=True))
-            self.assertEqual(0, provider.panel("state", {}, json_output=True))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(0, provider.start({}))
+                    self.assertEqual(0, provider.stop({}))
+                    self.assertEqual(0, provider.status({}, json_output=True))
+                    self.assertEqual(0, provider.diag_json({}))
+                    self.assertEqual(0, provider.gpio_sim_check(json_output=True))
+                    self.assertEqual(0, provider.gpio_command("status", {}, json_output=True))
+                    self.assertEqual(0, provider.panel("state", {}, json_output=True))
+
+                project = Path(tmp)
+                self.assertTrue((project / "wokwi.toml").exists())
+                self.assertTrue((project / "diagram.json").exists())
+                self.assertTrue((project / "platformio.ini").exists())
+                diagram = json.loads((project / "diagram.json").read_text(encoding="utf-8"))
+                self.assertIn("wokwi-esp32-devkit-v1", {part["type"] for part in diagram["parts"]})
+                self.assertIn("wokwi-ili9341", {part["type"] for part in diagram["parts"]})
+
+    def test_wokwi_installer_runs_official_install_script(self) -> None:
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/tool"),
+            mock.patch.object(WokwiEnvironment, "run_subprocess", return_value=0) as run,
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = WokwiEnvironment.install_dependencies(["wokwi-cli"])
+
+        self.assertEqual(0, result)
+        run.assert_called_once_with(["sh", "-c", "curl -L https://wokwi.com/ci/install.sh | sh"])
+        self.assertIn("Wokwi CLI をインストールします", output.getvalue())
+
+    def test_wokwi_dependency_status_finds_user_bin_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cli = home / "bin" / "wokwi-cli"
+            cli.parent.mkdir()
+            cli.write_text("#!/bin/sh\n", encoding="utf-8")
+            cli.chmod(0o755)
+
+            with (
+                mock.patch("shutil.which", return_value=None),
+                mock.patch("pathlib.Path.home", return_value=home),
+            ):
+                statuses = WokwiEnvironment.dependency_status()
+                missing = WokwiEnvironment.missing_commands()
+
+        self.assertEqual(1, len(statuses))
+        self.assertEqual(str(cli), statuses[0].path)
+        self.assertEqual([], missing)
+
+    def test_esp32_serial_dependency_status_finds_project_venv_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cli = root / ".venv" / "bin" / "esptool"
+            cli.parent.mkdir(parents=True)
+            cli.write_text("#!/bin/sh\n", encoding="utf-8")
+            cli.chmod(0o755)
+
+            with (
+                mock.patch("shutil.which", return_value=None),
+                mock.patch("scripts.gar_lib.environments.registry.device.esp32_serial.PROJECT_ROOT", root),
+            ):
+                statuses = Esp32SerialEnvironment.dependency_status()
+                missing = Esp32SerialEnvironment.missing_commands()
+
+        self.assertEqual(1, len(statuses))
+        self.assertEqual(str(cli), statuses[0].path)
+        self.assertEqual([], missing)
+
+    def test_esp32_serial_installer_uses_project_venv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            python = root / ".venv" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("#!/bin/sh\n", encoding="utf-8")
+
+            with (
+                mock.patch("scripts.gar_lib.environments.registry.device.esp32_serial.PROJECT_ROOT", root),
+                mock.patch.object(Esp32SerialEnvironment, "run_subprocess", return_value=0) as run,
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = Esp32SerialEnvironment.install_dependencies(["esptool"])
+
+        self.assertEqual(0, result)
+        run.assert_called_once_with([str(python), "-m", "pip", "install", "esptool"])
+        self.assertIn("esptool", output.getvalue())
 
     def test_renode_mcu_requires_renode_and_renode_test(self) -> None:
         self.assertEqual(
