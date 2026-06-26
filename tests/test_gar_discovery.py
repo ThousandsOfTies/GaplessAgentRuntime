@@ -107,7 +107,35 @@ class GarDiscoveryTest(unittest.TestCase):
 
     def test_wokwi_sim_provider_generates_m5stackc_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.dict("os.environ", {"GAR_WOKWI_PROJECT_DIR": tmp}, clear=False):
+            root = Path(tmp)
+            project = root / "project"
+            template = root / "template"
+            (template / "src").mkdir(parents=True)
+            (template / "lib" / "M5Unified" / "src").mkdir(parents=True)
+            (template / "diagram.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "parts": [
+                            {"type": "wokwi-esp32-devkit-v1", "id": "esp"},
+                            {"type": "wokwi-ili9341", "id": "lcd"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (template / "platformio.ini").write_text("[env:m5stackc]\n", encoding="utf-8")
+            (template / "src" / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
+            (template / "lib" / "M5Unified" / "src" / "M5Unified.h").write_text("#pragma once\n", encoding="utf-8")
+            (template / "wokwi.toml.template").write_text(
+                "[wokwi]\nfirmware = '{firmware}'\nelf = '{elf}'\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                "os.environ",
+                {"GAR_WOKWI_PROJECT_DIR": str(project), "GAR_WOKWI_TEMPLATE_DIR": str(template)},
+                clear=False,
+            ):
                 provider = WokwiSimProvider(WokwiEnvironment, host=None)
 
                 with contextlib.redirect_stdout(io.StringIO()):
@@ -119,10 +147,10 @@ class GarDiscoveryTest(unittest.TestCase):
                     self.assertEqual(0, provider.gpio_command("status", {}, json_output=True))
                     self.assertEqual(0, provider.panel("state", {}, json_output=True))
 
-                project = Path(tmp)
                 self.assertTrue((project / "wokwi.toml").exists())
                 self.assertTrue((project / "diagram.json").exists())
                 self.assertTrue((project / "platformio.ini").exists())
+                self.assertTrue((project / "lib" / "M5Unified" / "src" / "M5Unified.h").exists())
                 diagram = json.loads((project / "diagram.json").read_text(encoding="utf-8"))
                 self.assertIn("wokwi-esp32-devkit-v1", {part["type"] for part in diagram["parts"]})
                 self.assertIn("wokwi-ili9341", {part["type"] for part in diagram["parts"]})

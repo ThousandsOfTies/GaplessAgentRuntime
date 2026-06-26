@@ -16,6 +16,7 @@ from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 
 DEFAULT_WOKWI_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
+DEFAULT_WOKWI_TEMPLATE_REL = Path("targets") / "esp32" / "wokwi" / "m5stackc"
 DEFAULT_TIMEOUT_MS = 30000
 
 
@@ -38,6 +39,20 @@ def _is_pid_running(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _gar_tools_root() -> Path:
+    raw = os.environ.get("GAR_TOOLS_ROOT")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (PROJECT_ROOT.parent / "gar-tools").resolve()
+
+
+def _template_dir() -> Path:
+    raw = os.environ.get("GAR_WOKWI_TEMPLATE_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return _gar_tools_root() / DEFAULT_WOKWI_TEMPLATE_REL
 
 
 class WokwiSimCommandBuilder(SimCommandBuilder):
@@ -149,18 +164,56 @@ class WokwiSimProvider(SimProvider):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    def _copy_template_file_if_missing(self, source: Path, relative_path: Path) -> None:
+        dest = self.project_dir / relative_path
+        if dest.exists():
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+
     def _ensure_project(self, hw_definition: dict[str, list[dict[str, str]]]) -> None:
         del hw_definition
         self.project_dir.mkdir(parents=True, exist_ok=True)
-        self._write_if_missing("diagram.json", json.dumps(self._default_diagram(), ensure_ascii=False, indent=2) + "\n")
-        self._write_if_missing("wokwi.toml", self._default_wokwi_toml())
-        self._write_if_missing("platformio.ini", self._default_platformio_ini())
-        self._write_if_missing("src/main.cpp", self._default_main_cpp())
-        self._write_if_missing("lib/M5Unified/src/M5Unified.h", self._default_m5unified_shim())
-        self._write_if_missing("README.md", self._default_readme())
+        template_dir = _template_dir()
+        if not template_dir.is_dir():
+            raise FileNotFoundError(f"Wokwi template directory not found: {template_dir}")
+
+        for source in sorted(template_dir.rglob("*")):
+            if not source.is_file() or source.name == "wokwi.toml.template":
+                continue
+            self._copy_template_file_if_missing(source, source.relative_to(template_dir))
+
+        self._write_if_missing("wokwi.toml", self._render_wokwi_toml(template_dir))
+
+    def _render_wokwi_toml(self, template_dir: Path) -> str:
+        template_path = template_dir / "wokwi.toml.template"
+        if template_path.exists():
+            template = template_path.read_text(encoding="utf-8")
+            return template.format(firmware=self._firmware_path(), elf=self._elf_path())
+        return (
+            "[wokwi]\n"
+            "version = 1\n"
+            f"firmware = '{self._firmware_path()}'\n"
+            f"elf = '{self._elf_path()}'\n"
+            "rfc2217ServerPort = 4000\n"
+        )
 
     def prepare_project(self, hw_definition: dict[str, list[dict[str, str]]], *, json_output: bool = False) -> int:
-        self._ensure_project(hw_definition)
+        try:
+            self._ensure_project(hw_definition)
+        except FileNotFoundError as exc:
+            self._print_payload(
+                {
+                    "provider": "wokwi",
+                    "status": "template-missing",
+                    "project_dir": str(self.project_dir),
+                    "ok": False,
+                    "error": str(exc),
+                    "hint": "Install or clone gar-tools next to GaplessAgentRuntime, or set GAR_WOKWI_TEMPLATE_DIR.",
+                },
+                json_output=json_output,
+            )
+            return 1
         self._print_payload(
             {
                 "provider": "wokwi",
@@ -173,283 +226,6 @@ class WokwiSimProvider(SimProvider):
             json_output=json_output,
         )
         return 0
-
-    def _default_diagram(self) -> dict:
-        return {
-            "version": 1,
-            "author": "Gapless Agent Runtime",
-            "editor": "wokwi",
-            "parts": [
-                {"type": "wokwi-esp32-devkit-v1", "id": "esp", "top": -35.0, "left": -10.0, "attrs": {}},
-                {"type": "wokwi-ili9341", "id": "lcd", "top": -55.0, "left": 290.0, "attrs": {}},
-                {"type": "wokwi-pushbutton", "id": "btnA", "top": 265.0, "left": 300.0, "attrs": {"color": "red", "bounce": "0"}},
-                {"type": "wokwi-pushbutton", "id": "btnB", "top": 265.0, "left": 380.0, "attrs": {"color": "gray", "bounce": "0"}},
-                {"type": "wokwi-led", "id": "led", "top": 265.0, "left": 475.0, "attrs": {"color": "red"}},
-                {"type": "wokwi-resistor", "id": "r1", "top": 302.0, "left": 502.0, "rotate": 0, "attrs": {"value": "1000"}},
-                {"type": "wokwi-gnd", "id": "gnd", "top": 355.0, "left": 370.0, "attrs": {}},
-            ],
-            "connections": [
-                ["esp:TX0", "$serialMonitor:RX", "", []],
-                ["esp:RX0", "$serialMonitor:TX", "", []],
-                ["lcd:VCC", "esp:3V3", "red", []],
-                ["lcd:GND", "esp:GND.1", "black", []],
-                ["lcd:SCK", "esp:D13", "green", []],
-                ["lcd:MOSI", "esp:D15", "green", []],
-                ["lcd:CS", "esp:D5", "green", []],
-                ["lcd:D/C", "esp:D23", "green", []],
-                ["lcd:RST", "esp:D18", "green", []],
-                ["btnA:1.l", "esp:D32", "green", []],
-                ["btnA:2.r", "gnd:GND", "black", []],
-                ["btnB:1.l", "esp:D33", "green", []],
-                ["btnB:2.r", "gnd:GND", "black", []],
-                ["led:A", "r1:1", "green", []],
-                ["r1:2", "esp:D2", "green", []],
-                ["led:C", "gnd:GND", "black", []],
-            ],
-            "dependencies": {},
-        }
-
-    def _default_wokwi_toml(self) -> str:
-        return (
-            "[wokwi]\n"
-            "version = 1\n"
-            f"firmware = '{self._firmware_path()}'\n"
-            f"elf = '{self._elf_path()}'\n"
-            "rfc2217ServerPort = 4000\n"
-        )
-
-    def _default_platformio_ini(self) -> str:
-        return (
-            "[env:m5stackc]\n"
-            "platform = espressif32\n"
-            "board = m5stick-c\n"
-            "framework = arduino\n"
-            "monitor_speed = 115200\n"
-            "lib_deps =\n"
-            "  adafruit/Adafruit ILI9341\n"
-        )
-
-    def _default_main_cpp(self) -> str:
-        return """#include <M5Unified.h>
-
-void setup() {
-  auto cfg = M5.config();
-  M5.begin(cfg);
-  Serial.begin(115200);
-  M5.Display.setRotation(1);
-  M5.Display.fillScreen(TFT_BLACK);
-  M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-  M5.Display.setTextSize(2);
-  M5.Display.setCursor(8, 12);
-  M5.Display.println("GAR Wokwi");
-  M5.Display.println("M5StackC");
-  Serial.println("GAR Wokwi M5StackC ready");
-}
-
-void loop() {
-  M5.update();
-  if (M5.BtnA.wasPressed()) {
-    Serial.println("Button A");
-    M5.Display.fillRect(8, 64, 140, 24, TFT_BLACK);
-    M5.Display.setCursor(8, 64);
-    M5.Display.print("Button A");
-  }
-  if (M5.BtnB.wasPressed()) {
-    Serial.println("Button B");
-    M5.Display.fillRect(8, 64, 140, 24, TFT_BLACK);
-    M5.Display.setCursor(8, 64);
-    M5.Display.print("Button B");
-  }
-  delay(20);
-}
-"""
-
-    def _default_m5unified_shim(self) -> str:
-        return """#pragma once
-
-#include <Arduino.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h>
-#include <SPI.h>
-
-#define TFT_BLACK ILI9341_BLACK
-#define TFT_GREEN ILI9341_GREEN
-#define TFT_YELLOW ILI9341_YELLOW
-#define TFT_ORANGE ILI9341_ORANGE
-#define TFT_CYAN ILI9341_CYAN
-#define TFT_RED ILI9341_RED
-#define TFT_WHITE ILI9341_WHITE
-#define TFT_NAVY ILI9341_NAVY
-#define TFT_DARKGREY 0x7BEF
-#define TFT_LIGHTGREY 0xC618
-
-namespace gar_wokwi_m5 {
-
-constexpr int TFT_SCK_PIN = 13;
-constexpr int TFT_MOSI_PIN = 15;
-constexpr int TFT_CS_PIN = 5;
-constexpr int TFT_DC_PIN = 23;
-constexpr int TFT_RST_PIN = 18;
-constexpr int BUTTON_A_PIN = 32;
-constexpr int BUTTON_B_PIN = 33;
-
-class DisplayShim {
- public:
-  DisplayShim() : tft_(TFT_CS_PIN, TFT_DC_PIN, TFT_RST_PIN) {}
-
-  void begin() {
-    SPI.begin(TFT_SCK_PIN, -1, TFT_MOSI_PIN, TFT_CS_PIN);
-    tft_.begin();
-  }
-
-  void setRotation(uint8_t rotation) {
-    rotation_ = rotation;
-    tft_.setRotation(rotation);
-  }
-
-  int16_t width() const { return LOGICAL_WIDTH; }
-  int16_t height() const { return LOGICAL_HEIGHT; }
-
-  void setBrightness(uint8_t brightness) { brightness_ = brightness; }
-  void fillScreen(uint16_t color) { tft_.fillRect(VIEW_X, VIEW_Y, LOGICAL_WIDTH * SCALE, LOGICAL_HEIGHT * SCALE, color); }
-  void setTextColor(uint16_t color, uint16_t background) { tft_.setTextColor(color, background); }
-  void setTextSize(uint8_t size) {
-    textSize_ = size;
-    tft_.setTextSize(size * SCALE);
-  }
-  void setCursor(int16_t x, int16_t y) { tft_.setCursor(mapX(x), mapY(y)); }
-  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
-    tft_.fillRect(mapX(x), mapY(y), w * SCALE, h * SCALE, color);
-  }
-  void drawPixel(int16_t x, int16_t y, uint16_t color) { tft_.fillRect(mapX(x), mapY(y), SCALE, SCALE, color); }
-  void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) { fillRect(x, y, w, 1, color); }
-  void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) { fillRect(x, y, 1, h, color); }
-  void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
-    drawFastHLine(x, y, w, color);
-    drawFastHLine(x, y + h - 1, w, color);
-    drawFastVLine(x, y, h, color);
-    drawFastVLine(x + w - 1, y, h, color);
-  }
-  void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t radius, uint16_t color) {
-    tft_.drawRoundRect(mapX(x), mapY(y), w * SCALE, h * SCALE, radius * SCALE, color);
-  }
-  void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t radius, uint16_t color) {
-    tft_.fillRoundRect(mapX(x), mapY(y), w * SCALE, h * SCALE, radius * SCALE, color);
-  }
-  void fillCircle(int16_t x, int16_t y, int16_t radius, uint16_t color) {
-    tft_.fillCircle(mapX(x), mapY(y), radius * SCALE, color);
-  }
-  void drawString(const String &text, int16_t x, int16_t y) {
-    tft_.setCursor(mapX(x), mapY(y));
-    tft_.print(text);
-  }
-  void drawString(const char *text, int16_t x, int16_t y) {
-    tft_.setCursor(mapX(x), mapY(y));
-    tft_.print(text);
-  }
-
-  template <typename T>
-  size_t print(const T &value) {
-    return tft_.print(value);
-  }
-
-  template <typename T>
-  size_t println(const T &value) {
-    return tft_.println(value);
-  }
-
- private:
-  static constexpr int16_t LOGICAL_WIDTH = 160;
-  static constexpr int16_t LOGICAL_HEIGHT = 80;
-  static constexpr int16_t SCALE = 2;
-  static constexpr int16_t VIEW_X = 0;
-  static constexpr int16_t VIEW_Y = 40;
-
-  int16_t mapX(int16_t x) const { return VIEW_X + x * SCALE; }
-  int16_t mapY(int16_t y) const { return VIEW_Y + y * SCALE; }
-
-  Adafruit_ILI9341 tft_;
-  uint8_t rotation_ = 1;
-  uint8_t textSize_ = 1;
-  uint8_t brightness_ = 255;
-};
-
-class ButtonShim {
- public:
-  explicit ButtonShim(int pin) : pin_(pin) {}
-
-  void begin() {
-    pinMode(pin_, INPUT_PULLUP);
-    current_ = digitalRead(pin_);
-  }
-
-  void update() {
-    bool previous = current_;
-    current_ = digitalRead(pin_);
-    pressed_ = previous == HIGH && current_ == LOW;
-  }
-
-  bool wasPressed() {
-    bool result = pressed_;
-    pressed_ = false;
-    return result;
-  }
-
- private:
-  int pin_;
-  bool current_ = HIGH;
-  bool pressed_ = false;
-};
-
-struct Config {};
-
-class M5UnifiedShim {
- public:
-  DisplayShim Display;
-  ButtonShim BtnA{BUTTON_A_PIN};
-  ButtonShim BtnB{BUTTON_B_PIN};
-
-  Config config() { return Config{}; }
-
-  void begin(const Config &) {
-    Display.begin();
-    BtnA.begin();
-    BtnB.begin();
-  }
-
-  void update() {
-    BtnA.update();
-    BtnB.update();
-  }
-};
-
-}  // namespace gar_wokwi_m5
-
-static gar_wokwi_m5::M5UnifiedShim M5;
-"""
-
-    def _default_readme(self) -> str:
-        return """# GAR Wokwi M5StackC Simulation
-
-This project is generated by `gar sim env start` when the Wokwi simulation
-backend is selected.
-
-Build:
-
-```bash
-pio run
-```
-
-Run with Wokwi CLI:
-
-```bash
-export WOKWI_CLI_TOKEN=...
-wokwi-cli .
-```
-
-Override paths with `GAR_WOKWI_PROJECT_DIR`, `GAR_WOKWI_FIRMWARE`,
-`GAR_WOKWI_ELF`, and `GAR_WOKWI_TIMEOUT_MS`.
-"""
 
     def _start_cli(self) -> int:
         cli = shutil.which("wokwi-cli")
@@ -501,7 +277,20 @@ Override paths with `GAR_WOKWI_PROJECT_DIR`, `GAR_WOKWI_FIRMWARE`,
         return 0
 
     def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        self._ensure_project(hw_definition)
+        try:
+            self._ensure_project(hw_definition)
+        except FileNotFoundError as exc:
+            self._print_payload(
+                {
+                    "provider": "wokwi",
+                    "status": "template-missing",
+                    "project_dir": str(self.project_dir),
+                    "ok": False,
+                    "error": str(exc),
+                    "hint": "Install or clone gar-tools next to GaplessAgentRuntime, or set GAR_WOKWI_TEMPLATE_DIR.",
+                }
+            )
+            return 1
         state = self._state()
         pid = state.get("pid")
         if isinstance(pid, int) and _is_pid_running(pid):
