@@ -104,7 +104,7 @@ class WokwiSimProvider(SimProvider):
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             return
         for key, value in payload.items():
-            if isinstance(value, (dict, list)):
+            if isinstance(value, dict | list):
                 value = json.dumps(value, ensure_ascii=False)
             print(f"{key}: {value}")
 

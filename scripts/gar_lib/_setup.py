@@ -12,6 +12,11 @@ from scripts.gar_lib._config import (
     set_default_ec2_host,
 )
 from scripts.gar_lib._hw import load_hw_definition
+from scripts.gar_lib._targets import (
+    TargetManifest,
+    discover_target_manifests,
+    target_by_id,
+)
 from scripts.gar_lib._ui import (
     BLUE,
     BOLD,
@@ -22,11 +27,6 @@ from scripts.gar_lib._ui import (
     YELLOW,
     safe_input,
     style,
-)
-from scripts.gar_lib._targets import (
-    TargetManifest,
-    discover_target_manifests,
-    target_by_id,
 )
 from scripts.gar_lib._vscode import (
     install_vscode_terminal_bridge,
