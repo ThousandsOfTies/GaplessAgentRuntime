@@ -925,11 +925,24 @@ class GarCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             settings = home / "settings.json"
+            template = home / "template"
+            (template / "src").mkdir(parents=True)
+            (template / "diagram.json").write_text(
+                json.dumps({"version": 1, "parts": [{"type": "wokwi-esp32-devkit-v1", "id": "esp"}]}),
+                encoding="utf-8",
+            )
+            (template / "platformio.ini").write_text("[env:m5stackc]\n", encoding="utf-8")
+            (template / "src" / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
+            (template / "wokwi.toml.template").write_text("[wokwi]\nfirmware = '{firmware}'\n", encoding="utf-8")
 
             with (
                 mock.patch("scripts.gar_lib._sim.Path.home", return_value=home),
                 mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=WokwiEnvironment),
-                mock.patch.dict(os.environ, {"GAR_WOKWI_PROJECT_DIR": str(home / "wokwi")}, clear=False),
+                mock.patch.dict(
+                    os.environ,
+                    {"GAR_WOKWI_PROJECT_DIR": str(home / "wokwi"), "GAR_WOKWI_TEMPLATE_DIR": str(template)},
+                    clear=False,
+                ),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
