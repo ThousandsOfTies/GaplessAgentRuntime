@@ -996,7 +996,28 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("LD_PRELOAD", remote_command)
 
     def test_sim_start_prepares_gpio_sim_as_gpiochip0(self) -> None:
+        hw_definition = {
+            "gpio": [
+                {
+                    "name": "button_a",
+                    "chip": "/dev/gpiochip0",
+                    "line": "17",
+                    "direction": "input",
+                    "role": "button",
+                    "sim_control": "pull",
+                },
+                {
+                    "name": "status_led",
+                    "chip": "/dev/gpiochip0",
+                    "line": "18",
+                    "direction": "output",
+                    "role": "led",
+                    "sim_control": "value",
+                },
+            ],
+        }
         with (
+            mock.patch("scripts.gar_lib._sim.load_hw_definition", return_value=hw_definition),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
             mock.patch("scripts.gar_lib._sim.write_sim_terminal_profile"),
             mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
