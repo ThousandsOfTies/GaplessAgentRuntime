@@ -1,3 +1,0 @@
-name,bus,dev,address,driver,sim,description
-ssd1306_oled,1,/dev/i2c-1,0x3c,ssd1306,ssd1306,128x64 OLED display
-vl53l0x_range,1,/dev/i2c-1,0x29,vl53l0x,vl53l0x,Time-of-Flight range sensor

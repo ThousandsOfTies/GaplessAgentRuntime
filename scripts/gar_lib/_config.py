@@ -144,7 +144,6 @@ def save_config(config: dict) -> None:
 
 def default_config() -> dict:
     return {
-        "selected_target": "linux-device",
         "selected_providers": {},
         "ec2": {
             "host": DEFAULT_EC2_HOST,

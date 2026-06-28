@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import csv
+import shutil
 from pathlib import Path
 
 from scripts.gar_lib._config import PROJECT_ROOT
+from scripts.gar_lib._targets import gar_tools_root
 
 HW_TEMPLATE_FILES: dict[str, list[str]] = {
     "components.csv": [
@@ -58,6 +60,7 @@ HW_TEMPLATE_FILES: dict[str, list[str]] = {
 }
 
 HW_DIR = PROJECT_ROOT / "hardware"
+HW_TEMPLATE_REL = Path("targets") / "linux-device" / "hardware"
 
 
 def _resolve_hw_dir(output_dir: str | None) -> Path:
@@ -67,6 +70,19 @@ def _resolve_hw_dir(output_dir: str | None) -> Path:
             path = Path.cwd() / path
         return path
     return HW_DIR
+
+
+def _default_hw_source_dir() -> Path:
+    if HW_DIR.is_dir():
+        return HW_DIR
+    template_dir = _hw_template_dir()
+    if template_dir.is_dir():
+        return template_dir
+    return HW_DIR
+
+
+def _hw_template_dir() -> Path:
+    return gar_tools_root() / HW_TEMPLATE_REL
 
 
 def _read_hw_csv(hw_dir: Path, name: str) -> list[dict[str, str]]:
@@ -86,7 +102,7 @@ def _read_hw_csv(hw_dir: Path, name: str) -> list[dict[str, str]]:
 def load_hw_definition(*, hw_dir: str | None = None) -> dict[str, list[dict[str, str]]]:
     """Load hardware assignment CSV files as plain row dictionaries."""
 
-    root = _resolve_hw_dir(hw_dir)
+    root = _resolve_hw_dir(hw_dir) if hw_dir else _default_hw_source_dir()
     return {
         "components": _read_hw_csv(root, "components.csv"),
         "gpio": _read_hw_csv(root, "gpio.csv"),
@@ -97,7 +113,7 @@ def load_hw_definition(*, hw_dir: str | None = None) -> dict[str, list[dict[str,
 
 
 def write_hw_template(*, output_dir: str | None = None, force: bool = False) -> int:
-    """Create empty hardware definition CSV files."""
+    """Create hardware definition CSV files from the target template."""
 
     hw_dir = _resolve_hw_dir(output_dir)
     existing = [name for name in HW_TEMPLATE_FILES if (hw_dir / name).exists()]
@@ -110,11 +126,16 @@ def write_hw_template(*, output_dir: str | None = None, force: bool = False) -> 
         return 1
 
     hw_dir.mkdir(parents=True, exist_ok=True)
+    template_dir = _hw_template_dir()
     for name, headers in HW_TEMPLATE_FILES.items():
         path = hw_dir / name
-        with path.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f, lineterminator="\n")
-            writer.writerow(headers)
+        source = template_dir / name
+        if source.exists():
+            shutil.copy2(source, path)
+        else:
+            with path.open("w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f, lineterminator="\n")
+                writer.writerow(headers)
         print(f"created {path}")
 
     return 0

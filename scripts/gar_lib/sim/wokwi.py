@@ -8,15 +8,18 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.gar_lib._config import PROJECT_ROOT
+from scripts.gar_lib._targets import gar_tools_root
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 
 DEFAULT_WOKWI_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
 DEFAULT_WOKWI_TEMPLATE_REL = Path("targets") / "esp32" / "wokwi" / "m5stackc"
+IGNORED_TEMPLATE_PARTS = {".git", ".pio", "__pycache__"}
 DEFAULT_TIMEOUT_MS = 30000
 
 
@@ -41,18 +44,11 @@ def _is_pid_running(pid: int) -> bool:
     return True
 
 
-def _gar_tools_root() -> Path:
-    raw = os.environ.get("GAR_TOOLS_ROOT")
-    if raw:
-        return Path(raw).expanduser().resolve()
-    return (PROJECT_ROOT.parent / "gar-tools").resolve()
-
-
 def _template_dir() -> Path:
     raw = os.environ.get("GAR_WOKWI_TEMPLATE_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
-    return _gar_tools_root() / DEFAULT_WOKWI_TEMPLATE_REL
+    return gar_tools_root() / DEFAULT_WOKWI_TEMPLATE_REL
 
 
 class WokwiSimCommandBuilder(SimCommandBuilder):
@@ -179,9 +175,12 @@ class WokwiSimProvider(SimProvider):
             raise FileNotFoundError(f"Wokwi template directory not found: {template_dir}")
 
         for source in sorted(template_dir.rglob("*")):
+            relative_path = source.relative_to(template_dir)
+            if any(part in IGNORED_TEMPLATE_PARTS for part in relative_path.parts):
+                continue
             if not source.is_file() or source.name == "wokwi.toml.template":
                 continue
-            self._copy_template_file_if_missing(source, source.relative_to(template_dir))
+            self._copy_template_file_if_missing(source, relative_path)
 
         self._write_if_missing("wokwi.toml", self._render_wokwi_toml(template_dir))
 
@@ -209,7 +208,7 @@ class WokwiSimProvider(SimProvider):
                     "project_dir": str(self.project_dir),
                     "ok": False,
                     "error": str(exc),
-                    "hint": "Install or clone gar-tools next to GaplessAgentRuntime, or set GAR_WOKWI_TEMPLATE_DIR.",
+                    "hint": "Run `gar setup` to fetch gar-tools into .gar/tools, or set GAR_WOKWI_TEMPLATE_DIR.",
                 },
                 json_output=json_output,
             )
@@ -287,7 +286,7 @@ class WokwiSimProvider(SimProvider):
                     "project_dir": str(self.project_dir),
                     "ok": False,
                     "error": str(exc),
-                    "hint": "Install or clone gar-tools next to GaplessAgentRuntime, or set GAR_WOKWI_TEMPLATE_DIR.",
+                    "hint": "Run `gar setup` to fetch gar-tools into .gar/tools, or set GAR_WOKWI_TEMPLATE_DIR.",
                 }
             )
             return 1
@@ -382,8 +381,147 @@ class WokwiSimProvider(SimProvider):
         return 0
 
     def panel(self, action: str, params: dict, json_output: bool = False) -> int:
+        if action in {"button-press", "button-set"}:
+            return self._run_button_action(action, params, json_output=json_output)
         self._print_payload(
             {"provider": "wokwi", "action": action, "params": params, "ok": True, "status": "unsupported", "reason": "Wokwi UI/scenarios replace the Linux virtual hardware panel"},
             json_output=json_output,
         )
         return 0
+
+    def _run_button_action(self, action: str, params: dict, *, json_output: bool = False) -> int:
+        cli = shutil.which("wokwi-cli")
+        if not cli:
+            self._print_payload(
+                {
+                    "provider": "wokwi",
+                    "action": action,
+                    "params": params,
+                    "ok": False,
+                    "status": "missing-cli",
+                    "hint": "Install wokwi-cli or run `gar setup`.",
+                },
+                json_output=json_output,
+            )
+            return 1
+
+        try:
+            self._ensure_project({})
+            part_id = _wokwi_button_part(params)
+        except (FileNotFoundError, ValueError) as exc:
+            self._print_payload(
+                {
+                    "provider": "wokwi",
+                    "action": action,
+                    "params": params,
+                    "ok": False,
+                    "status": "invalid-button",
+                    "error": str(exc),
+                },
+                json_output=json_output,
+            )
+            return 1
+
+        if not self._relative_path_exists(self._firmware_path()):
+            self._print_payload(
+                {
+                    "provider": "wokwi",
+                    "action": action,
+                    "params": params,
+                    "ok": False,
+                    "status": "missing-firmware",
+                    "firmware": self._firmware_path(),
+                    "hint": "Run `pio run` in the Wokwi project or set GAR_WOKWI_FIRMWARE.",
+                },
+                json_output=json_output,
+            )
+            return 1
+
+        scenario = self._button_scenario(action, part_id, params)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".test.yaml", delete=False) as f:
+            f.write(scenario)
+            scenario_path = Path(f.name)
+        try:
+            argv = [
+                cli,
+                "--scenario",
+                str(scenario_path),
+                "--serial-log-file",
+                str(self.log_path),
+                "--timeout",
+                str(self._timeout_ms()),
+                str(self.project_dir),
+            ]
+            result = subprocess.run(argv, cwd=self.project_dir, check=False)
+        finally:
+            scenario_path.unlink(missing_ok=True)
+
+        self._print_payload(
+            {
+                "provider": "wokwi",
+                "action": action,
+                "button": part_id,
+                "project_dir": str(self.project_dir),
+                "log": str(self.log_path),
+                "ok": result.returncode == 0,
+                "exit_code": result.returncode,
+            },
+            json_output=json_output,
+        )
+        return result.returncode
+
+    def _button_scenario(self, action: str, part_id: str, params: dict) -> str:
+        value = 1 if int(params.get("value", 1)) else 0
+        if action == "button-set":
+            return _wokwi_scenario(
+                [
+                    _set_control_step(part_id, value),
+                ]
+            )
+        duration_ms = max(0, int(params.get("duration_ms", 150)))
+        return _wokwi_scenario(
+            [
+                _set_control_step(part_id, 1),
+                f"  - delay: {duration_ms}ms",
+                _set_control_step(part_id, 0),
+            ]
+        )
+
+
+def _wokwi_button_part(params: dict) -> str:
+    value = str(params.get("button") or params.get("line") or "A").strip()
+    aliases = {
+        "a": "btnA",
+        "btna": "btnA",
+        "32": "btnA",
+        "37": "btnA",
+        "b": "btnB",
+        "btnb": "btnB",
+        "33": "btnB",
+        "39": "btnB",
+    }
+    key = value.lower()
+    if key in aliases:
+        return aliases[key]
+    raise ValueError(f"unknown Wokwi button: {value}")
+
+
+def _wokwi_scenario(steps: list[str]) -> str:
+    return (
+        'name: "GAR generated Wokwi input"\n'
+        "version: 1\n"
+        "author: \"Gapless Agent Runtime\"\n"
+        "\n"
+        "steps:\n"
+        + "\n".join(steps)
+        + "\n"
+    )
+
+
+def _set_control_step(part_id: str, value: int) -> str:
+    return (
+        "  - set-control:\n"
+        f"      part-id: {part_id}\n"
+        "      control: pressed\n"
+        f"      value: {value}"
+    )

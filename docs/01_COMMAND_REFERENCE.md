@@ -10,8 +10,8 @@
 |---|---|
 | `make init` | `.venv` 作成・`gar` symlink・VSCode extension install |
 | `make start` | venv + bash completion を有効化したサブシェルを開く |
-| `gar setup` | target 選択・推奨 backend 表示・接続プロバイダ選択・依存コマンド確認・既定 host 保存 |
-| `gar hw init` | `hardware/` に CSV テンプレートを生成 |
+| `gar setup` | target 選択・gar-tools 確認/取得・接続プロバイダ選択・依存コマンド確認・既定 host 保存 |
+| `gar hw init` | `gar-tools` の target テンプレートから `hardware/` に CSV を生成 |
 
 ---
 
@@ -64,15 +64,32 @@
 
 ---
 
-## 5. 仮想 H/W 操作
+## 5. 仮想 H/W 操作とシナリオ
 
-| コマンド | 内容 |
+手動操作は backend の UI で行う。
+
+| backend | 手動操作 |
 |---|---|
-| `gar sim ui button press <line> [--duration-ms]` | ボタンを押して離す |
-| `gar sim ui button set <line> <0\|1>` | ボタン状態を直接セット |
-| `gar sim ui rfid tap <uid>` | RFID カードを置く（例: `04:AB:CD:EF:01:23`） |
-| `gar sim ui rfid remove` | RFID カードを外す |
-| `gar sim ui range set <mm>` | VL53L0X 距離値をセット |
+| Linux / RasPi-compatible | Web UI / Virtual Hardware Panel |
+| Wokwi | VS Code Wokwi Simulator / Diagram UI |
+
+Wokwi を手動確認する場合は、`.gar/wokwi/m5stackc/diagram.json` を VS Code の
+Wokwi Diagram Editor で開き、Editor ペイン左上の再生ボタンを押す。
+この時点で `wokwi.toml` が参照する `firmware.bin` / `firmware.elf` が Wokwi 側へ送信される。
+
+AI / CI / 再現テストは、UIを直接叩く単発CLIではなく、GAR共通のJSONシナリオで表現する。
+現時点で公開している補助ランナーは Linux bridge 向けの `scripts/run_scenario.py`。
+
+```bash
+python scripts/run_scenario.py path/to/scenario.json
+```
+
+Wokwi の既存 YAML シナリオを直接流す場合:
+
+```bash
+cd .gar/wokwi/m5stackc
+wokwi-cli --scenario button.test.yaml .
+```
 
 ### Vibe Remote 疑似デバイス
 

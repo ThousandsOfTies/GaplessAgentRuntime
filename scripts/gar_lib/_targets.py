@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from scripts.gar_lib._config import PROJECT_ROOT
+
+DEFAULT_GAR_TOOLS_REPO = "https://github.com/ThousandsOfTies/gar-tools"
 
 
 @dataclass(frozen=True)
@@ -48,11 +51,62 @@ def _targets_root() -> Path:
     if configured:
         return Path(configured).expanduser()
 
-    repo_root = os.environ.get("GAR_TOOLS_ROOT")
-    if repo_root:
-        return Path(repo_root).expanduser() / "targets"
+    return gar_tools_root() / "targets"
 
-    return PROJECT_ROOT.parent / "gar-tools" / "targets"
+
+def gar_tools_root() -> Path:
+    existing = find_gar_tools_root()
+    if existing is not None:
+        return existing
+    return PROJECT_ROOT / ".gar" / "tools"
+
+
+def find_gar_tools_root() -> Path | None:
+    for candidate in gar_tools_root_candidates():
+        if (candidate / "targets").is_dir():
+            return candidate
+    return None
+
+
+def gar_tools_root_candidates() -> list[Path]:
+    raw = os.environ.get("GAR_TOOLS_ROOT")
+    candidates: list[Path] = []
+    if raw:
+        candidates.append(Path(raw).expanduser())
+
+    candidates.extend(
+        [
+            PROJECT_ROOT / "gar-tools",
+            PROJECT_ROOT / ".gar" / "tools",
+            PROJECT_ROOT.parent / "gar-tools",
+        ]
+    )
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve(strict=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def ensure_gar_tools_available(*, auto_clone: bool = True) -> Path | None:
+    existing = find_gar_tools_root()
+    if existing is not None:
+        return existing
+    if not auto_clone:
+        return None
+
+    dest = PROJECT_ROOT / ".gar" / "tools"
+    repo = os.environ.get("GAR_TOOLS_REPO", DEFAULT_GAR_TOOLS_REPO)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(["git", "clone", "--depth", "1", repo, str(dest)], check=False)
+    if result.returncode != 0:
+        return None
+    return dest
 
 
 def _load_target_manifest(path: Path) -> TargetManifest | None:

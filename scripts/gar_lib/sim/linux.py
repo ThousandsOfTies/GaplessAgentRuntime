@@ -556,11 +556,11 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
     def build_panel(self, action: str, params: dict) -> str:
         base = PANEL_BASE_URL
         if action == "button-press":
-            line = int(params.get("line", 17))
+            line = _button_line(params)
             duration_ms = max(0, int(params.get("duration_ms", 150)))
             return f'curl -s -X POST "{base}/api/button/press?line={line}&duration_ms={duration_ms}"'
         if action == "button-set":
-            line = int(params["line"])
+            line = _button_line(params)
             value = 1 if int(params.get("value", 1)) else 0
             return f'curl -s -X POST "{base}/api/button?line={line}&value={value}"'
         if action == "rfid-tap":
@@ -574,6 +574,24 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
         if action == "state":
             return f'curl -s "{base}/api/state"'
         raise ValueError(f"unknown panel action: {action}")
+
+
+def _button_line(params: dict) -> int:
+    value = str(params.get("line") or params.get("button") or "17")
+    if value.isdigit():
+        return int(value)
+    aliases = {
+        "a": 17,
+        "power": 17,
+        "power_button": 17,
+        "b": 27,
+        "aux": 27,
+        "aux_button": 27,
+    }
+    key = value.strip().lower()
+    if key in aliases:
+        return aliases[key]
+    raise ValueError(f"unknown button: {value}")
 
 
 class LinuxSystemdSimProvider(SimProvider):

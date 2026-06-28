@@ -1,7 +1,8 @@
 # Gapless Agent Runtime WSL hub commands.
 
 UID ?= 04:AB:CD:EF:01:23
-SCENARIO ?= scenarios/sensor_demo_rfid.json
+APP_REPO ?= ../embedded-poc-app
+SCENARIO ?= $(APP_REPO)/scenarios/sensor_demo_rfid.json
 VSCODE_EXT_NAME = gar-terminal-bridge
 VSCODE_EXT_VERSION = 0.0.1
 VSCODE_EXT_SRC = tools/vscode-gar
@@ -80,7 +81,7 @@ endif
 
 sim-scenario:
 ifndef EC2
-	$(error EC2 変数を指定してください: make sim-scenario EC2=vibecode-graviton SCENARIO=scenarios/sensor_demo_rfid.json)
+	$(error EC2 変数を指定してください: make sim-scenario EC2=vibecode-graviton SCENARIO=$(APP_REPO)/scenarios/sensor_demo_rfid.json)
 endif
 	$(SSH) $(SSH_DST) 'mkdir -p ~/gar-scenarios'
 	$(SCP) scripts/run_scenario.py $(SCENARIO) $(SSH_DST):~/gar-scenarios/

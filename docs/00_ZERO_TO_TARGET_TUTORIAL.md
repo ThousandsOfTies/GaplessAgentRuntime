@@ -94,7 +94,7 @@ gar setup
 | シミュレート環境 | EC2 runtime host へ接続するための SSH Remote |
 | 実機環境 | ADB USB-C |
 
-ESP32 / M5Stack を扱う場合は Target で `ESP32 / M5Stack` を選びます。Wokwi が主な simulation backend、Espressif QEMU が boot smoke backend、fake-idf が host link backend として表示されます。
+ESP32 / M5Stack を扱う場合は Target で `ESP32 / M5Stack` を選びます。標準セットアップでは Wokwi を主な simulation backend として準備します。Espressif QEMU、Renode、fake-idf、probe 類は必要になった時だけ使う任意の target tool です。
 
 ネットワーク越しに RasPi5 へ SSH できる場合は、実機環境で `SSH / scp` を選んでもよいです。
 
@@ -188,19 +188,27 @@ ssh vibecode-graviton
 ~/sensor_demo
 ```
 
-別ターミナルの WSL Hub から仮想 H/W を操作します。
+仮想 H/W は backend の UI から操作します。
+Linux / RasPi-compatible simulation では Web UI / Virtual Hardware Panel、
+Wokwi simulation では VS Code Wokwi Simulator / Diagram UI を使います。
+Wokwi の手動確認では `.gar/wokwi/m5stackc/diagram.json` を開き、
+Editor ペイン左上の再生ボタンを押します。このとき `wokwi.toml` が参照する
+`firmware.bin` / `firmware.elf` が Wokwi 側へ送信されます。
+
+AI / CI から再現操作を行う場合は、単発のUI操作コマンドではなく
+GAR共通のJSONシナリオとして定義します。Linux bridge向けの既存補助ランナーは
+`scripts/run_scenario.py` です。
 
 ```bash
-gar sim ui button press 17
-gar sim ui rfid tap 04:AB:CD:EF:01:23
+python scripts/run_scenario.py path/to/scenario.json
 gar sim env status --json
 ```
 
 期待:
 
 ```text
-button press で system_on 相当の状態が変わる
-rfid tap で UID が bridge state / OLED 表示へ反映される
+`button_press` action で system_on 相当の状態が変わる
+`rfid_tap` action で UID が bridge state / OLED 表示へ反映される
 sensor_demo が EC2 上で落ちない
 ```
 

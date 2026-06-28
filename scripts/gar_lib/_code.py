@@ -32,6 +32,7 @@ def _get_dev_provider() -> type[DevEnvironment]:
     raise RuntimeError("No development provider found")
 
 DEFAULT_GH_TIMEOUT_SECONDS = 60
+DEFAULT_CODESPACE_REMOTE_PATH = "/workspaces/gar-build-env"
 
 
 def run_code_command(
@@ -80,7 +81,7 @@ def start_code_codespace(
     selected_codespace = codespace or os.environ.get("CODESPACE_NAME")
     selected_remote_path = remote_path or os.environ.get(
         "CODESPACE_REMOTE_PATH",
-        "/workspaces/GaplessAgentRuntime",
+        DEFAULT_CODESPACE_REMOTE_PATH,
     )
     selected_mount_dir = Path(
         mount_dir if mount_dir is not None else default_codespaces_mount_dir()
@@ -169,9 +170,11 @@ def start_code_codespace(
         print("gar code start: could not find Host in ~/.ssh/codespaces", file=sys.stderr)
         return 1
 
-    if not remote_path_exists(host, selected_remote_path):
-        detected_path = detect_codespace_workspace(host)
+    if not remote_path_exists(selected_codespace, selected_remote_path):
+        detected_path = detect_codespace_workspace(selected_codespace)
         if detected_path:
+            print(f"Remote path not found: {selected_remote_path}")
+            print(f"Using detected Codespace workspace: {detected_path}")
             selected_remote_path = detected_path
 
     state_file.write_text(

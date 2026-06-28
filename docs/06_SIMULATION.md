@@ -134,6 +134,36 @@ wokwi-cli .
 
 Wokwi CI はクラウド上で実行されるため、完全なローカル/オフライン実行ではありません。無料プランでも CI simulation の月間枠がありますが、長時間・商用・オフライン用途では有料プランの確認が必要です。
 
+### Wokwi の手動確認と自動確認
+
+Wokwi は「プロジェクト生成」「firmware build」「シミュレータ起動」を分けて扱います。
+VS Code 拡張で手動確認する場合、`gar sim env start` は毎回必要ではありません。
+一度 `.gar/wokwi/m5stackc/` が生成され、`firmware.bin` / `firmware.elf` が存在していれば、
+`diagram.json` を Wokwi Diagram Editor で開き、Editor ペイン左上の再生ボタンを押して確認します。
+
+```bash
+cd ~/Yurufuwa/GaplessAgentRuntime/.gar/wokwi/m5stackc
+pio run
+code .
+```
+
+VS Code で `diagram.json` を開き、左上の再生ボタンを押すと、Wokwi 拡張が
+`wokwi.toml` を読み、そこに書かれた `firmware.bin` / `firmware.elf` を
+Wokwi 側へ送信してシミュレーションを開始します。
+
+自動確認では、GAR 側で Wokwi project と firmware を用意してから、シナリオを実行します。
+現時点の Wokwi 向けシナリオは Wokwi CLI の `--scenario` を使います。
+
+```bash
+cd ~/Yurufuwa/GaplessAgentRuntime
+gar sim env start --no-port-forward   # Wokwi project を準備。firmware がある場合は CLI 起動も可能。
+cd .gar/wokwi/m5stackc
+pio run
+wokwi-cli --scenario button.test.yaml .
+```
+
+長期的には Linux bridge と Wokwi の両方を GAR 共通 JSON シナリオから起動できる形に揃えます。
+
 必要に応じて次の環境変数で上書きできます。
 
 ```bash
@@ -198,7 +228,7 @@ gar sim gpio status --json
 gar sim gpio stop
 ```
 
-`plan` はローカルの `hardware/gpio.csv` から生成される gpio-sim chip / line / label / service 配置の契約を表示します。`start` は `modprobe gpio-sim`、configfs chip 作成、必要な bind mount までを `gar-gpio-sim.service` 経由で行います。
+`plan` はローカルの `hardware/gpio.csv` から生成される gpio-sim chip / line / label / service 配置の契約を表示します。ローカル `hardware/` が未作成の場合は `gar-tools/targets/linux-device/hardware/` の target 標準テンプレートを参照します。`start` は `modprobe gpio-sim`、configfs chip 作成、必要な bind mount までを `gar-gpio-sim.service` 経由で行います。
 
 ### アプリ起動（本番と同じ）
 
@@ -273,20 +303,27 @@ Antigravity から EC2 に Remote SSH 接続している場合、ポートは自
 
 ### bridge HTTP API（内部仕様）
 
-`gar sim ui ...` は内部で bridge HTTP API を SSH 越しに叩く。直接叩く必要は通常ないが参照用に記載する。
+Linux / RasPi-compatible simulation の Web UI とシナリオ実行系は、内部で bridge HTTP API を使う。
+人間の手動操作は Web UI から行い、AI / CI の再現操作はGAR共通のJSONシナリオとして定義する。
 
-| Endpoint | Method | 用途 | 対応 `gar` コマンド |
-|---|---|---|---|
-| `/api/state` | GET | 仮想 H/W 状態を取得 | `gar sim env status --json` |
-| `/api/button` | POST | GPIO ボタン状態を直接セット | `gar sim ui button set` |
-| `/api/button/press` | POST | GPIO ボタンを押して離す | `gar sim ui button press` |
-| `/api/rfid/tap` | POST | RFID カードを置く | `gar sim ui rfid tap` |
-| `/api/rfid/remove` | POST | RFID カードを外す | `gar sim ui rfid remove` |
-| `/api/range` | POST | VL53L0X の距離値をセット | `gar sim ui range set` |
+| Endpoint | Method | 用途 |
+|---|---|---|
+| `/api/state` | GET | 仮想 H/W 状態を取得 |
+| `/api/button` | POST | GPIO ボタン状態を直接セット |
+| `/api/button/press` | POST | GPIO ボタンを押して離す |
+| `/api/rfid/tap` | POST | RFID カードを置く |
+| `/api/rfid/remove` | POST | RFID カードを外す |
+| `/api/range` | POST | VL53L0X の距離値をセット |
 
 ### JSON シナリオ試験
 
 仮想 H/W 操作は JSON シナリオとして定義し、AI や CI が繰り返し実行できる。
+公開CLIの単発UI操作コマンドは持たせず、シナリオを実行単位にする。
+Linux bridge 向けの既存補助ランナーは `scripts/run_scenario.py`。
+
+```bash
+python scripts/run_scenario.py path/to/scenario.json
+```
 
 ```json
 {

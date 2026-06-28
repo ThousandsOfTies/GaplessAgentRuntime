@@ -1,5 +1,0 @@
-name,chip,line,direction,role,active,initial,pull,sim_control,description
-power_button,/dev/gpiochip0,17,input,button,high,,pull-down,pull,System ON/OFF toggle
-status_led,/dev/gpiochip0,18,output,led,high,0,,value,System ON/OFF status LED
-activity_led,/dev/gpiochip0,24,output,led,high,0,,value,RFID activity flash LED
-aux_button,/dev/gpiochip0,27,input,button,high,,pull-down,pull,Reserved virtual panel button

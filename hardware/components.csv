@@ -1,8 +1,0 @@
-component_id,name,kind,part_number,description
-raspi5,Raspberry Pi 5,board,Raspberry Pi 5,Native target board
-power_button,Power Button,input,tact-switch,System ON/OFF button
-status_led,Status LED,output,LED,System ON/OFF status LED
-activity_led,Activity LED,output,LED,RFID activity LED
-ssd1306_oled,OLED Display,ic,SSD1306,128x64 I2C OLED display
-vl53l0x_range,Range Sensor,ic,VL53L0X,I2C Time-of-Flight range sensor
-mfrc522_rfid,RFID Reader,ic,MFRC-522,SPI RFID reader
