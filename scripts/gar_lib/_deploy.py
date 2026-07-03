@@ -64,6 +64,8 @@ def run_deploy_command(
     host: str | None = None,
     serial: str | None = None,
     dest: str = "/home/user",
+    codespace: str | None = None,
+    remote_root: str | None = None,
 ) -> int:
     root = Path(artifacts_dir).expanduser() if artifacts_dir else default_artifacts_dir()
     root = root.resolve()
@@ -81,37 +83,22 @@ def run_deploy_command(
                     file=sys.stderr,
                 )
                 return 1
+        if codespace or remote_root or find_artifact_manifest(root) is None:
+            if find_artifact_manifest(root) is None:
+                print("gar target deploy: artifact manifest not found; fetching from Codespace", file=sys.stderr)
+            result = fetch_codespace_artifacts(
+                root,
+                codespace=codespace,
+                remote_root=remote_root,
+            )
+            if result != 0:
+                return result
+        if provider_id == "ssh_scp":
             return deploy_target_artifacts_ssh(root, host=host, dest=dest)
         return deploy_target_artifacts(root, serial=serial, dest=dest)
 
     print(f"unknown deploy target: {target}", file=sys.stderr)
     return 1
-
-
-def run_target_sync_command(
-    *,
-    artifacts_dir: str | None = None,
-    codespace: str | None = None,
-    remote_root: str | None = None,
-    host: str | None = None,
-    serial: str | None = None,
-    dest: str = "/home/user",
-) -> int:
-    root = Path(artifacts_dir).expanduser() if artifacts_dir else default_artifacts_dir()
-    result = fetch_codespace_artifacts(
-        root.resolve(),
-        codespace=codespace,
-        remote_root=remote_root,
-    )
-    if result != 0:
-        return result
-    return run_deploy_command(
-        "target",
-        artifacts_dir=str(root.resolve()),
-        serial=serial,
-        host=host,
-        dest=dest,
-    )
 
 
 def selected_device_provider_id(config: dict) -> str | None:

@@ -14,6 +14,43 @@
 
 ---
 
+## コマンドモデル
+
+GAR のコマンドは make の target に近い考え方に寄せる。ユーザーが入力するのは
+`gar sim build` / `gar sim deploy` / `gar target build` / `gar target deploy` のような
+抽象 target であり、個別の実行方法（PlatformIO、Codespaces、esptool、adb、scp など）は
+`gar setup` で選ばれた target 定義と接続設定から解決する。
+
+`deploy` は単なる転送コマンドではない。依存する artifact が無い、または古い場合は、
+依存 target を再帰的にたどって必要な build / package を先に実行し、その最新 artifact を
+対象 runtime へ反映する。低レベルコマンドは互換・診断用に残すが、日常操作の文法には出さない。
+
+Codespace は build target の実行場所のひとつ。ユーザーは通常 `gar sim build` /
+`gar sim deploy` / `gar target build` / `gar target deploy` から間接的に使う。
+成果物は target graph の artifact node と `artifact.json` に記載されたパスで管理する。
+
+実機操作も make 的な依存 target として扱う。
+
+```text
+target.deploy
+  depends on target.artifact
+  depends on target.device
+
+target.artifact
+  depends on target.build
+  depends on target.config
+
+target.build
+  depends on target.sources
+```
+
+`gar setup` は、この graph の各 node が何を意味するかを保存する。たとえば ESP32/M5StickC
+なら `target.device` は USB serial 接続先、`target.build` は PlatformIO/Codespaces build、
+`target.deploy` は最新 firmware artifact の flash になる。RasPi/Linux device なら
+`target.deploy` は adb または SSH/scp での配置になる。
+
+---
+
 ## 1. 統合開発環境
 
 Gapless Agent Runtimeでは、VSCodeを、開発者と AI エージェントが共有する統合開発環境として使用します。
@@ -74,6 +111,20 @@ EC2 上では以下の仮想デバイスで `/dev/*` を再現する。
 * **Virtual Hardware Panel**: LED・ボタン・RFID・センサーの状態変化を WebSocket 経由でブラウザパネルにリアルタイム表示。人間が目視で動作確認できる。
 * **JSON シナリオ試験**: ボタン押下・RFID タップ・センサー値変更・状態確認を JSON シナリオとして定義し、AI や CI が同じ手順を再現可能なテストとして実行できる。
 * **HTTP API（bridge）**: Linux / RasPi-compatible simulation の内部受け口。Web UI と JSON シナリオ実行系が同じ仮想 H/W 操作ロジックを通るため、UI 変更時のメンテ漏れが起きにくい。
+
+検証入口は simulation provider ごとに分かれる。
+
+| 対象 | 入口 |
+|---|---|
+| Linux Bridge 手動操作 | Virtual Hardware Panel |
+| Linux Bridge シナリオ | `python scripts/run_scenario.py path/to/scenario.json` |
+| Wokwi 手動確認 | VS Code Wokwi 拡張 / Diagram Editor |
+| Wokwi シナリオ | `wokwi-cli --scenario button.test.yaml .` |
+| ESP32 QEMU | `gar-esp32-flash-image` / `gar-esp32-qemu-run` |
+| Renode | `renode` / `renode-test` |
+| Vibe Remote smoke | `npm run smoke:protocol` |
+
+具体的なセットアップ手順と確認手順は [06_SIMULATION.md](06_SIMULATION.md) を参照。
 
 ---
 

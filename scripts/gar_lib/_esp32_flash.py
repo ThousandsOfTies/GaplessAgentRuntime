@@ -19,10 +19,10 @@ from scripts.gar_lib._config import PROJECT_ROOT
 from scripts.gar_lib._deploy import gh_env, select_codespace
 
 DEFAULT_ESP32_ARTIFACT_ROOT = (
-    PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stack-client" / "artifacts"
+    PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "artifacts"
 )
 DEFAULT_ESP32_CODESPACE_PROJECT_ROOT = (
-    "/workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client"
+    "/workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client"
 )
 DEFAULT_ESP32_PIO_ENV = "m5stickc-plus2-vibe-min"
 ESPTOOL_VENV = Path.home() / ".local" / "share" / "gar" / "esptool-venv"

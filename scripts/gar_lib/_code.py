@@ -44,6 +44,7 @@ def run_code_command(
     settings: str | None = None,
     profile_name: str | None = None,
     no_mount: bool = False,
+    shutdown: bool = False,
     gh_timeout: int | None = None,
 ) -> int:
     if command == "start":
@@ -58,9 +59,17 @@ def run_code_command(
         )
     if command == "stop":
         return stop_code_codespace(
+            codespace=codespace,
             mount_dir=mount_dir,
             settings=settings,
             profile_name=profile_name,
+            shutdown=shutdown,
+            gh_timeout=gh_timeout,
+        )
+    if command == "shutdown":
+        return shutdown_code_codespace(
+            codespace=codespace,
+            gh_timeout=gh_timeout,
         )
 
     print(f"unknown code command: {command}", file=sys.stderr)
@@ -217,9 +226,12 @@ def start_code_codespace(
 
 def stop_code_codespace(
     *,
+    codespace: str | None = None,
     mount_dir: str | None = None,
     settings: str | None = None,
     profile_name: str | None = None,
+    shutdown: bool = False,
+    gh_timeout: int | None = None,
 ) -> int:
     home = Path.home()
     state_file = home / ".config" / "codespace-dev" / "env"
@@ -257,7 +269,63 @@ def stop_code_codespace(
         print(f"State:     kept {state_file}")
     print("SSH config: kept ~/.ssh/codespaces and Include entry")
 
-    return unmount_result or profile_result
+    shutdown_result = 0
+    if shutdown:
+        shutdown_result = shutdown_code_codespace(
+            codespace=codespace,
+            state=state,
+            gh_timeout=gh_timeout,
+        )
+
+    return unmount_result or profile_result or shutdown_result
+
+
+def shutdown_code_codespace(
+    *,
+    codespace: str | None = None,
+    state: dict[str, str] | None = None,
+    gh_timeout: int | None = None,
+) -> int:
+    selected_codespace = (
+        codespace
+        or os.environ.get("GAR_CODESPACE_NAME")
+        or os.environ.get("CODESPACE_NAME")
+        or (state or load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env")).get("CODESPACE_NAME")
+    )
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout)
+
+    if not selected_codespace:
+        list_result = run_gh_captured(
+            ["gh", "codespace", "list"],
+            timeout=selected_gh_timeout,
+            label="list Codespaces",
+            command_name="gar code shutdown",
+        )
+        if list_result is None:
+            return 1
+        if list_result.returncode != 0:
+            print_completed_stderr(list_result)
+            return list_result.returncode
+        selected_codespace = select_codespace_from_list(list_result.stdout)
+
+    if not selected_codespace:
+        print("gar code shutdown: no Codespace found", file=sys.stderr)
+        print("Pass one explicitly: gar code shutdown --codespace NAME", file=sys.stderr)
+        return 1
+
+    print(f"Stopping Codespace VM: {selected_codespace}")
+    result = run_gh_captured(
+        ["gh", "codespace", "stop", "-c", selected_codespace],
+        timeout=selected_gh_timeout,
+        label=f"stop Codespace {selected_codespace}",
+        command_name="gar code shutdown",
+    )
+    if result is None:
+        return 1
+    if result.returncode != 0:
+        print_completed_stderr(result)
+        return result.returncode
+    return 0
 
 
 def load_codespace_state(state_file: Path) -> dict[str, str]:
@@ -326,6 +394,7 @@ def run_gh_captured(
     *,
     timeout: int | None,
     label: str,
+    command_name: str = "gar code start",
 ) -> subprocess.CompletedProcess[str] | None:
     env = os.environ.copy()
     env.setdefault("GH_PROMPT_DISABLED", "1")
@@ -341,7 +410,7 @@ def run_gh_captured(
     except subprocess.TimeoutExpired:
         timeout_text = "without a timeout" if timeout is None else f"after {timeout}s"
         print(
-            f"gar code start: timed out {timeout_text} while trying to {label}",
+            f"{command_name}: timed out {timeout_text} while trying to {label}",
             file=sys.stderr,
         )
         print("Check `gh auth status` and try `gh codespace list` directly.", file=sys.stderr)

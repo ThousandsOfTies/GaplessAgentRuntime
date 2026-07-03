@@ -43,11 +43,11 @@
 
 ## ✅ 最近やったこと（Done）
 
-- [x] **SIM machine 構築を Terraform でレシピ化（フレーム）** — `infra/terraform/main.tf`（EC2/SG/volume/key）と `user_data.sh`（linux-modules-extra / gpiod / strace）を作成。`gar sim infra plan/apply/destroy/output` コマンドフレームを追加（要実装エラーを返す）。実装方針はエラーメッセージに記載 — 2026-06-09
+- [x] **SIM machine 構築を Terraform でレシピ化し `gar sim infra` に接続** — `infra/terraform/main.tf`（EC2/SG/volume/key）と `user_data.sh`（linux-modules-extra / gpiod / strace）を作成。`gar sim infra setup/apply/destroy` が Terraform を実行し、`setup` は現在値と作成計画を表示、`apply` 後は `instance_id` / `public_ip` を `.gar/config.json` と SSH config へ反映 — 2026-06-09 / 2026-07-03 更新
 - [x] **USB-C の auto-attach は on-demand attach で代替** — Windows タスクスケジューラで挿入瞬間に attach する常駐導線は不要と判断。`gar target deploy/sync` が必要時に `gar usb attach` 相当を自動実行するため、通常運用は gar 操作時の遅延 attach に集約 — 2026-06-06
-- [x] **`gar target deploy`（adb 経路）が実機未検出なら `gar usb attach` を自動先行実行する統合** — adb provider の deploy 前に `adb devices` を確認し、対象 device が見えない場合は `gar usb attach` 相当を自動実行してから再確認する形へ変更。`gar target sync` も既存 deploy 経路を通るため同じ挙動 — 2026-06-06
-- [x] **旧 Windows PowerShell RasPi helper 相当（Codespace から成果物取得 → 実機 push）の `gar` 収容** — `gar target fetch` で Codespace の artifact bundle を WSL hub へ取得し、`gar target sync` で fetch 直後に既存の `gar target deploy` 経路へ渡す一発操作を追加。`--codespace` / `--remote-root` / `--artifacts-dir` と adb/SSH の `--serial` / `--host` / `--dest` に対応 — 2026-06-06
-- [x] **GPIO ダミードライバの生成〜デプロイ手順を `gar` の操作単位に畳む** — `gar sim gpio plan/install/start/stop/status` を追加し、gpio-sim の生成計画、helper/service 配置、単体起動、状態確認を CLI 化。生の `modprobe` / configfs / bind mount 操作を避けられる導線へ整理 — 2026-06-05
+- [x] **`gar target deploy`（adb 経路）が実機未検出なら `gar usb attach` を自動先行実行する統合** — adb provider の deploy 前に `adb devices` を確認し、対象 device が見えない場合は `gar usb attach` 相当を自動実行してから再確認する形へ変更 — 2026-06-06
+- [x] **旧 Windows PowerShell RasPi helper 相当（Codespace から成果物取得 → 実機 push）の `gar` 収容** — `gar target fetch` で Codespace の artifact bundle を WSL hub へ取得し、現在は `gar target deploy` が artifact 未取得時の fetch も担う — 2026-06-06 / 2026-07-03 更新
+- [x] **GPIO ダミードライバの生成〜デプロイ手順を `gar` の操作単位に畳む** — `gar sim env gpio plan/install/start/stop/status` を追加し、gpio-sim の生成計画、helper/service 配置、単体起動、状態確認を CLI 化。生の `modprobe` / configfs / bind mount 操作を避けられる導線へ整理 — 2026-06-05 / 2026-07-03 更新
 - [x] **runtime socket 対応 artifact の再ビルド・EC2確認** — Codespace で `cuse_i2c` / `cuse_spi` を再生成し、`gar sim env deploy/start/diag --json` で `/run/gar/hw_sim.sock` 経路を確認。古い `/tmp/hw_sim.sock` を削除した状態で `~/sensor_demo`、Button17、RFID tap が通ることを確認 — 2026-06-05
 - [x] **bridge / CUSE の runtime socket path 整理** — `bridge.py` / `cuse_i2c` / `cuse_spi` / 旧 `cuse_gpio` を `GAR_HW_SIM_SOCK` 優先、`GAR_RUNTIME_DIR/hw_sim.sock` 次点、`/tmp/hw_sim.sock` fallback に変更。`gar sim env start` の systemd unit から `GAR_HW_SIM_SOCK=/run/gar/hw_sim.sock` を渡す形へ更新 — 2026-06-05
 - [x] **runtime 配置の本番寄せ** — `gar sim env deploy/start` を `/etc/gar/hardware/`、`/usr/local/sbin/`、`/usr/local/lib/gar/`、`/run/gar/` へ寄せ、systemd unit の `$HOME` 直参照を削除。旧 artifact manifest の `~/cuse_*` / `~/web-bridge` は deploy 側で互換マップ — 2026-06-05

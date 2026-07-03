@@ -18,9 +18,9 @@ DEFAULT_ARTIFACT = (
     / "Yurufuwa"
     / "gar-vibe-ui"
     / "vibe-remote"
-    / "m5stack-client"
+    / "m5stickc-client"
     / "artifacts"
-    / "20260617-152624-m5stack-core2"
+    / "20260620-070805-m5stickc-plus2-vibe-min"
 )
 DEFAULT_TOOLS = Path.home() / "Yurufuwa" / "gar-tools" / "targets" / "esp32"
 

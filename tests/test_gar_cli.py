@@ -18,6 +18,8 @@ from scripts.gar_lib._targets import TargetManifest, discover_target_manifests, 
 from scripts.gar_lib.cli import (
     adb_device_available,
     completion_bash_script,
+    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+    DEFAULT_ESP32_PIO_ENV,
     fetch_codespace_artifacts,
     load_config,
     main,
@@ -32,11 +34,12 @@ from scripts.gar_lib.cli import (
     run_gpio_sim_check,
     run_setup,
     run_sim_command,
+    run_sim_infra_command,
     run_sim_gpio_command,
-    run_target_sync_command,
     run_terminal_request,
     run_usb_command,
     select_codespace_from_list,
+    shutdown_code_codespace,
     start_code_codespace,
     stop_code_codespace,
     update_ssh_config_hostname,
@@ -108,6 +111,7 @@ class GarCliTest(unittest.TestCase):
             (["?"], "usage: gar", "code"),
             (["code", "?"], "usage: gar code", "start"),
             (["sim", "gpio", "?"], "usage: gar sim gpio", "plan"),
+            (["sim", "env", "gpio", "?"], "usage: gar sim env gpio", "plan"),
         ]
 
         for argv, usage, command in cases:
@@ -796,6 +800,96 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("start-instances", first_aws_args)
         self.assertIn("i-test123", first_aws_args)
 
+    def test_sim_infra_setup_shows_settings_and_runs_terraform_plan(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        output_result = mock.Mock(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "instance_id": {"value": "i-from-tf"},
+                    "public_ip": {"value": "203.0.113.55"},
+                }
+            ),
+            stderr="",
+        )
+        config = {
+            "selected_providers": {},
+            "ec2": {"host": "configured-ec2", "region": "ap-test-1"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch("scripts.gar_lib._infra.TERRAFORM_DIR", Path(tmp)),
+                mock.patch("scripts.gar_lib._infra._terraform_available", return_value=True),
+                mock.patch("scripts.gar_lib._infra.load_config", return_value=config),
+                mock.patch(
+                    "scripts.gar_lib._infra._run_terraform",
+                    side_effect=[completed, output_result, completed],
+                ) as run_tf,
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = run_sim_infra_command(
+                        "setup",
+                        key_name="gar-key",
+                        region="ap-test-2",
+                    )
+
+        self.assertEqual(0, result)
+        self.assertEqual(["init", "-input=false"], run_tf.call_args_list[0].args[0])
+        self.assertEqual(["output", "-json"], run_tf.call_args_list[1].args[0])
+        self.assertEqual(["plan", "-input=false"], run_tf.call_args_list[2].args[0])
+        env = run_tf.call_args_list[2].kwargs["env"]
+        self.assertEqual("ap-test-2", env["TF_VAR_aws_region"])
+        self.assertEqual("gar-key", env["TF_VAR_key_name"])
+        self.assertIn("Current simulation infra settings:", output.getvalue())
+        self.assertIn("i-from-tf", output.getvalue())
+
+    def test_sim_infra_apply_saves_instance_and_updates_ssh(self) -> None:
+        init_result = mock.Mock(returncode=0, stdout="", stderr="")
+        apply_result = mock.Mock(returncode=0, stdout="", stderr="")
+        output_result = mock.Mock(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "instance_id": {"value": "i-from-tf"},
+                    "public_ip": {"value": "203.0.113.55"},
+                }
+            ),
+            stderr="",
+        )
+        config = {
+            "selected_providers": {},
+            "ec2": {"host": "configured-ec2", "region": "ap-test-1"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch("scripts.gar_lib._infra.TERRAFORM_DIR", Path(tmp)),
+                mock.patch("scripts.gar_lib._infra._terraform_available", return_value=True),
+                mock.patch("scripts.gar_lib._infra.load_config", return_value=config),
+                mock.patch("scripts.gar_lib._infra.save_config") as save_config,
+                mock.patch(
+                    "scripts.gar_lib._infra._run_terraform",
+                    side_effect=[init_result, apply_result, output_result],
+                ) as run_tf,
+                mock.patch(
+                    "scripts.gar_lib._infra.update_ssh_config_hostname", return_value=True
+                ) as update_ssh,
+            ):
+                result = run_sim_infra_command(
+                    "apply",
+                    region="ap-test-2",
+                    auto_approve=True,
+                )
+
+        self.assertEqual(0, result)
+        self.assertEqual(["apply", "-input=false", "-auto-approve"], run_tf.call_args_list[1].args[0])
+        saved_config = save_config.call_args.args[0]
+        self.assertEqual("i-from-tf", saved_config["ec2"]["instance_id"])
+        self.assertEqual("ap-test-2", saved_config["ec2"]["region"])
+        update_ssh.assert_called_once_with("configured-ec2", "203.0.113.55")
+
     def test_update_ssh_config_hostname_rewrites_target_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "config"
@@ -1173,13 +1267,18 @@ class GarCliTest(unittest.TestCase):
             home = Path(tmp)
             settings = home / "settings.json"
             template = home / "template"
-            (template / "src").mkdir(parents=True)
+            app_src = home / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "src"
+            template.mkdir()
+            app_src.mkdir(parents=True)
             (template / "diagram.json").write_text(
                 json.dumps({"version": 1, "parts": [{"type": "wokwi-esp32-devkit-v1", "id": "esp"}]}),
                 encoding="utf-8",
             )
-            (template / "platformio.ini").write_text("[env:m5stackc]\n", encoding="utf-8")
-            (template / "src" / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
+            (template / "platformio.ini.template").write_text(
+                "[platformio]\nsrc_dir = {app_src}\n[env:m5stackc]\n",
+                encoding="utf-8",
+            )
+            (app_src / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
             (template / "wokwi.toml.template").write_text("[wokwi]\nfirmware = '{firmware}'\n", encoding="utf-8")
 
             with (
@@ -1187,7 +1286,11 @@ class GarCliTest(unittest.TestCase):
                 mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=WokwiEnvironment),
                 mock.patch.dict(
                     os.environ,
-                    {"GAR_WOKWI_PROJECT_DIR": str(home / "wokwi"), "GAR_WOKWI_TEMPLATE_DIR": str(template)},
+                    {
+                        "GAR_VIBE_REMOTE_M5_SRC_DIR": str(app_src),
+                        "GAR_WOKWI_PROJECT_DIR": str(home / "wokwi"),
+                        "GAR_WOKWI_TEMPLATE_DIR": str(template),
+                    },
                     clear=False,
                 ),
             ):
@@ -1470,6 +1573,29 @@ class GarCliTest(unittest.TestCase):
                 self.assertEqual(ec2_command, run_ec2.call_args.args[0])
                 self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
 
+    def test_sim_infra_setup_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_infra_command", return_value=0) as run_infra:
+            result = main(["sim", "infra", "setup", "--region", "ap-test-1", "--key-name", "gar-key"])
+
+        self.assertEqual(0, result)
+        run_infra.assert_called_once_with(
+            "setup",
+            key_name="gar-key",
+            region="ap-test-1",
+            auto_approve=False,
+        )
+
+    def test_sim_infra_output_is_not_a_public_cli_command(self) -> None:
+        with (
+            mock.patch("scripts.gar_lib.cli.run_sim_infra_command") as run_infra,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            with self.assertRaises(SystemExit) as exc:
+                main(["sim", "infra", "output"])
+
+        self.assertEqual(2, exc.exception.code)
+        run_infra.assert_not_called()
+
     def test_target_deploy_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_deploy_command", return_value=0) as run_deploy:
             result = main(["target", "deploy", "--serial", "raspi"])
@@ -1481,6 +1607,8 @@ class GarCliTest(unittest.TestCase):
             serial="raspi",
             host=None,
             dest="/home/user",
+            codespace=None,
+            remote_root=None,
         )
 
     def test_target_deploy_passes_host_for_ssh_provider(self) -> None:
@@ -1494,6 +1622,8 @@ class GarCliTest(unittest.TestCase):
             serial=None,
             host="raspi-net",
             dest="/home/user",
+            codespace=None,
+            remote_root=None,
         )
 
     def test_target_deploy_uses_scp_when_ssh_provider_is_selected(self) -> None:
@@ -1616,28 +1746,30 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(manifest, written_manifest)
         self.assertEqual(4, cp.call_count)
 
-    def test_target_sync_fetches_then_deploys(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib._deploy.fetch_codespace_artifacts", return_value=0) as fetch,
-            mock.patch("scripts.gar_lib._deploy.run_deploy_command", return_value=0) as deploy,
-        ):
-            result = run_target_sync_command(
-                artifacts_dir=str(Path("/tmp/gar-artifacts")),
-                codespace="codespace-test",
-                remote_root="/workspaces/out",
-                serial="raspi",
-                dest="/home/user",
-            )
+    def test_target_deploy_fetches_when_artifact_manifest_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch("scripts.gar_lib._deploy.fetch_codespace_artifacts", return_value=0) as fetch,
+                mock.patch("scripts.gar_lib._deploy.selected_device_provider_id", return_value=None),
+                mock.patch("scripts.gar_lib._deploy.deploy_target_artifacts", return_value=0) as deploy,
+            ):
+                result = run_deploy_command(
+                    "target",
+                    artifacts_dir=str(root),
+                    codespace="codespace-test",
+                    remote_root="/workspaces/out",
+                    serial="raspi",
+                    dest="/home/user",
+                )
 
         self.assertEqual(0, result)
-        fetch.assert_called_once()
-        deploy.assert_called_once_with(
-            "target",
-            artifacts_dir=str(Path("/tmp/gar-artifacts").resolve()),
-            serial="raspi",
-            host=None,
-            dest="/home/user",
+        fetch.assert_called_once_with(
+            root.resolve(),
+            codespace="codespace-test",
+            remote_root="/workspaces/out",
         )
+        deploy.assert_called_once_with(root.resolve(), serial="raspi", dest="/home/user")
 
     def test_target_fetch_is_available_from_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1663,12 +1795,12 @@ class GarCliTest(unittest.TestCase):
             remote_root="/workspaces/out",
         )
 
-    def test_target_sync_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_sync_command", return_value=0) as sync:
+    def test_target_deploy_can_fetch_from_codespace_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_deploy_command", return_value=0) as deploy:
             result = main(
                 [
                     "target",
-                    "sync",
+                    "deploy",
                     "--codespace",
                     "codespace-test",
                     "--remote-root",
@@ -1681,13 +1813,14 @@ class GarCliTest(unittest.TestCase):
             )
 
         self.assertEqual(0, result)
-        sync.assert_called_once_with(
+        deploy.assert_called_once_with(
+            "target",
             artifacts_dir=None,
-            codespace="codespace-test",
-            remote_root="/workspaces/out",
             serial="raspi",
             host=None,
             dest="/home/user",
+            codespace="codespace-test",
+            remote_root="/workspaces/out",
         )
 
     def test_esp32_serial_port_maps_windows_com_to_wsl_tty(self) -> None:
@@ -1710,7 +1843,7 @@ class GarCliTest(unittest.TestCase):
     def test_target_build_esp32_builds_fetches_and_flashes(self) -> None:
         build_output = (
             "[1/3] Build firmware in VM\n"
-            "Artifact: /workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client/"
+            "Artifact: /workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client/"
             "artifacts/20260620-001750-m5stickc-plus2-vibe-min\n"
         )
         completed = mock.Mock(returncode=0, stdout=build_output, stderr="")
@@ -1746,7 +1879,7 @@ class GarCliTest(unittest.TestCase):
         )
         self.assertIn("./scripts/vm_build_and_package.sh m5stickc-plus2-vibe-min", run.call_args.args[0][-1])
         fetch.assert_called_once_with(
-            "/workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client/"
+            "/workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client/"
             "artifacts/20260620-001750-m5stickc-plus2-vibe-min",
             codespace="codespace-test",
             local_artifact_root=Path("/tmp/local-artifacts"),
@@ -1949,6 +2082,24 @@ class GarCliTest(unittest.TestCase):
             install_esptool=False,
         )
 
+    def test_target_build_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_esp32_build_command", return_value=0) as build:
+            result = main(["target", "build", "--codespace", "codespace-test"])
+
+        self.assertEqual(0, result)
+        build.assert_called_once_with(
+            codespace="codespace-test",
+            remote_project_root=DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+            pio_env=DEFAULT_ESP32_PIO_ENV,
+            local_artifact_root=None,
+            flash=False,
+            port=None,
+            baud=921600,
+            chip="esp32",
+            verify=True,
+            install_esptool=True,
+        )
+
     def test_code_start_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_code_command", return_value=0) as run_code:
             result = main(["code", "start", "--codespace", "codespace-test", "--no-mount"])
@@ -1962,6 +2113,7 @@ class GarCliTest(unittest.TestCase):
             settings=None,
             profile_name=None,
             no_mount=True,
+            shutdown=False,
         )
 
     def test_code_start_writes_codespace_state_and_terminal_profile(self) -> None:
@@ -2147,6 +2299,39 @@ class GarCliTest(unittest.TestCase):
             settings=None,
             profile_name=None,
             no_mount=False,
+            shutdown=False,
+        )
+
+    def test_code_shutdown_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_code_command", return_value=0) as run_code:
+            result = main(["code", "shutdown", "--codespace", "codespace-test"])
+
+        self.assertEqual(0, result)
+        run_code.assert_called_once_with(
+            "shutdown",
+            codespace="codespace-test",
+            remote_path=None,
+            mount_dir=None,
+            settings=None,
+            profile_name=None,
+            no_mount=False,
+            shutdown=False,
+        )
+
+    def test_code_stop_shutdown_flag_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_code_command", return_value=0) as run_code:
+            result = main(["code", "stop", "--shutdown", "--codespace", "codespace-test"])
+
+        self.assertEqual(0, result)
+        run_code.assert_called_once_with(
+            "stop",
+            codespace="codespace-test",
+            remote_path=None,
+            mount_dir=None,
+            settings=None,
+            profile_name=None,
+            no_mount=False,
+            shutdown=True,
         )
 
     def test_code_stop_unmounts_codespace_and_removes_terminal_profile(self) -> None:
@@ -2208,6 +2393,67 @@ class GarCliTest(unittest.TestCase):
             profiles = profile["terminal.integrated.profiles.linux"]
             self.assertNotIn("Codespaces", profiles)
             self.assertIn("bash", profiles)
+
+    def test_code_shutdown_stops_explicit_codespace(self) -> None:
+        def run_side_effect(argv, **kwargs):
+            completed = mock.Mock()
+            completed.returncode = 0
+            completed.stdout = ""
+            return completed
+
+        with mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = shutdown_code_codespace(codespace="codespace-test")
+
+        self.assertEqual(0, result)
+        self.assertIn("Stopping Codespace VM: codespace-test", output.getvalue())
+        self.assertEqual(
+            ["gh", "codespace", "stop", "-c", "codespace-test"],
+            run.call_args_list[0].args[0],
+        )
+
+    def test_code_stop_can_shutdown_codespace_from_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            state_dir = home / ".config" / "codespace-dev"
+            state_dir.mkdir(parents=True)
+            mount_dir = home / "codespaces"
+            (state_dir / "env").write_text(
+                "\n".join(
+                    [
+                        "CODESPACE_NAME='codespace-test'",
+                        "CODESPACE_SSH_HOST='codespace-host'",
+                        "CODESPACE_REMOTE_PATH='/workspaces/gar-build-env'",
+                        f"CODESPACE_MOUNT_DIR='{mount_dir}'",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = home / "settings.json"
+            settings.write_text("{}", encoding="utf-8")
+
+            def run_side_effect(argv, **kwargs):
+                completed = mock.Mock()
+                completed.returncode = 0
+                completed.stdout = ""
+                return completed
+
+            with (
+                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run,
+            ):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    result = stop_code_codespace(settings=str(settings), shutdown=True)
+
+            self.assertEqual(0, result)
+            self.assertIn(
+                ["gh", "codespace", "stop", "-c", "codespace-test"],
+                [call.args[0] for call in run.call_args_list],
+            )
 
     def test_sim_start_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
@@ -2736,9 +2982,23 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
 
+    def test_sim_env_gpio_start_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
+            result = main(["sim", "env", "gpio", "start", "--host", "ec2-test"])
+
+        self.assertEqual(0, result)
+        run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
+
     def test_sim_gpio_plan_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
             result = main(["sim", "gpio", "plan", "--json"])
+
+        self.assertEqual(0, result)
+        run_gpio.assert_called_once_with("plan", host=None, json_output=True)
+
+    def test_sim_env_gpio_plan_json_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
+            result = main(["sim", "env", "gpio", "plan", "--json"])
 
         self.assertEqual(0, result)
         run_gpio.assert_called_once_with("plan", host=None, json_output=True)

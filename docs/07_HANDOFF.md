@@ -55,7 +55,7 @@ Renode、Codespaces build、WSL control plane の役割を整理している。
 
 - M5Stack firmware 側に Bluetooth SPP transport を追加。
 - M5StickC Plus2 向け最小 Vibe Remote firmware を追加。
-  - `m5stack-client/src/minimal_vibe_remote.cpp`
+  - `m5stickc-client/src/main.cpp`
   - PlatformIO env: `m5stickc-plus2-vibe-min`
   - Wi-Fi + WebSocket + `hello` / `ping` / `agentStatus` のみ。
   - Windows / Local bridge が advertise する `_vibe-remote._tcp.local` を mDNS で探索する。
@@ -79,7 +79,7 @@ timeout 2s ./scripts/npm.sh run local:bridge -- --discovery=false --listen-port=
 M5StickC Plus2 最小 firmware の想定ビルド:
 
 ```bash
-cd /home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client
+cd /home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stickc-client
 pio run -e m5stickc-plus2-vibe-min
 pio run -e m5stickc-plus2-vibe-min -t upload
 pio device monitor
@@ -88,16 +88,16 @@ pio device monitor
 Codespaces での build/package 確認済み:
 
 ```bash
-cd /workspaces/gar-build-env/repos/gar-vibe-ui/vibe-remote/m5stack-client
+cd /workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client
 PATH=$HOME/.venvs/platformio/bin:$PATH make vm-package PIO_ENV=m5stickc-plus2-vibe-min
 ```
 
 WSL へ取得済み artifact:
 
-- `/home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/20260619-201256-m5stickc-plus2-vibe-min/`
+- `/home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stickc-client/artifacts/20260619-201256-m5stickc-plus2-vibe-min/`
   - `.env.local` から Wi-Fi / token を注入して Codespaces で build/package 済み。
   - `sha256sum -c SHA256SUMS` は `boot_app0.bin` / `bootloader.bin` / `firmware.bin` / `partitions.bin` すべて OK。
-- `/home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/20260619-063145-m5stickc-plus2-vibe-min/`
+- `/home/user/Yurufuwa/gar-vibe-ui/vibe-remote/m5stickc-client/artifacts/20260619-063145-m5stickc-plus2-vibe-min/`
 - `sha256sum -c SHA256SUMS` は `boot_app0.bin` / `bootloader.bin` / `firmware.bin` / `partitions.bin` すべて OK。
 
 実機 flash は GAR コマンド化済み:
@@ -108,7 +108,7 @@ gar target flash-esp32 --port COM3
 ```
 
 `COM3` は WSL 上で `/dev/ttyS3` に変換される。artifact は省略時に
-`gar-vibe-ui/vibe-remote/m5stack-client/artifacts/` 配下の最新を選ぶ。
+`gar-vibe-ui/vibe-remote/m5stickc-client/artifacts/` 配下の最新を選ぶ。
 `esptool` が無い場合は `~/.local/share/gar/esptool-venv` に自動導入する。
 
 Local bridge の利用例:
@@ -158,7 +158,7 @@ Codespace `friendly-dollop-rq94rwxrxrvfwwv4` で `gar-tools` を同期して bui
 
 ```bash
 gh codespace ssh -c friendly-dollop-rq94rwxrxrvfwwv4 -- \
-  'cd /workspaces/gar-build-env/repos/gar-tools && make clean && make'
+  'cd /workspaces/gar-build-env/repos/tools/gar-tools && make clean && make'
 
 gh codespace ssh -c friendly-dollop-rq94rwxrxrvfwwv4 -- \
   'cd /workspaces/gar-build-env && make artifacts'

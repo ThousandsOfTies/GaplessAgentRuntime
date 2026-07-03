@@ -8,6 +8,7 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib._deploy` — ``gar sim env deploy`` / ``gar target deploy``
 - :mod:`scripts.gar_lib._ec2` — ``gar sim boot`` / ``shutdown`` / ``status``
 - :mod:`scripts.gar_lib._hw` — ``gar hw``
+- :mod:`scripts.gar_lib._infra` — ``gar sim infra``
 - :mod:`scripts.gar_lib._sim` — ``gar sim``
 - :mod:`scripts.gar_lib._terminal` — ``gar terminal``
 - :mod:`scripts.gar_lib._usb` — ``gar usb``
@@ -34,6 +35,7 @@ from scripts.gar_lib._code import (  # noqa: F401
     remote_path_exists,
     run_code_command,
     select_codespace_from_list,
+    shutdown_code_codespace,
     start_code_codespace,
     stop_code_codespace,
     unmount_codespace_code,
@@ -67,7 +69,6 @@ from scripts.gar_lib._deploy import (  # noqa: F401
     load_deploy_files,
     resolve_artifact_src,
     run_deploy_command,
-    run_target_sync_command,
     select_codespace,
     selected_device_provider_id,
     target_dest_path,
@@ -99,6 +100,7 @@ from scripts.gar_lib._hw import (  # noqa: F401
     run_hw_command,
     write_hw_template,
 )
+from scripts.gar_lib._infra import run_sim_infra_command  # noqa: F401
 from scripts.gar_lib._setup import (  # noqa: F401
     configure_default_ec2_host,
     ensure_provider_dependencies,
@@ -299,9 +301,20 @@ def build_parser() -> argparse.ArgumentParser:
         "stop",
         help="Codespace build workspace の WSL hub 側接続を停止します",
     )
+    code_stop_parser.add_argument("--codespace", default=None, help="停止する Codespace 名")
     code_stop_parser.add_argument("--mount-dir", default=None, help="WSL 側 sshfs mount path")
     code_stop_parser.add_argument("--settings", default=None, help="VS Code settings.json path")
     code_stop_parser.add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
+    code_stop_parser.add_argument(
+        "--shutdown",
+        action="store_true",
+        help="WSL 側接続の後片付け後に GitHub Codespace VM も停止します",
+    )
+    code_shutdown_parser = code_subparsers.add_parser(
+        "shutdown",
+        help="GitHub Codespace VM を停止します",
+    )
+    code_shutdown_parser.add_argument("--codespace", default=None, help="停止する Codespace 名")
 
     terminal_parser = subparsers.add_parser(
         "terminal",
@@ -414,6 +427,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
+    sim_env_gpio_parser = sim_env_subparsers.add_parser(
+        "gpio",
+        help="GPIO dummy runtime を個別に生成・配置・確認します",
+    )
+    sim_env_gpio_subparsers = sim_env_gpio_parser.add_subparsers(dest="gpio_command", metavar="command")
+    for gpio_command_name in ("plan", "install", "start", "stop", "status"):
+        gpio_command_parser = sim_env_gpio_subparsers.add_parser(
+            gpio_command_name,
+            help=f"GPIO runtime: {gpio_command_name}",
+        )
+        if gpio_command_name != "plan":
+            gpio_command_parser.add_argument(
+                "--host",
+                default=None,
+                help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
+            )
+        if gpio_command_name in ("plan", "status"):
+            gpio_command_parser.add_argument(
+                "--json",
+                dest="json_output",
+                action="store_true",
+                help="結果を機械可読な JSON で出力します（AI / CI 向け）",
+            )
 
     sim_app_deploy_parser = sim_subparsers.add_parser(
         "deploy",
@@ -462,17 +498,17 @@ def build_parser() -> argparse.ArgumentParser:
             )
 
     sim_infra_parser = sim_subparsers.add_parser(
-        "infra", help="simulation host インフラを Terraform で管理します（要実装）"
+        "infra", help="simulation host インフラを Terraform で管理します"
     )
     sim_infra_subparsers = sim_infra_parser.add_subparsers(dest="infra_command", metavar="command")
-    for _infra_cmd in ("plan", "apply", "destroy", "output"):
+    for _infra_cmd in ("setup", "apply", "destroy"):
         _p = sim_infra_subparsers.add_parser(_infra_cmd, help=f"terraform {_infra_cmd}")
         _p.add_argument("--key-name", default=None, help="EC2 SSH key pair name")
         _p.add_argument("--region", default=None, help="AWS region")
         _p.add_argument("--auto-approve", action="store_true", help="--auto-approve を terraform に渡します")
 
     sim_gpio_parser = sim_subparsers.add_parser(
-        "gpio", help="GPIO dummy runtime を生成・配置・確認します"
+        "gpio", help="互換 alias: `gar sim env gpio` を使ってください"
     )
     sim_gpio_subparsers = sim_gpio_parser.add_subparsers(dest="gpio_command", metavar="command")
     for gpio_command_name in ("plan", "install", "start", "stop", "status"):
@@ -499,6 +535,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="接続先が提供する I/O を使う runtime を操作します",
     )
     target_subparsers = target_parser.add_subparsers(dest="target_command", metavar="command")
+    target_build_parser = target_subparsers.add_parser(
+        "build",
+        help="setup 済み target の実機用 artifact をビルドします",
+    )
+    target_build_parser.add_argument(
+        "--codespace",
+        default=None,
+        help="ビルド元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
+    )
+    target_build_parser.add_argument(
+        "--remote-project-root",
+        default=DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+        help=f"Codespace 上の project root（既定: {DEFAULT_ESP32_CODESPACE_PROJECT_ROOT}）",
+    )
+    target_build_parser.add_argument(
+        "--pio-env",
+        default=DEFAULT_ESP32_PIO_ENV,
+        help=f"PlatformIO environment（既定: {DEFAULT_ESP32_PIO_ENV}）",
+    )
+    target_build_parser.add_argument(
+        "--artifact-root",
+        default=None,
+        help=f"WSL 側に保存する artifact root（既定: {DEFAULT_ESP32_ARTIFACT_ROOT}）",
+    )
     target_deploy_parser = target_subparsers.add_parser(
         "deploy",
         help="target runtime へ成果物を配置します",
@@ -523,6 +583,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
+    target_deploy_parser.add_argument(
+        "--codespace",
+        default=None,
+        help="artifact が未取得のときの取得元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
+    )
+    target_deploy_parser.add_argument(
+        "--remote-root",
+        default=None,
+        help=f"Codespace 上の artifact bundle root（既定: {DEFAULT_CODESPACE_ARTIFACT_ROOT}）",
+    )
     target_fetch_parser = target_subparsers.add_parser(
         "fetch",
         help="Codespace の artifact bundle を WSL hub へ取得します",
@@ -541,46 +611,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--artifacts-dir",
         default=None,
         help="WSL hub 側に保存する artifact bundle root",
-    )
-    target_sync_parser = target_subparsers.add_parser(
-        "sync",
-        help="Codespace から成果物を取得し、target runtime へ配置します",
-    )
-    target_sync_parser.add_argument(
-        "--codespace",
-        default=None,
-        help="取得元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
-    )
-    target_sync_parser.add_argument(
-        "--remote-root",
-        default=None,
-        help=f"Codespace 上の artifact bundle root（既定: {DEFAULT_CODESPACE_ARTIFACT_ROOT}）",
-    )
-    target_sync_parser.add_argument(
-        "--artifacts-dir",
-        default=None,
-        help="WSL hub 側に保存する artifact bundle root",
-    )
-    target_sync_parser.add_argument(
-        "--serial",
-        default=None,
-        help="adb device serial。省略時は adb の既定接続先",
-    )
-    target_sync_parser.add_argument(
-        "--host",
-        default=None,
-        help="SSH/scp provider 利用時の SSH config 上の host 名",
-    )
-    target_sync_parser.add_argument(
-        "--dest",
-        default="/home/user",
-        help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
-    )
-    target_sync_parser.add_argument(
-        "--json",
-        dest="json_output",
-        action="store_true",
-        help="結果を機械可読な JSON で出力します（進捗は stderr / AI ・ CI 向け）",
     )
     target_build_esp32_parser = target_subparsers.add_parser(
         "build-esp32",
@@ -756,6 +786,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             settings=getattr(args, "settings", None),
             profile_name=getattr(args, "profile_name", None),
             no_mount=getattr(args, "no_mount", False),
+            shutdown=getattr(args, "shutdown", False),
         )
     if args.command == "terminal" and args.terminal_command == "run":
         return run_terminal_request(
@@ -809,6 +840,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     artifacts_dir=args.artifacts_dir,
                     host=args.host,
                 )
+            if args.sim_env_command == "gpio":
+                if args.gpio_command is None:
+                    subcommand_parsers["sim_env"].print_help()
+                    return 1
+                return run_sim_gpio_command(
+                    args.gpio_command,
+                    host=getattr(args, "host", None),
+                    json_output=getattr(args, "json_output", False),
+                )
             return run_sim_command(
                 args.sim_env_command,
                 host=args.host,
@@ -822,15 +862,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.infra_command is None:
                 subcommand_parsers["sim_infra"].print_help()
                 return 1
-            print(
-                f"error: gar sim infra {args.infra_command} は未実装です。\n"
-                "  実装方針: infra/terraform/main.tf の terraform コマンドを呼び出し、\n"
-                "  apply 後に出力される instance_id / public_ip を .gar/config.json へ保存し、\n"
-                "  ~/.ssh/config の HostName を更新する（gar sim boot --pull 相当の後処理も行う）。\n"
-                "  infra/terraform/ を整備後に実装してください。",
-                file=__import__("sys").stderr,
+            return run_sim_infra_command(
+                args.infra_command,
+                key_name=getattr(args, "key_name", None),
+                region=getattr(args, "region", None),
+                auto_approve=getattr(args, "auto_approve", False),
             )
-            return 1
         if args.sim_command == "gpio":
             if args.gpio_command is None:
                 subcommand_parsers["sim_gpio"].print_help()
@@ -853,6 +890,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 serial=args.serial,
                 host=args.host,
                 dest=args.dest,
+                codespace=args.codespace,
+                remote_root=args.remote_root,
             )
         if args.target_command == "fetch":
             root = (
@@ -865,18 +904,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 codespace=args.codespace,
                 remote_root=args.remote_root,
             )
-        if args.target_command == "sync":
-            return _run_with_json_summary(
-                "target sync",
-                getattr(args, "json_output", False),
-                lambda: run_target_sync_command(
-                    artifacts_dir=args.artifacts_dir,
-                    codespace=args.codespace,
-                    remote_root=args.remote_root,
-                    serial=args.serial,
-                    host=args.host,
-                    dest=args.dest,
-                ),
+        if args.target_command == "build":
+            return run_esp32_build_command(
+                codespace=args.codespace,
+                remote_project_root=args.remote_project_root,
+                pio_env=args.pio_env,
+                local_artifact_root=args.artifact_root,
+                flash=False,
+                port=None,
+                baud=921600,
+                chip="esp32",
+                verify=True,
+                install_esptool=True,
             )
         if args.target_command == "build-esp32":
             return run_esp32_build_command(

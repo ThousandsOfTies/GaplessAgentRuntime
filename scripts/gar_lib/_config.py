@@ -219,3 +219,19 @@ def set_default_ec2_host(config: dict, host: str) -> None:
         ec2 = {}
         config["ec2"] = ec2
     ec2["host"] = host
+
+
+def set_default_ec2_instance_id(config: dict, instance_id: str) -> None:
+    ec2 = config.setdefault("ec2", {})
+    if not isinstance(ec2, dict):
+        ec2 = {}
+        config["ec2"] = ec2
+    ec2["instance_id"] = instance_id
+
+
+def set_default_ec2_region(config: dict, region: str) -> None:
+    ec2 = config.setdefault("ec2", {})
+    if not isinstance(ec2, dict):
+        ec2 = {}
+        config["ec2"] = ec2
+    ec2["region"] = region

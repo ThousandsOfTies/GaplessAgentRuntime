@@ -17,10 +17,12 @@ from scripts.gar_lib._targets import gar_tools_root
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 
-DEFAULT_WOKWI_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
+DEFAULT_WOKWI_WORKSPACE_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
+DEFAULT_WOKWI_DIR = DEFAULT_WOKWI_WORKSPACE_DIR
 DEFAULT_WOKWI_TEMPLATE_REL = Path("targets") / "esp32" / "wokwi" / "m5stackc"
 IGNORED_TEMPLATE_PARTS = {".git", ".pio", "__pycache__"}
 DEFAULT_TIMEOUT_MS = 30000
+VIBE_REMOTE_M5_SRC_REL = Path("vibe-remote") / "m5stickc-client" / "src"
 
 
 def _now_iso() -> str:
@@ -49,6 +51,21 @@ def _template_dir() -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return gar_tools_root() / DEFAULT_WOKWI_TEMPLATE_REL
+
+
+def _vibe_remote_m5_src_dir() -> Path | None:
+    raw = os.environ.get("GAR_VIBE_REMOTE_M5_SRC_DIR")
+    if raw:
+        path = Path(raw).expanduser().resolve()
+        return path if path.is_dir() else None
+
+    for candidate in (
+        PROJECT_ROOT.parent / "gar-vibe-ui" / VIBE_REMOTE_M5_SRC_REL,
+        PROJECT_ROOT / "gar-vibe-ui" / VIBE_REMOTE_M5_SRC_REL,
+    ):
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 class WokwiSimCommandBuilder(SimCommandBuilder):
@@ -147,22 +164,24 @@ class WokwiSimProvider(SimProvider):
         self.project_dir.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    def _workspace_context(self) -> dict[str, str | None]:
+        app_src_dir = _vibe_remote_m5_src_dir()
+        return {
+            "workspace_dir": str(self.project_dir),
+            "project_dir": str(self.project_dir),
+            "template_dir": str(_template_dir()),
+            "app_src_dir": str(app_src_dir) if app_src_dir else None,
+        }
+
     def _relative_path_exists(self, path_text: str) -> bool:
         path = Path(path_text)
         if not path.is_absolute():
             path = self.project_dir / path
         return path.exists()
 
-    def _write_if_missing(self, name: str, content: str) -> None:
-        path = self.project_dir / name
-        if path.exists():
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-
-    def _copy_template_file_if_missing(self, source: Path, relative_path: Path) -> None:
+    def _copy_template_file(self, source: Path, relative_path: Path) -> None:
         dest = self.project_dir / relative_path
-        if dest.exists():
+        if source.resolve() == dest.resolve():
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
@@ -178,11 +197,39 @@ class WokwiSimProvider(SimProvider):
             relative_path = source.relative_to(template_dir)
             if any(part in IGNORED_TEMPLATE_PARTS for part in relative_path.parts):
                 continue
-            if not source.is_file() or source.name == "wokwi.toml.template":
+            if not source.is_file() or source.name in {"platformio.ini.template", "wokwi.toml.template"}:
                 continue
-            self._copy_template_file_if_missing(source, relative_path)
+            self._copy_template_file(source, relative_path)
 
-        self._write_if_missing("wokwi.toml", self._render_wokwi_toml(template_dir))
+        self._remove_legacy_app_source_dir()
+        platformio_ini = self._render_platformio_ini(template_dir)
+        if platformio_ini is not None:
+            (self.project_dir / "platformio.ini").write_text(platformio_ini, encoding="utf-8")
+        (self.project_dir / "wokwi.toml").write_text(self._render_wokwi_toml(template_dir), encoding="utf-8")
+
+    def _remove_legacy_app_source_dir(self) -> None:
+        dest = self.project_dir / "src"
+        if dest.is_symlink():
+            dest.unlink()
+            return
+        if dest.is_dir():
+            shutil.rmtree(dest)
+
+    def _render_platformio_ini(self, template_dir: Path) -> str | None:
+        template_path = template_dir / "platformio.ini.template"
+        if not template_path.exists():
+            return None
+
+        app_src_dir = _vibe_remote_m5_src_dir()
+        if app_src_dir is None:
+            raise FileNotFoundError(
+                "Vibe Remote M5 app source not found. "
+                "Clone gar-vibe-ui next to GaplessAgentRuntime or set GAR_VIBE_REMOTE_M5_SRC_DIR."
+            )
+
+        template = template_path.read_text(encoding="utf-8")
+        app_src = os.path.relpath(app_src_dir, self.project_dir)
+        return template.format(app_src=Path(app_src).as_posix())
 
     def _render_wokwi_toml(self, template_dir: Path) -> str:
         template_path = template_dir / "wokwi.toml.template"
@@ -200,12 +247,12 @@ class WokwiSimProvider(SimProvider):
     def prepare_project(self, hw_definition: dict[str, list[dict[str, str]]], *, json_output: bool = False) -> int:
         try:
             self._ensure_project(hw_definition)
-        except FileNotFoundError as exc:
+        except (FileExistsError, FileNotFoundError) as exc:
             self._print_payload(
                 {
                     "provider": "wokwi",
                     "status": "template-missing",
-                    "project_dir": str(self.project_dir),
+                    **self._workspace_context(),
                     "ok": False,
                     "error": str(exc),
                     "hint": "Run `gar setup` to fetch gar-tools into .gar/tools, or set GAR_WOKWI_TEMPLATE_DIR.",
@@ -217,7 +264,7 @@ class WokwiSimProvider(SimProvider):
             {
                 "provider": "wokwi",
                 "status": "project-ready",
-                "project_dir": str(self.project_dir),
+                **self._workspace_context(),
                 "diagram": str(self.project_dir / "diagram.json"),
                 "wokwi_toml": str(self.project_dir / "wokwi.toml"),
                 "ok": True,
@@ -233,7 +280,7 @@ class WokwiSimProvider(SimProvider):
             self._print_payload(
                 {
                     "provider": "wokwi",
-                    "project_dir": str(self.project_dir),
+                    **self._workspace_context(),
                     "status": "project-ready",
                     "ok": True,
                     "warning": "wokwi-cli not found; install it to run the simulation",
@@ -244,7 +291,7 @@ class WokwiSimProvider(SimProvider):
             self._print_payload(
                 {
                     "provider": "wokwi",
-                    "project_dir": str(self.project_dir),
+                    **self._workspace_context(),
                     "status": "project-ready",
                     "ok": True,
                     "warning": f"firmware not found: {firmware}; run `pio run` or set GAR_WOKWI_FIRMWARE",
@@ -266,13 +313,13 @@ class WokwiSimProvider(SimProvider):
                 "provider": "wokwi",
                 "pid": proc.pid,
                 "argv": argv,
-                "project_dir": str(self.project_dir),
+                **self._workspace_context(),
                 "log": str(self.log_path),
                 "started_at": _now_iso(),
                 "timeout_ms": timeout,
             }
         )
-        self._print_payload({"provider": "wokwi", "status": "running", "pid": proc.pid, "project_dir": str(self.project_dir), "ok": True})
+        self._print_payload({"provider": "wokwi", "status": "running", "pid": proc.pid, **self._workspace_context(), "ok": True})
         return 0
 
     def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
@@ -283,7 +330,7 @@ class WokwiSimProvider(SimProvider):
                 {
                     "provider": "wokwi",
                     "status": "template-missing",
-                    "project_dir": str(self.project_dir),
+                    **self._workspace_context(),
                     "ok": False,
                     "error": str(exc),
                     "hint": "Run `gar setup` to fetch gar-tools into .gar/tools, or set GAR_WOKWI_TEMPLATE_DIR.",
@@ -293,7 +340,7 @@ class WokwiSimProvider(SimProvider):
         state = self._state()
         pid = state.get("pid")
         if isinstance(pid, int) and _is_pid_running(pid):
-            self._print_payload({"provider": "wokwi", "status": "running", "pid": pid, "project_dir": str(self.project_dir), "ok": True})
+            self._print_payload({"provider": "wokwi", "status": "running", "pid": pid, **self._workspace_context(), "ok": True})
             return 0
         return self._start_cli()
 
@@ -323,7 +370,7 @@ class WokwiSimProvider(SimProvider):
             "status": "running" if running else "stopped",
             "running": running,
             "pid": pid if isinstance(pid, int) else None,
-            "project_dir": str(self.project_dir),
+            **self._workspace_context(),
             "diagram": str(self.project_dir / "diagram.json"),
             "wokwi_toml": str(self.project_dir / "wokwi.toml"),
             "log": str(self.log_path),
@@ -346,7 +393,7 @@ class WokwiSimProvider(SimProvider):
         payload = {
             "provider": "wokwi",
             "ok": True,
-            "project_dir": str(self.project_dir),
+            **self._workspace_context(),
             "files": {
                 "diagram": (self.project_dir / "diagram.json").exists(),
                 "wokwi_toml": (self.project_dir / "wokwi.toml").exists(),

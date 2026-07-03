@@ -13,7 +13,7 @@ WSL Hub (Gapless Agent Runtime)
   gar setup 済み
   Codespace build VM に接続済み
   EC2 simulation host を起動・deploy・diag 済み
-  RasPi5 実機へ target sync 済み
+  RasPi5 実機へ target deploy 済み
 
 RasPi5
   ~/sensor_demo を実行
@@ -177,7 +177,7 @@ gar sim env diag --json
 
 ```bash
 gar sim env status --json
-gar sim gpio status --json
+gar sim env gpio status --json
 gar sim env log
 ```
 
@@ -291,27 +291,27 @@ adb devices
 
 `device` と表示されれば OK です。
 
-`gar target sync` / `gar target deploy` は adb device が見えないときに `gar usb attach` 相当を自動で試します。ただし初回の `usbipd bind` だけは管理者 PowerShell が必要です。
+`gar target deploy` は adb device が見えないときに `gar usb attach` 相当を自動で試します。ただし初回の `usbipd bind` だけは管理者 PowerShell が必要です。
 
 ## 8. 実機へ deploy する
 
 Codespace から artifact bundle を取得し、そのまま RasPi5 へ push します。
 
 ```bash
-gar target sync
+gar target deploy
 ```
 
 特定 adb device を指定する場合:
 
 ```bash
 adb devices
-gar target sync --serial <serial>
+gar target deploy --serial <serial>
 ```
 
 ネットワーク越し SSH/scp provider を選んだ場合:
 
 ```bash
-gar target sync --host raspi5
+gar target deploy --host raspi5
 ```
 
 deploy だけやり直す場合:
@@ -384,14 +384,14 @@ gar code start --codespace <codespace-name>
 
 ```bash
 gar sim env status --json
-gar sim gpio status --json
+gar sim env gpio status --json
 gar sim env log
 ssh vibecode-graviton 'systemctl --no-pager --full status gar-sim.target gar-bridge.service gar-gpio-sim.service'
 ```
 
 出力を貼って「どこが悪い？」と聞けばよいです。
 
-### `gar target sync` が artifact を見つけられない
+### `gar target deploy` が artifact を見つけられない
 
 Codespace 側で artifact bundle の場所を確認します。
 
@@ -464,7 +464,7 @@ gar sim env start
 gar sim env diag --json
 ssh vibecode-graviton '~/sensor_demo'
 
-gar target sync
+gar target deploy
 adb shell
 ~/sensor_demo
 ```
@@ -473,6 +473,6 @@ SSH/scp 実機経路の場合:
 
 ```bash
 gar setup                 # 実機環境で SSH / scp を選ぶ
-gar target sync --host raspi5
+gar target deploy --host raspi5
 ssh raspi5 '~/sensor_demo'
 ```

@@ -33,6 +33,7 @@ flowchart TB
 
   UserGAR -->|gar setup| DotGar
   DotGar --> DotGarTools
+  DotGar --> GeneratedWorkspace["generated workspaces\nwokwi / logs / state"]
   DotGarTools -. "auto clone of gar-tools" .-> ToolsRole
 ```
 
@@ -57,7 +58,7 @@ flowchart LR
   Tools --> ToolFiles["targets/*\nwokwi templates\nhardware templates\nruntime tools"]
   BuildEnv --> BuildFiles["Codespaces devcontainer\npost-create setup\nartifact bundle Makefile"]
   LinuxApp --> LinuxAppFiles["app/sensor_demo\napp drivers\napp scenarios"]
-  M5App --> M5AppFiles["vibe-remote\nm5stack-client\nPlatformIO firmware artifacts"]
+  M5App --> M5AppFiles["vibe-remote\nm5stickc-client\nPlatformIO firmware artifacts"]
 
   GAR -. "default discovery" .-> Tools
   GAR -. "Codespace build/fetch" .-> BuildEnv
@@ -105,16 +106,16 @@ GaplessAgentRuntime/
     config.json
     tools/                  # gar setup が取得する gar-tools
     wokwi/
-      m5stackc/             # Wokwi project generated from gar-tools
+      m5stackc/             # generated Wokwi workspace
   codespaces/               # gar code start が作る sshfs mount（必要時）
   hardware/                 # gar hw init で作るローカル上書き（必要時）
   scripts/
   docs/
 ```
 
-`.gar/` はローカル状態と生成物の置き場なので、Git管理しない。
+`.gar/` はローカル状態、外部ツール、テンプレート展開済み workspace、ログの置き場なので、Git管理しない。
 アプリケーションのソースは `GaplessAgentRuntime/app` には置かず、
-target app repo（例: `../embedded-poc-app/app`、`../gar-vibe-ui/vibe-remote/m5stack-client`）を正本にする。
+target app repo（例: `../embedded-poc-app/app`、`../gar-vibe-ui/vibe-remote/m5stickc-client`）を正本にする。
 
 ---
 
@@ -154,12 +155,12 @@ flowchart LR
     Runtime["orchestration"]
     CodeMount["codespaces/\nsshfs mount"]
     LocalHW["hardware/\nlocal override"]
-    Generated[".gar/\ngenerated state"]
+    Generated[".gar/\ngenerated workspaces\nstate / logs"]
   end
 
   subgraph Tools["gar-tools"]
     Targets["targets/*/target.json"]
-    Wokwi["targets/esp32/wokwi/m5stackc"]
+    Wokwi["targets/esp32/wokwi/m5stackc\ntemplate"]
     OptionalTools["targets/esp32/qemu|renode|fake-idf|probes\noptional tools"]
     HW["targets/linux-device/hardware"]
     LinuxRuntime["targets/linux-device/runtime"]
@@ -168,7 +169,7 @@ flowchart LR
   subgraph BuildEnv["gar-build-env"]
     Codespace["Codespaces devcontainer"]
     BuildArtifacts["artifacts/from-codespace"]
-    BuildRepos["repos/gar-tools\nrepos/embedded-poc-app\nrepos/gar-vibe-ui"]
+    BuildRepos["repos/tools/gar-tools\nrepos/apps/embedded-poc-app\nrepos/apps/gar-vibe-ui"]
   end
 
   subgraph LinuxAppRepo["embedded-poc-app"]
@@ -178,8 +179,8 @@ flowchart LR
 
   subgraph M5AppRepo["gar-vibe-ui"]
     VibeRemote["vibe-remote"]
-    M5Client["vibe-remote/m5stack-client"]
-    M5Artifacts["m5stack-client/artifacts/*.bin"]
+    M5Client["vibe-remote/m5stickc-client"]
+    M5Artifacts["m5stickc-client/artifacts/*.bin"]
   end
 
   CLI --> Targets
@@ -196,7 +197,8 @@ flowchart LR
   Runtime --> CodeMount
   Codespace --> BuildRepos
   HW -->|gar hw init| LocalHW
-  Wokwi -->|gar sim env start| Generated
+  Wokwi -->|render template| Generated
+  M5Client -->|src_dir in generated platformio.ini| Generated
 ```
 
 責務の分け方:
@@ -204,20 +206,27 @@ flowchart LR
 | 種類 | 正本 | ローカル生成先 |
 |---|---|---|
 | target manifest | `gar-tools/targets/*/target.json` | なし |
-| Wokwi project template | `gar-tools/targets/esp32/wokwi/m5stackc/` | `.gar/wokwi/m5stackc/` |
+| Wokwi workspace template | `gar-tools/targets/esp32/wokwi/m5stackc/` | `.gar/wokwi/m5stackc/` |
 | ESP32 optional tools | `gar-tools/targets/esp32/{qemu,renode,fake-idf,probes}/` | 必要時のみ |
 | Linux hardware CSV template | `gar-tools/targets/linux-device/hardware/` | `hardware/` |
 | target app source | `embedded-poc-app/app/` | build artifact |
 | app scenario | `embedded-poc-app/scenarios/` | remote scenario copy |
 | Codespaces build hub | `gar-build-env/` | `codespaces/` sshfs mount |
-| ESP32/M5Stack firmware source | `gar-vibe-ui/vibe-remote/m5stack-client/` | `.bin` artifact |
-| ESP32/M5Stack firmware artifact | `gar-vibe-ui/vibe-remote/m5stack-client/artifacts/` | flash input |
+| ESP32/M5Stack firmware source | `gar-vibe-ui/vibe-remote/m5stickc-client/` | `.bin` artifact |
+| ESP32/M5Stack firmware artifact | `gar-vibe-ui/vibe-remote/m5stickc-client/artifacts/` | flash input |
 | Runtime state / logs | なし | `.gar/` |
 
 `hardware/` はプロジェクト固有の上書きとして扱う。標準テンプレートの正本は
 `gar-tools` 側に置く。
 `app/` は target app repo の責務なので、`GaplessAgentRuntime` には置かない。
 `codespaces/` は `gar code start` が作るローカル mount なので、正本ではなく一時的な視界として扱う。
+
+Wokwi も同じ考え方にする。`gar-tools` は配線、shim、scenario、`*.template`
+の正本だけを持つ。アプリソースは target app repo を参照し、GAR は両者を
+`.gar/wokwi/<target>/` に展開して、VS Code Wokwi 拡張や `wokwi-cli` が読める
+workspace を作る。展開ルールのアプリ固有入口は target app repo 側に置き、
+Vibe Remote M5StickC では `gar-vibe-ui/vibe-remote/m5stickc-client/Makefile` の
+`make wokwi-workspace` として明示する。
 
 ---
 

@@ -1,6 +1,8 @@
 # コマンドリファレンス
 
-`gar` コマンド一覧。グループがそのままフローになっている。WSL の venv 上で実行する（`make start` で有効化）。
+`gar` コマンド一覧。WSL の venv 上で実行する（`make start` で有効化）。
+設計背景は [02_ARCHITECTURE.md](02_ARCHITECTURE.md)、シミュレーション詳細は
+[06_SIMULATION.md](06_SIMULATION.md) を参照。
 
 ---
 
@@ -10,247 +12,161 @@
 |---|---|
 | `make init` | `.venv` 作成・`gar` symlink・VSCode extension install |
 | `make start` | venv + bash completion を有効化したサブシェルを開く |
-| `gar setup` | target 選択・gar-tools 確認/取得・接続プロバイダ選択・依存コマンド確認・既定 host 保存 |
+| `gar setup` | target 選択・gar-tools 確認/取得・依存 target graph と接続設定の保存・依存コマンド確認・既定 host 保存 |
 | `gar hw init` | `gar-tools` の target テンプレートから `hardware/` に CSV を生成 |
 
 ---
 
-## 1. Codespace（ビルド環境）接続
+## 1. ビルド環境 管理
 
 | コマンド | 内容 |
 |---|---|
+| `gar code boot` | Codespace VM を起動し、必要なら接続準備を行う |
 | `gar code start` | Codespace を sshfs マウント・terminal profile を追加 |
 | `gar code stop` | マウント解除・profile 削除 |
-
-ビルドは各 target repo の README / build script に従う。成果物は `artifact.json` に記載されたパスで管理する。
+| `gar code shutdown` | Codespace VM を停止 |
+| `gar code status` | Codespace VM / 接続状態を確認 |
 
 ---
 
-## 2. シミュレーション VM 管理
+## 2. シミュレーション (`gar sim`)
+
+物理ハードウェアエミュレータ（AWS EC2上の互換ランタイム、またはWokwiなどのローカル/クラウドエミュレータ）を用いた動作検証コマンドです。詳細は [06_SIMULATION.md](06_SIMULATION.md) を参照。
+
+### 2.1. レイヤー（接頭辞）の概念
+シミュレーションコマンドは、操作対象となるレイヤーごとに接頭辞が分かれています。
+
+| 接頭辞 | レイヤー | 操作対象 | 日常的な役割 |
+|---|---|---|---|
+| `gar sim` | **ホスト** | EC2等のシミュレーションホストOS | シミュレーション用のVMやホストの起動・停止・接続状態の管理 |
+| `gar sim env` | **環境 (Runtime)** | 仮想デバイス（I2C, SPI, GPIO）のスタブ | 仮想デバイスのエミュレータ（CUSEスタブやブリッジ等）のビルド・起動・ログ監視・個別デバッグ |
+| `gar sim` (build/deploy) | **アプリ** | アプリケーション成果物 | 検証したいアプリケーション本体（`sensor_demo`など）のビルドと環境への反映 |
+| `gar sim infra` | **インフラ** | AWS等インフラ設備 (Terraform) | テスト用インスタンス自体の作成・破棄（開発初期のみ実行） |
+
+---
+
+### 2.2. ユースケース別基本フロー
+
+#### A. 初めてシミュレーション環境を構築するとき / 完全に初期化するとき
+ホストVMを起動し、仮想デバイス環境（Runtime）をビルドして起動するまでの手順です。
+
+```bash
+# 1. ホストVMの起動とSSH接続設定の更新
+gar sim start --pull
+
+# 2. 仮想デバイスドライバ（スタブ）のビルド・デプロイ・起動
+gar sim env build
+gar sim env deploy
+gar sim env start
+
+# 3. アプリケーションのビルドとデプロイ
+gar sim build
+gar sim deploy
+
+# 4. シミュレーション環境全体の正常性診断（JSON出力で確認）
+gar sim env diag --json
+```
+
+#### B. アプリのコードを修正し、再テストするとき (日常開発)
+仮想デバイス環境（Runtime）は起動したまま、アプリケーションのみを再デプロイして検証します。
+
+```bash
+# アプリケーションをビルドしてホストへ再配置
+gar sim build
+gar sim deploy
+```
+> [!NOTE]
+> アプリケーションは `gar sim env start` の時点では自動起動しません。シミュレーションホストにログイン、またはテスト用プロセス起動コマンド等を通じて手動で起動します。
+
+#### C. シミュレーションを終了するとき
+リソースを無駄にしないよう、仮想環境とホストVMを停止します。
+
+```bash
+# 1. 仮想デバイス環境の停止
+gar sim env stop
+
+# 2. ホストVMの停止
+gar sim stop
+```
+
+---
+
+### 2.3. コマンド一覧
+
+#### ホスト管理 (`gar sim`)
+| コマンド | 内容 |
+|---|---|
+| `gar sim start [--pull]` | シミュレーションホストを起動し、SSH接続設定を更新（`--pull` で最新の `gar-tools` 等を git pull） |
+| `gar sim stop` | シミュレーションホストを停止（インスタンスは削除されず、課金が抑えられます） |
+| `gar sim status` | ホストの現在の実行状態を表示 |
+| `gar sim boot` | `gar sim start` の互換名コマンド |
+| `gar sim shutdown` | `gar sim stop` の互換名コマンド |
+
+#### 仮想デバイス環境管理 (`gar sim env`)
+| コマンド | 内容 |
+|---|---|
+| `gar sim env build` | 仮想デバイススタブ（CUSE I2C/SPI など）のバイナリをビルド |
+| `gar sim env deploy` | ビルドしたスタブや接続用Webブリッジをホストへ転送・配置 |
+| `gar sim env start` | 仮想環境（systemd サービス群）とポートフォワードを起動 |
+| `gar sim env stop` | 仮想環境（systemd サービス群）を停止 |
+| `gar sim env status [--json]` | 各サービスの状態やポートフォワードの接続状態を表示 |
+| `gar sim env diag [--json]` | プロセス、仮想デバイス、APIの動作状況をまとめて診断（AIエージェントの診断時は `--json` 推奨） |
+| `gar sim env log` | 仮想環境の主要ログ（ブリッジやドライバ等）を表示 |
+| `gar sim env gpio-sim-check [--json]` | `gpio-sim` カーネルモジュールの状態確認 |
+| `gar sim env gpio <plan/install/start/stop/status>` | GPIO dummy runtime (`gpio-sim`) の個別設定・デバッグ管理 |
+
+#### アプリケーション配置 (`gar sim`)
+| コマンド | 内容 |
+|---|---|
+| `gar sim build` | シミュレーション用のアプリケーション成果物をビルド (※現在は移行中のため、一部ターゲットは Makefile を経由) |
+| `gar sim deploy` | 最新のアプリケーション成果物をシミュレーションホストの実行可能パスへ反映 |
+
+#### インフラ管理 (`gar sim infra`)
+| コマンド | 内容 |
+|---|---|
+| `gar sim infra setup` | 現在のシミュレーションホスト設定値を表示し、Terraform による作成計画を確認 |
+| `gar sim infra apply` | インフラを実際に適用してインスタンスを作成し、`.gar/config.json` と SSH config を更新 |
+| `gar sim infra destroy` | インスタンスを完全に破棄 |
+
+---
+
+## 3. 実機 build / deploy
 
 | コマンド | 内容 |
 |---|---|
-| `gar sim infra plan` | Terraform で変更内容を確認（要実装） |
-| `gar sim infra apply` | EC2 インスタンス作成・SSH config 更新（要実装） |
-| `gar sim infra destroy` | インスタンス削除（要実装） |
-| `gar sim boot [--pull]` | EC2 起動・SSH config 更新（`--pull` で git pull も実行） |
-| `gar sim status` | EC2 の状態確認 |
-| `gar sim shutdown` | EC2 停止 |
+| `gar target build` | setup 済み target の実機用 artifact を最新化（現在は ESP32/M5Stack firmware build 経路に委譲） |
+| `gar target deploy` | `target.artifact` と `target.device` を解決し、最新 artifact を実機へ反映（target graph 化中） |
 
----
-
-## 3. シミュレーション環境 デプロイ・起動
+低レベルコマンド:
 
 | コマンド | 内容 |
 |---|---|
-| `gar sim env deploy` | CUSE stubs / web-bridge を EC2 へ配置（インフラ） |
-| `gar sim deploy` | target app（sensor_demo 等）を EC2 へ転送 |
-| `gar sim env start` | systemd services（bridge / CUSE / gpio-sim）+ port forward 起動 |
-| `gar sim env stop` | services + port forward 停止 |
-
-アプリは `gar sim env start` では起動しない。EC2 にログインして `~/sensor_demo` を実行する。
-
----
-
-## 4. シミュレーション環境 観察・診断
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim env status [--json]` | サービス状態・port forward 確認 |
-| `gar sim env diag [--json]` | プロセス・デバイス・API 状態まとめ（AI は `--json`） |
-| `gar sim env log` | ログ表示 |
-| `gar sim env gpio-sim-check [--json]` | gpio-sim の状態確認 |
-| `gar sim gpio plan/install/start/stop/status` | GPIO dummy runtime の個別管理 |
-
----
-
-## 5. 仮想 H/W 操作とシナリオ
-
-手動操作は backend の UI で行う。
-
-| backend | 手動操作 |
-|---|---|
-| Linux / RasPi-compatible | Web UI / Virtual Hardware Panel |
-| Wokwi | VS Code Wokwi Simulator / Diagram UI |
-
-Wokwi を手動確認する場合は、`.gar/wokwi/m5stackc/diagram.json` を VS Code の
-Wokwi Diagram Editor で開き、Editor ペイン左上の再生ボタンを押す。
-この時点で `wokwi.toml` が参照する `firmware.bin` / `firmware.elf` が Wokwi 側へ送信される。
-
-AI / CI / 再現テストは、UIを直接叩く単発CLIではなく、GAR共通のJSONシナリオで表現する。
-現時点で公開している補助ランナーは Linux bridge 向けの `scripts/run_scenario.py`。
-
-```bash
-python scripts/run_scenario.py path/to/scenario.json
-```
-
-Wokwi の既存 YAML シナリオを直接流す場合:
-
-```bash
-cd .gar/wokwi/m5stackc
-wokwi-cli --scenario button.test.yaml .
-```
-
-### Vibe Remote 疑似デバイス
-
-`gar setup` のシミュレート環境に `Vibe Remote Virtual Device` を追加している。
-M5Stack 実機の代わりに `/tmp/gar-vibe-remote-device/` 配下のファイルを操作し、
-Vibe Remote の WebSocket へ `agentStatus` を送れる。
-
-```bash
-cd ~/Yurufuwa/gar-vibe-ui/vibe-remote
-npm install
-VIBE_REMOTE_TOKEN=... npm run virtual:device
-
-echo press > /tmp/gar-vibe-remote-device/button_a  # running
-echo press > /tmp/gar-vibe-remote-device/button_b  # waiting
-echo press > /tmp/gar-vibe-remote-device/button_c  # done
-cat /tmp/gar-vibe-remote-device/screen.txt
-```
-
-### ESP32 QEMU Firmware
-
-`gar setup` のシミュレート環境に `ESP32 QEMU Firmware` を追加している。
-これは Vibe Remote 疑似デバイスと違い、`firmware.bin` を含むESP32 artifactを
-flash imageにまとめ、Espressif QEMUでファームウェアとして起動するための入口。
-
-GARとしての長期理想は Renode 上の M5Stack/ESP32 仮想ボード。QEMU runner は
-Renodeが育つまでのboot smoke test兼比較対象として残す。Renode化の段階表は
-`~/Yurufuwa/gar-tools/targets/esp32/renode/ROADMAP.md` を参照。
-
-既定 artifact:
-
-```bash
-~/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/20260617-152624-m5stack-core2
-```
-
-手動確認:
-
-```bash
-~/Yurufuwa/gar-tools/targets/esp32/qemu/bin/gar-esp32-flash-image \
-  --artifact ~/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/20260617-152624-m5stack-core2 \
-  --output /tmp/gar-m5stack-core2-flash.bin
-~/Yurufuwa/gar-tools/targets/esp32/qemu/bin/gar-esp32-qemu-run \
-  /tmp/gar-m5stack-core2-flash.bin
-```
-
-### Renode MCU
-
-`gar setup` のシミュレート環境に `Renode (MCU/ベアメタル)` を追加している。
-WSL/Linux 上で選択すると、Renode portable build を
-`~/.local/share/gar/renode` に導入し、`~/.local/bin/renode` と
-`~/.local/bin/renode-test` の launcher を作成する。
-
-Renode portable .NET build は最小 WSL 環境で `libicu` 不足に当たることがあるため、
-GAR が作成する launcher は既定で
-`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` を設定する。`libicu` を入れて通常の
-globalization mode で動かしたい場合は、実行前に環境変数を明示的に上書きする。
-
-現時点の Renode provider は install / 検証入口であり、`gar sim env start` などの
-runtime 統合は未配線。Linux runtime で CUSE/gpio-sim を動かす既存経路には
-`SSH Remote` provider を使う。
-
-確認例:
-
-```bash
-gar setup
-renode --version
-. ~/.local/share/gar/renode-test-venv/bin/activate
-cd ~/.local/share/gar/renode
-renode-test tests/platforms/xtensa.robot
-```
-
-`qemu-system-xtensa` が無い場合は、ESP-IDF の `idf_tools.py install qemu-xtensa`
-で Espressif QEMU を入れる。
-
----
-
-## 6. 実機デプロイ
-
-実機接続は adb を既定とする。`gar setup` で `SSH / scp` provider への切り替えも可能。
-
-| コマンド | 内容 |
-|---|---|
-| `gar target fetch` | Codespace から WSL へ成果物取得 |
-| `gar target deploy` | WSL → RasPi5 へ配置（adb または SSH/scp） |
-| `gar target sync` | fetch + deploy を一括実行 |
-| `gar target build-esp32` | Codespaces で ESP32/M5Stack firmware をビルドし、artifact を WSL へ取得 |
+| `gar target fetch` | Codespace から WSL へ成果物取得（artifact node の内部処理） |
+| `gar target build-esp32` | ESP32/M5Stack firmware を Codespaces でビルドし、artifact を WSL へ取得 |
 | `gar target flash-esp32` | ESP32/M5Stack firmware artifact を esptool で実機へ書き込み |
 
 adb 実機が未検出の場合、`gar target deploy` が自動的に `gar usb attach` を先行実行する。
 
-M5StickC Plus2 Vibe Remote artifact を書き込む例:
+日常操作:
 
 ```bash
-gar target build-esp32 \
-  --codespace <codespace-name> \
-  --pio-env m5stickc-plus2-vibe-min
-gar target flash-esp32 --port /dev/ttyACM0
+gar target deploy
 ```
 
-ビルド、artifact 取得、flash を一括で行う例:
-
-```bash
-gar target build-esp32 \
-  --codespace <codespace-name> \
-  --pio-env m5stickc-plus2-vibe-min \
-  --flash \
-  --port /dev/ttyACM0
-```
-
-既存 artifact を書き込む例:
-
-```bash
-gar target flash-esp32 \
-  --artifact-dir ~/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/20260619-063145-m5stickc-plus2-vibe-min \
-  --port COM3
-```
-
-WSL 上では `COM3` を `/dev/ttyS3` に自動変換する。`--artifact-dir` を省略した場合は
-`~/Yurufuwa/gar-vibe-ui/vibe-remote/m5stack-client/artifacts/` 配下の最新 artifact を使う。
-`esptool` が見つからない場合は `~/.local/share/gar/esptool-venv` に自動導入する。
-
-`/dev/ttyS3` が `root:dialout` で permission denied になる場合:
-
-```bash
-sudo usermod -aG dialout $USER
-```
-
-その後、WSL を再起動するかログアウト/ログインして group 変更を反映する。
-
-権限は通ったが `Could not configure port: (5, 'Input/output error')` になる場合は、
-WSL の `/dev/ttyS3` COM ブリッジでは USB シリアルの制御が足りていない可能性がある。
-Windows 側の serial monitor を閉じても変わらない場合は、WSL から `gar usb` 経由で
-CH9102 を WSL へ attach し、`/dev/ttyACM0` または `/dev/ttyUSB0` として書き込む。
-
-```bash
-gar usb list
-gar usb bind --match CH9102
-gar usb attach --match CH9102
-```
-
-`bind` は Host OS 側の管理者権限を要求することがある。その場合だけ Host OS 上で
-コマンドプロンプトまたは PowerShell を管理者権限で開き、`gar` ではなく `usbipd` を直接実行する。
-`--busid` の値は `gar usb bind --match CH9102` のエラー文に表示される。
-
-```powershell
-usbipd bind --busid <busid>
-```
-
-すでに share 済みなら `attach` は WSL から完結する。
-
-```bash
-ls -l /dev/ttyACM* /dev/ttyUSB*
-gar target flash-esp32 --port /dev/ttyACM0
-```
+ESP32 / USB serial の低レベル確認やトラブルシュートは
+[03_DEVELOPMENT_ENVIRONMENT.md](03_DEVELOPMENT_ENVIRONMENT.md) を参照。
 
 ---
 
-## 7. USB 接続（実機 adb 用）※廃止予定
+## 4. USB 接続（WSL2 usbipd-win passthrough）
 
-> **廃止予定**: WSL から `/mnt/c/...` の Windows 側 adb を直接実行する方式に移行する。
+WSL2 から Windows 側の `usbipd-win` を呼び、USB serial / adb デバイスを
+`/dev/ttyACM*` や `/dev/ttyUSB*` として WSL2 に接続するための補助コマンド。
+Windows 側に `usbipd-win` が必要。
 
-事前に Windows 管理者 PowerShell で一度だけ実行が必要:
+初回 bind は Host OS 側の管理者権限が必要になることがある。その場合は
+Windows 管理者 PowerShell で一度だけ実行する。
+
 ```powershell
 usbipd bind --busid <busid>
 ```
@@ -262,6 +178,9 @@ usbipd bind --busid <busid>
 | `gar usb detach` | detach |
 | `gar usb status` | 接続状態確認 |
 | `gar usb list` | 接続可能デバイス一覧 |
+
+adb 実機は Windows 側 `adb.exe` を直接使う provider もあり、その場合は `usbipd-win`
+不要。USB serial flash など WSL2 の device node が必要な経路では `gar usb` を使う。
 
 ---
 
