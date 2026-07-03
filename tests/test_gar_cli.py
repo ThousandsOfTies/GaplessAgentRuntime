@@ -16,10 +16,10 @@ from scripts.gar_lib._sim import run_sim_panel
 from scripts.gar_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 from scripts.gar_lib._targets import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.cli import (
-    adb_device_available,
-    completion_bash_script,
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
+    adb_device_available,
+    completion_bash_script,
     fetch_codespace_artifacts,
     load_config,
     main,
@@ -34,8 +34,8 @@ from scripts.gar_lib.cli import (
     run_gpio_sim_check,
     run_setup,
     run_sim_command,
-    run_sim_infra_command,
     run_sim_gpio_command,
+    run_sim_infra_command,
     run_terminal_request,
     run_usb_command,
     select_codespace_from_list,
