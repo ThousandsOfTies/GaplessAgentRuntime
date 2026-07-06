@@ -3,7 +3,7 @@
 毎日の「今日なにやろうかな」用のメモ。気軽に書き換えてOK。
 詳細な設計は [docs/](docs/) 各ファイルに、ここは「次の一手」を思い出すための入口。
 
-最終更新: 2026-06-09
+最終更新: 2026-07-03
 
 ---
 
@@ -32,8 +32,6 @@
 - [ ] **`gar sim run` / `gar target run` の共通 manifest 化** — `~/sensor_demo` 起動後の検証ログ収集まで `gar` に畳む
 - [ ] **実機 RasPi5 にも `run / logs / diagnose` 抽象を用意する** — シミュレーションと同じ観察コマンド体系を実機にも適用
 
-- [ ] **rtk（トークン削減）の導入** — WSL2 で `curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh` 後に `rtk init -g --copilot` を実行。詳細は AGENT.md「オプション: rtk」セクション参照。コストやトークン量が気になったときに対処。
-
 - [ ] **検証軸に「ポータビリティ劣化チェック」を追加** — [OK] が押せても成果物の質が落ちていないかを見る目を入れる（押下回数だけ減って質が死ぬのを防ぐ）
 - [ ] **AI の自己判断レイヤ** 実行前に AI が `--json` の結果を見て「やめておく / 直す」を選ぶループ（[info/02_DESIGN_PHILOSOPHY.md](info/02_DESIGN_PHILOSOPHY.md) の欠けているピース）
 - [x] **hardware assignment CSV の分離** — target 標準の hardware CSV は `gar-tools/targets/*/hardware/` を正本にし、Gapless Agent Runtime 側の `hardware/` は `gar hw init` で生成するローカル上書きとして扱う
@@ -44,6 +42,8 @@
 ## ✅ 最近やったこと（Done）
 
 - [x] **SIM machine 構築を Terraform でレシピ化し `gar sim infra` に接続** — `infra/terraform/main.tf`（EC2/SG/volume/key）と `user_data.sh`（linux-modules-extra / gpiod / strace）を作成。`gar sim infra setup/apply/destroy` が Terraform を実行し、`setup` は現在値と作成計画を表示、`apply` 後は `instance_id` / `public_ip` を `.gar/config.json` と SSH config へ反映 — 2026-06-09 / 2026-07-03 更新
+- [x] **既存テストのほころびを解消** — `python -m unittest discover -s tests -v` で 144 tests OK、GitHub Actions の `Tests` も green。古い target deploy 系 3 件失敗メモは解消済み — 2026-07-03
+- [x] **rtk（トークン削減）の導入済み確認** — Codex/AGENT 指示で `rtk` を使う運用になっており、未完了バックログから除外。使い方は AGENT.md「オプション: rtk」セクションを参照 — 2026-07-03
 - [x] **USB-C の auto-attach は on-demand attach で代替** — Windows タスクスケジューラで挿入瞬間に attach する常駐導線は不要と判断。`gar target deploy/sync` が必要時に `gar usb attach` 相当を自動実行するため、通常運用は gar 操作時の遅延 attach に集約 — 2026-06-06
 - [x] **`gar target deploy`（adb 経路）が実機未検出なら `gar usb attach` を自動先行実行する統合** — adb provider の deploy 前に `adb devices` を確認し、対象 device が見えない場合は `gar usb attach` 相当を自動実行してから再確認する形へ変更 — 2026-06-06
 - [x] **旧 Windows PowerShell RasPi helper 相当（Codespace から成果物取得 → 実機 push）の `gar` 収容** — `gar target fetch` で Codespace の artifact bundle を WSL hub へ取得し、現在は `gar target deploy` が artifact 未取得時の fetch も担う — 2026-06-06 / 2026-07-03 更新
@@ -78,7 +78,6 @@
 - [x] **`gar setup` に Renode(MCU/ベアメタル) simulation プロバイダを追加** — `scripts/gar_lib/environments/registry/simulation/renode_mcu.py`。Linux/WSL2 で最新 portable build を user-local 導入。プラグイン自動発見でコア無改修。ランタイム統合は未配線スタブ（`gar sim env` は当面 `ssh_remote` 利用） — 2026-06-10
 - [ ] **Renode ランタイム統合（本配線）** — `.resc` 生成・ペリフェラルモデル起動で `gar sim env` を Renode 上で回す。最小実験として Pico の `.elf` を Renode と実機で同一バイナリ実行（sim↔実機パリティのデモ）＝製品が必要とする「2 件目の汎用性実証」
 - [ ] **ターゲット抽象の引き直し（本配線と同時に）** — 現状の simulation/device 抽象（`run_remote`/`push_file`/`start_port_forward`）は「SSH/adb で Linux に繋ぐ」前提に最適化されており、Renode（ローカルプロセス＋ファームロード）や専用 SoC 評価ボード（JTAG/SWD 書き込み・電源/リセット・シリアル/RTT）で破綻する。What（検証対象）と How（接続方法）を分離し、操作を能力（lifecycle / provision / execute / observe）で捉え直す。「SSH」は execute の一実装に格下げ。これは「同一バイナリが sim と実機で動く（バイナリ透過性）」を Linux SBC 以外へ持ち越せるかの試金石。YAGNI に従い、実例 2 つを手にする本配線時に痛みとともに引き直す
-- [ ] **既存テストのほころび** — `tests/test_gar_cli.py` の target deploy 系 3 件が（Renode 追加と無関係に）失敗中。回帰検知のセーフティネットの穴なので別途調査
 - [x] ドキュメント整理（README + docs 01〜12、WSL 中心方針へ）
 - [x] GPIO 解決方式の比較表を docs 12 に整理
 - [x] EC2 の `gpio-sim` 対応確認、`linux-modules-extra-$(uname -r)` 導入、`sensor_demo` GPIO v2 化、`gar sim env start` の fake `/dev/gpiochip0` setup 実装 — 2026-06-03
