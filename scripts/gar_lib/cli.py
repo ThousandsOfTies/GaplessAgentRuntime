@@ -1,18 +1,18 @@
 """`gar` CLI entry point. Argument parsing and dispatch only.
 
 Implementation lives in sibling submodules:
-- :mod:`scripts.gar_lib._ui` — color / safe_input helpers
-- :mod:`scripts.gar_lib._config` — config IO, paths, EC2 host helpers
-- :mod:`scripts.gar_lib._vscode` — VSCode terminal profile / Bridge install
-- :mod:`scripts.gar_lib._code` — ``gar code``
-- :mod:`scripts.gar_lib._deploy` — ``gar sim env deploy`` / ``gar target deploy``
-- :mod:`scripts.gar_lib._ec2` — ``gar sim boot`` / ``shutdown`` / ``status``
-- :mod:`scripts.gar_lib._hw` — ``gar hw``
-- :mod:`scripts.gar_lib._infra` — ``gar sim infra``
-- :mod:`scripts.gar_lib._sim` — ``gar sim``
-- :mod:`scripts.gar_lib._terminal` — ``gar terminal``
-- :mod:`scripts.gar_lib._usb` — ``gar usb``
-- :mod:`scripts.gar_lib._setup` — ``gar setup``
+- :mod:`scripts.gar_lib.integrations.terminal_ui` — color / safe_input helpers
+- :mod:`scripts.gar_lib.config` — config IO, paths, EC2 host helpers
+- :mod:`scripts.gar_lib.integrations.vscode` — VSCode terminal profile / Bridge install
+- :mod:`scripts.gar_lib.commands.code` — ``gar code``
+- :mod:`scripts.gar_lib.commands.deploy` — ``gar sim env deploy`` / ``gar target deploy``
+- :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
+- :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
+- :mod:`scripts.gar_lib.commands.shim` — ``gar shim``
+- :mod:`scripts.gar_lib.commands.sim` — ``gar sim``
+- :mod:`scripts.gar_lib.commands.terminal` — ``gar terminal``
+- :mod:`scripts.gar_lib.commands.usb` — ``gar usb``
+- :mod:`scripts.gar_lib.commands.setup` — ``gar setup``
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # Re-exports — keep public surface stable for callers and tests.
-from scripts.gar_lib._code import (  # noqa: F401
+from scripts.gar_lib.commands.code import (  # noqa: F401
+    boot_code_codespace,
     codespace_list_rows,
     codespace_terminal_script,
     detect_codespace_workspace,
@@ -37,10 +38,11 @@ from scripts.gar_lib._code import (  # noqa: F401
     select_codespace_from_list,
     shutdown_code_codespace,
     start_code_codespace,
+    status_code_codespace,
     stop_code_codespace,
     unmount_codespace_code,
 )
-from scripts.gar_lib._config import (  # noqa: F401
+from scripts.gar_lib.config import (  # noqa: F401
     CONFIG_PATH,
     PROJECT_ROOT,
     VSCODE_EXT_NAME,
@@ -51,7 +53,7 @@ from scripts.gar_lib._config import (  # noqa: F401
     save_config,
     set_default_ec2_host,
 )
-from scripts.gar_lib._deploy import (  # noqa: F401
+from scripts.gar_lib.commands.deploy import (  # noqa: F401
     DEFAULT_CODESPACE_ARTIFACT_ROOT,
     adb_device_available,
     artifact_deploy_files,
@@ -70,38 +72,40 @@ from scripts.gar_lib._deploy import (  # noqa: F401
     resolve_artifact_src,
     run_deploy_command,
     select_codespace,
-    selected_device_provider_id,
+    selected_target_access_provider_id,
     target_dest_path,
 )
-from scripts.gar_lib._ec2 import (  # noqa: F401
+from scripts.gar_lib.environments.registry.simulation.aws_ec2 import (  # noqa: F401
     ec2_instance_state,
     ec2_public_ip,
     run_ec2_command,
     update_ssh_config_hostname,
 )
-from scripts.gar_lib._esp32_flash import (  # noqa: F401
-    DEFAULT_ESP32_ARTIFACT_ROOT,
-    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-    DEFAULT_ESP32_PIO_ENV,
+from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (  # noqa: F401
     ensure_esptool_python,
     esp32_serial_port_access_error,
-    fetch_esp32_codespace_artifact,
-    find_latest_esp32_artifact,
     normalize_esp32_serial_port,
-    parse_esp32_build_artifact_path,
-    resolve_esp32_artifact_dir,
-    run_esp32_build_command,
     run_esp32_flash_command,
     validate_esp32_artifact,
     verify_esp32_artifact_checksums,
 )
-from scripts.gar_lib._hw import (  # noqa: F401
+from scripts.gar_lib.commands.esp32_firmware import (  # noqa: F401
+    DEFAULT_ESP32_ARTIFACT_ROOT,
+    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+    DEFAULT_ESP32_PIO_ENV,
+    fetch_esp32_codespace_artifact,
+    find_latest_esp32_artifact,
+    parse_esp32_build_artifact_path,
+    resolve_esp32_artifact_dir,
+    run_esp32_build_command,
+)
+from scripts.gar_lib.commands.hw import (  # noqa: F401
     HW_TEMPLATE_FILES,
     run_hw_command,
     write_hw_template,
 )
-from scripts.gar_lib._infra import run_sim_infra_command  # noqa: F401
-from scripts.gar_lib._setup import (  # noqa: F401
+from scripts.gar_lib.commands.infra import run_sim_infra_command  # noqa: F401
+from scripts.gar_lib.commands.setup import (  # noqa: F401
     configure_default_ec2_host,
     ensure_provider_dependencies,
     first_unconfigured_category_index,
@@ -114,7 +118,8 @@ from scripts.gar_lib._setup import (  # noqa: F401
     select_setup_category,
     unconfigured_categories,
 )
-from scripts.gar_lib._sim import (  # noqa: F401
+from scripts.gar_lib.commands.shim import run_shim_command  # noqa: F401
+from scripts.gar_lib.commands.sim import (  # noqa: F401
     run_gpio_sim_check,
     run_sim_command,
     run_sim_diag_json,
@@ -126,11 +131,11 @@ from scripts.gar_lib._sim import (  # noqa: F401
     stop_sim_port_forward,
     write_sim_terminal_profile,
 )
-from scripts.gar_lib._terminal import (  # noqa: F401
+from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
 )
-from scripts.gar_lib._ui import (  # noqa: F401
+from scripts.gar_lib.integrations.terminal_ui import (  # noqa: F401
     BLUE,
     BOLD,
     CYAN,
@@ -142,13 +147,13 @@ from scripts.gar_lib._ui import (  # noqa: F401
     safe_input,
     style,
 )
-from scripts.gar_lib._usb import (  # noqa: F401
+from scripts.gar_lib.commands.usb import (  # noqa: F401
     UsbDevice,
     list_usb_devices,
     parse_usbipd_list,
     run_usb_command,
 )
-from scripts.gar_lib._vscode import (  # noqa: F401
+from scripts.gar_lib.integrations.vscode import (  # noqa: F401
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
     remove_vscode_terminal_profile,
@@ -159,8 +164,16 @@ from scripts.gar_lib.environments.discovery import (  # noqa: F401
 )
 
 SIM_VM_COMMAND_MAP = {
-    "boot": "start",
-    "shutdown": "stop",
+    "start": "start",
+    "stop": "stop",
+    "status": "status",
+}
+
+CODE_COMMAND_MAP = {
+    "boot": "boot",
+    "start": "start",
+    "stop": "stop",
+    "shutdown": "shutdown",
     "status": "status",
 }
 
@@ -260,6 +273,26 @@ def _run_with_json_summary(command_label: str, json_output: bool, func) -> int:
     return exit_code
 
 
+def add_code_start_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--target",
+        "--codespace",
+        dest="codespace",
+        default=None,
+        metavar="TARGET",
+        help="接続する development target 名",
+    )
+    parser.add_argument("--remote-path", default=None, help="Codespace 側 workspace path")
+    parser.add_argument("--mount-dir", default=None, help="WSL 側 sshfs mount path")
+    parser.add_argument("--settings", default=None, help="VS Code settings.json path")
+    parser.add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
+    parser.add_argument(
+        "--no-mount",
+        action="store_true",
+        help="sshfs mount を更新せず、SSH 設定と terminal profile だけ更新します",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gar")
     subparsers = parser.add_subparsers(dest="command", metavar="command")
@@ -278,30 +311,45 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="gar sim が既定で使う SSH config 上の runtime host 名",
     )
+    setup_parser.add_argument(
+        "--esp32-port",
+        default=None,
+        help="ESP32 esptool provider が使う serial port を保存します（例: COM3, /dev/ttyUSB0）",
+    )
     code_parser = subparsers.add_parser(
         "code",
         help="Build Artifacts workspace との接続を管理します",
     )
     code_subparsers = code_parser.add_subparsers(dest="code_command", metavar="command")
+    code_boot_parser = code_subparsers.add_parser(
+        "boot",
+        help="development target を起動します",
+    )
+    code_boot_parser.add_argument(
+        "--target",
+        "--codespace",
+        dest="codespace",
+        default=None,
+        metavar="TARGET",
+        help="起動する development target 名",
+    )
     code_start_parser = code_subparsers.add_parser(
         "start",
         help="Codespace build workspace を WSL hub から見えるようにします",
     )
-    code_start_parser.add_argument("--codespace", default=None, help="接続する Codespace 名")
-    code_start_parser.add_argument("--remote-path", default=None, help="Codespace 側 workspace path")
-    code_start_parser.add_argument("--mount-dir", default=None, help="WSL 側 sshfs mount path")
-    code_start_parser.add_argument("--settings", default=None, help="VS Code settings.json path")
-    code_start_parser.add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
-    code_start_parser.add_argument(
-        "--no-mount",
-        action="store_true",
-        help="sshfs mount を更新せず、SSH 設定と terminal profile だけ更新します",
-    )
+    add_code_start_arguments(code_start_parser)
     code_stop_parser = code_subparsers.add_parser(
         "stop",
         help="Codespace build workspace の WSL hub 側接続を停止します",
     )
-    code_stop_parser.add_argument("--codespace", default=None, help="停止する Codespace 名")
+    code_stop_parser.add_argument(
+        "--target",
+        "--codespace",
+        dest="codespace",
+        default=None,
+        metavar="TARGET",
+        help="停止する development target 名",
+    )
     code_stop_parser.add_argument("--mount-dir", default=None, help="WSL 側 sshfs mount path")
     code_stop_parser.add_argument("--settings", default=None, help="VS Code settings.json path")
     code_stop_parser.add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
@@ -312,9 +360,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     code_shutdown_parser = code_subparsers.add_parser(
         "shutdown",
-        help="GitHub Codespace VM を停止します",
+        help="development target を停止します",
     )
-    code_shutdown_parser.add_argument("--codespace", default=None, help="停止する Codespace 名")
+    code_shutdown_parser.add_argument(
+        "--target",
+        "--codespace",
+        dest="codespace",
+        default=None,
+        metavar="TARGET",
+        help="停止する development target 名",
+    )
+    code_status_parser = code_subparsers.add_parser(
+        "status",
+        help="Codespace VM / 接続状態を確認します",
+    )
+    code_status_parser.add_argument(
+        "--target",
+        "--codespace",
+        dest="codespace",
+        default=None,
+        metavar="TARGET",
+        help="確認する development target 名",
+    )
+    code_status_parser.add_argument("--mount-dir", default=None, help="WSL 側 sshfs mount path")
 
     terminal_parser = subparsers.add_parser(
         "terminal",
@@ -362,12 +430,28 @@ def build_parser() -> argparse.ArgumentParser:
     completion_words_parser.add_argument("--cword", type=int, required=True)
     completion_words_parser.add_argument("words", nargs=argparse.REMAINDER)
 
+    shim_parser = subparsers.add_parser(
+        "shim",
+        help="setup 済み target の simulation/target access shim をビルドします",
+    )
+    shim_subparsers = shim_parser.add_subparsers(dest="shim_command", metavar="command")
+    shim_build_parser = shim_subparsers.add_parser(
+        "build",
+        help="setup 済み target/provider に対応する shim artifact をビルドします",
+    )
+    shim_build_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
+    )
+
     sim_parser = subparsers.add_parser("sim", help="simulation VM / services / virtual H/W を操作します")
     sim_subparsers = sim_parser.add_subparsers(dest="sim_command", metavar="command")
     for sim_vm_command_name, ec2_command_name in SIM_VM_COMMAND_MAP.items():
         help_text = {
-            "boot": "simulation VM を起動します",
-            "shutdown": "simulation VM を停止します",
+            "start": "simulation VM を起動します",
+            "stop": "simulation VM を停止します",
             "status": "simulation VM の状態を確認します",
         }[sim_vm_command_name]
         sim_vm_command_parser = sim_subparsers.add_parser(
@@ -453,7 +537,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sim_app_deploy_parser = sim_subparsers.add_parser(
         "deploy",
-        help="target app を VM へ転送します（artifact.json の deploy.sim セクション）",
+        help="target app を VM へ転送します（artifact.json の deploy.app セクション）",
     )
     sim_app_deploy_parser.add_argument(
         "--host",
@@ -507,29 +591,6 @@ def build_parser() -> argparse.ArgumentParser:
         _p.add_argument("--region", default=None, help="AWS region")
         _p.add_argument("--auto-approve", action="store_true", help="--auto-approve を terraform に渡します")
 
-    sim_gpio_parser = sim_subparsers.add_parser(
-        "gpio", help="互換 alias: `gar sim env gpio` を使ってください"
-    )
-    sim_gpio_subparsers = sim_gpio_parser.add_subparsers(dest="gpio_command", metavar="command")
-    for gpio_command_name in ("plan", "install", "start", "stop", "status"):
-        gpio_command_parser = sim_gpio_subparsers.add_parser(
-            gpio_command_name,
-            help=f"GPIO runtime: {gpio_command_name}",
-        )
-        if gpio_command_name != "plan":
-            gpio_command_parser.add_argument(
-                "--host",
-                default=None,
-                help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
-            )
-        if gpio_command_name in ("plan", "status"):
-            gpio_command_parser.add_argument(
-                "--json",
-                dest="json_output",
-                action="store_true",
-                help="結果を機械可読な JSON で出力します（AI / CI 向け）",
-            )
-
     target_parser = subparsers.add_parser(
         "target",
         help="接続先が提供する I/O を使う runtime を操作します",
@@ -566,7 +627,12 @@ def build_parser() -> argparse.ArgumentParser:
     target_deploy_parser.add_argument(
         "--serial",
         default=None,
-        help="adb device serial。省略時は adb の既定接続先",
+        help="adb device serial。esp32_esptool provider では serial port としても扱います",
+    )
+    target_deploy_parser.add_argument(
+        "--port",
+        default=None,
+        help="esp32_esptool provider 利用時の serial port。例: /dev/ttyACM0, /dev/ttyUSB0, COM3",
     )
     target_deploy_parser.add_argument(
         "--host",
@@ -750,10 +816,10 @@ def build_parser() -> argparse.ArgumentParser:
         "code": code_parser,
         "terminal": terminal_parser,
         "completion": completion_parser,
+        "shim": shim_parser,
         "sim": sim_parser,
         "sim_env": sim_env_parser,
         "sim_infra": sim_infra_parser,
-        "sim_gpio": sim_gpio_parser,
         "target": target_parser,
         "usb": usb_parser,
         "hw": hw_parser,
@@ -773,13 +839,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise
 
     if args.command == "setup":
-        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host)
+        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host, esp32_port=args.esp32_port)
     if args.command == "code":
         if args.code_command is None:
             subcommand_parsers["code"].print_help()
             return 1
         return run_code_command(
-            args.code_command,
+            CODE_COMMAND_MAP[args.code_command],
             codespace=getattr(args, "codespace", None),
             remote_path=getattr(args, "remote_path", None),
             mount_dir=getattr(args, "mount_dir", None),
@@ -810,6 +876,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         subcommand_parsers["completion"].print_help()
         return 1
+    if args.command == "shim":
+        if args.shim_command is None:
+            subcommand_parsers["shim"].print_help()
+            return 1
+        return run_shim_command(
+            args.shim_command,
+            json_output=getattr(args, "json_output", False),
+        )
     if args.command == "sim":
         if args.sim_command is None:
             subcommand_parsers["sim"].print_help()
@@ -868,15 +942,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 region=getattr(args, "region", None),
                 auto_approve=getattr(args, "auto_approve", False),
             )
-        if args.sim_command == "gpio":
-            if args.gpio_command is None:
-                subcommand_parsers["sim_gpio"].print_help()
-                return 1
-            return run_sim_gpio_command(
-                args.gpio_command,
-                host=getattr(args, "host", None),
-                json_output=getattr(args, "json_output", False),
-            )
         subcommand_parsers["sim"].print_help()
         return 1
     if args.command == "target":
@@ -888,6 +953,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "target",
                 artifacts_dir=args.artifacts_dir,
                 serial=args.serial,
+                port=args.port,
                 host=args.host,
                 dest=args.dest,
                 codespace=args.codespace,

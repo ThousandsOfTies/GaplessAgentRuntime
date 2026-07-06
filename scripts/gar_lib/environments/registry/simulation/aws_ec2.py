@@ -1,4 +1,4 @@
-"""Simulation VM control for `gar sim boot/shutdown/status` over AWS CLI.
+"""Simulation VM control for `gar sim start/stop/status` over AWS CLI.
 
 旧 Windows PowerShell EC2 helper の Python 移植。WSL2 から AWS CLI を呼び、起動後は public IP を
 取得して ``~/.ssh/config`` の対象 Host の ``HostName`` を更新する。
@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.gar_lib._config import (
+from scripts.gar_lib.config import (
     default_ec2_host,
     default_ec2_instance_id,
     default_ec2_region,

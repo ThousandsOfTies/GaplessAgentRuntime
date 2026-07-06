@@ -4,21 +4,24 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
-from scripts.gar_lib._config import (
+from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
     save_config,
+    saved_esp32_serial_port,
     set_default_ec2_host,
+    set_saved_esp32_serial_port,
 )
-from scripts.gar_lib._hw import load_hw_definition
-from scripts.gar_lib._targets import (
+from scripts.gar_lib.commands.hw import load_hw_definition
+from scripts.gar_lib.gar_tools import (
     TargetManifest,
     discover_target_manifests,
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib._ui import (
+from scripts.gar_lib.integrations.terminal_ui import (
     BLUE,
     BOLD,
     CYAN,
@@ -29,7 +32,7 @@ from scripts.gar_lib._ui import (
     safe_input,
     style,
 )
-from scripts.gar_lib._vscode import (
+from scripts.gar_lib.integrations.vscode import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
 )
@@ -41,7 +44,7 @@ from scripts.gar_lib.sim.wokwi import WokwiSimProvider
 SKIP_CATEGORY = object()
 
 
-def run_setup(no_install: bool = False, ec2_host: str | None = None) -> int:
+def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None) -> int:
     providers = discover_environment_providers()
     if not providers:
         print("接続環境プロバイダが見つかりません。", file=sys.stderr)
@@ -125,6 +128,10 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None) -> int:
     print_terminal_bridge_status(offer_install=not no_install)
     print()
     configure_default_ec2_host(config, ec2_host=ec2_host)
+    print()
+    configure_esp32_serial_port(config, esp32_port=esp32_port)
+    print()
+    print_target_next_steps(config)
     print()
 
     if optional_missing_categories:
@@ -217,6 +224,79 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
         print(f"  {style('更新しました:', GREEN)} {selected_host}")
 
 
+def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) -> None:
+    selected_target_access = config.get("selected_providers", {}).get("target_access")
+    selected_target = config.get("selected_target")
+    if selected_target_access != "esp32_esptool" or selected_target != "esp32":
+        return
+
+    current_port = saved_esp32_serial_port(config)
+    candidates = detect_esp32_serial_port_candidates()
+    default_port = current_port or (candidates[0] if len(candidates) == 1 else None)
+
+    print(style("ESP32 Serial Port:", BOLD, BLUE))
+    if esp32_port:
+        set_saved_esp32_serial_port(config, esp32_port)
+        save_config(config)
+        print(f"  {style('更新しました:', GREEN)} {style(esp32_port, BOLD)}")
+        return
+
+    if current_port:
+        print(f"  {style('設定済み', GREEN)} {style(current_port, BOLD)}")
+    elif default_port:
+        print(f"  {style('候補', YELLOW)} {style(default_port, BOLD)}")
+    else:
+        print(f"  {style('未設定', YELLOW)}")
+        print(f"     {style('gar target deploy が使う serial port を setup で保存できます。', DIM)}")
+
+    if candidates:
+        print(f"     {style('検出候補:', DIM)} {', '.join(candidates)}")
+    if not sys.stdin.isatty():
+        if not current_port:
+            print(f"     {style('保存するには対話 terminal で gar setup を実行するか、gar target deploy --port COM3 を使ってください。', DIM)}")
+        return
+
+    prompt_default = default_port or ""
+    answer = safe_input(
+        f"ESP32 serial port を入力してください"
+        f"{f' [{prompt_default}]' if prompt_default else ' (例: COM3, /dev/ttyUSB0)'}: ",
+        default_on_eof=prompt_default,
+    ).strip()
+    selected_port = answer or prompt_default
+    if selected_port:
+        set_saved_esp32_serial_port(config, selected_port)
+        save_config(config)
+        print(f"  {style('更新しました:', GREEN)} {selected_port}")
+
+
+def detect_esp32_serial_port_candidates() -> list[str]:
+    patterns = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/ttyS*")
+    candidates: list[str] = []
+    for pattern in patterns:
+        for path in sorted(Path("/").glob(pattern.removeprefix("/"))):
+            if path.exists():
+                candidates.append(str(path))
+    return candidates
+
+
+def print_target_next_steps(config: dict) -> None:
+    selected_simulation = config.get("selected_providers", {}).get("simulation")
+    if selected_simulation != "wokwi":
+        return
+
+    print(style("次の操作フェーズ:", BOLD, BLUE))
+    print(f"  {style('1. Wokwi firmware/shim をビルド:', BOLD)}")
+    print("    scripts/gar shim build")
+    print(f"     {style('このtargetのWokwi build入口です。workspace生成後、内部で m5stickc-client の make wokwi-build を実行します。', DIM)}")
+    print(f"     {style('workspace生成だけをしたい場合: cd ../gar-vibe-ui/vibe-remote/m5stickc-client && make wokwi-workspace', DIM)}")
+    print(f"  {style('2. Wokwi simulation を起動:', BOLD)}")
+    print("    PATH=\"$HOME/bin:$HOME/.venvs/platformio/bin:$PATH\" scripts/gar sim env start --no-port-forward")
+    print(f"  {style('3. 人間がUIを確認:', BOLD)}")
+    print("    code .gar/wokwi/m5stackc")
+    print(f"     {style('VS Codeで diagram.json を開き、Wokwi の再生ボタンで確認します。', DIM)}")
+    print(f"     {style('AIはこのフェーズ表を見て、未定義のgarコマンドではなく現在の実装済み入口を選びます。', DIM)}")
+
+
 def configure_target(
     config: dict,
     targets: Sequence[TargetManifest],
@@ -273,7 +353,7 @@ def managed_backend_categories() -> set[str]:
     return {
         "development",
         "simulation",
-        "device",
+        "target_access",
         "boot",
         "hostLink",
         "probe",
@@ -351,7 +431,7 @@ def optional_setup_categories(config: dict, targets: Sequence[TargetManifest]) -
         return set()
     optional = {"simulation"}
     if target.default_backends.get("simulation") == "wokwi":
-        optional.add("device")
+        optional.add("target_access")
     return optional
 
 

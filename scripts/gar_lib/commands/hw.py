@@ -6,8 +6,8 @@ import csv
 import shutil
 from pathlib import Path
 
-from scripts.gar_lib._config import PROJECT_ROOT
-from scripts.gar_lib._targets import gar_tools_root
+from scripts.gar_lib.config import PROJECT_ROOT
+from scripts.gar_lib.gar_tools import gar_tools_root
 
 HW_TEMPLATE_FILES: dict[str, list[str]] = {
     "components.csv": [

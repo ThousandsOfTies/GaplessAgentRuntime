@@ -62,15 +62,15 @@ gar sim infra apply  # インスタンスを作成・SSH config 更新
 ```
 
 `gar sim infra setup` は `.gar/config.json` と Terraform output から現在値を表示したうえで、Terraform plan を実行する。
-`gar sim infra apply` は apply 後に instance_id / public_ip を `.gar/config.json` へ保存し、`~/.ssh/config` の HostName を自動更新する（`gar sim boot` 相当の後処理も含む）。
+`gar sim infra apply` は apply 後に instance_id / public_ip を `.gar/config.json` へ保存し、`~/.ssh/config` の HostName を自動更新する（`gar sim start` 相当の後処理も含む）。
 
 ### 起動・停止（既存インスタンス）
 
-インスタンス作成後の日常的な起動停止は `gar sim boot` / `gar sim shutdown` を使う。
+インスタンス作成後の日常的な起動停止は `gar sim start` / `gar sim stop` を使う。
 
 ```bash
-gar sim boot     # 起動 + SSH config 更新
-gar sim shutdown # 停止
+gar sim start     # 起動 + SSH config 更新
+gar sim stop      # 停止
 ```
 
 ### アプリ・runtime のデプロイ

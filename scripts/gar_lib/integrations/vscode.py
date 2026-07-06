@@ -7,7 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from scripts.gar_lib._config import (
+from scripts.gar_lib.config import (
     PROJECT_ROOT,
     VSCODE_EXT_NAME,
     VSCODE_EXT_VERSION,

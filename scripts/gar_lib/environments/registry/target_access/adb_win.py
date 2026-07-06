@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from scripts.gar_lib._config import (
+from scripts.gar_lib.config import (
     load_config,
     save_config,
     saved_adb_exe,

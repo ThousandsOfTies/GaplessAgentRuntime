@@ -99,8 +99,6 @@ gar sim stop
 | `gar sim start [--pull]` | シミュレーションホストを起動し、SSH接続設定を更新（`--pull` で最新の `gar-tools` 等を git pull） |
 | `gar sim stop` | シミュレーションホストを停止（インスタンスは削除されず、課金が抑えられます） |
 | `gar sim status` | ホストの現在の実行状態を表示 |
-| `gar sim boot` | `gar sim start` の互換名コマンド |
-| `gar sim shutdown` | `gar sim stop` の互換名コマンド |
 
 #### 仮想デバイス環境管理 (`gar sim env`)
 | コマンド | 内容 |
@@ -135,7 +133,7 @@ gar sim stop
 | コマンド | 内容 |
 |---|---|
 | `gar target build` | setup 済み target の実機用 artifact を最新化（現在は ESP32/M5Stack firmware build 経路に委譲） |
-| `gar target deploy` | `target.artifact` と `target.device` を解決し、最新 artifact を実機へ反映（target graph 化中） |
+| `gar target deploy` | `target.artifact` と `target.access` を解決し、最新 artifact を実機へ反映（target graph 化中） |
 
 低レベルコマンド:
 

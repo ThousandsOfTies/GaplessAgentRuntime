@@ -28,7 +28,7 @@ RasPi5
 |---|---|
 | Windows / WSL2 | WSL2 Ubuntu から `git`, `python3`, `make` が使える |
 | GitHub | Codespaces を使える。`gh auth login` 済み、または途中でログインできる |
-| EC2 simulation host | `gar sim boot` で起動できる EC2 設定がある |
+| EC2 simulation host | `gar sim start` で起動できる EC2 設定がある |
 | RasPi5 | Raspberry Pi OS が起動し、実 H/W 配線済み |
 | 実機接続 | 既定は USB-C + adb。ネットワーク接続できる場合は SSH/scp でもよい |
 | ビルド成果物 | Codespace 側で artifact bundle を作れる target repo がある |
@@ -167,7 +167,7 @@ cat /workspaces/gar-build-env/artifacts/from-codespace/artifact.json
 WSL Hub 側で:
 
 ```bash
-gar sim boot
+gar sim start
 gar sim env deploy
 gar sim env start
 gar sim env diag --json
@@ -216,7 +216,7 @@ simulation を止める場合:
 
 ```bash
 gar sim env stop
-gar sim shutdown
+gar sim stop
 ```
 
 ## 6. RasPi5 実機を準備する
@@ -458,7 +458,7 @@ gar code start
 
 # Codespace 側で target repo をビルドし artifact bundle を作る
 
-gar sim boot
+gar sim start
 gar sim env deploy
 gar sim env start
 gar sim env diag --json

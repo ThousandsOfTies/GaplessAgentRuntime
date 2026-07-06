@@ -9,8 +9,8 @@ import sys
 import textwrap
 from urllib.parse import quote
 
-from scripts.gar_lib._hw import load_hw_definition
-from scripts.gar_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.gar_lib.commands.hw import load_hw_definition
+from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 
@@ -683,7 +683,7 @@ class LinuxSystemdSimProvider(SimProvider):
                     )
             return 0
 
-        print(f"unknown sim gpio command: {command}", file=sys.stderr)
+        print(f"unknown sim env gpio command: {command}", file=sys.stderr)
         return 1
 
     def panel(self, action: str, params: dict, json_output: bool = False) -> int:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 CONFIG_PATH = Path(".gar") / "config.json"
 
-# scripts/gar_lib/_config.py -> scripts/gar_lib -> scripts -> repo root
+# scripts/gar_lib/config.py -> scripts/gar_lib -> scripts -> repo root
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 VSCODE_EXT_NAME = "gar-terminal-bridge"
@@ -88,6 +88,11 @@ def load_config() -> dict:
         if isinstance(adb.get("version"), str) and adb["version"]:
             adb_version = adb["version"]
 
+    esp32 = data.get("esp32")
+    esp32_port = None
+    if isinstance(esp32, dict) and isinstance(esp32.get("port"), str) and esp32["port"]:
+        esp32_port = esp32["port"]
+
     return {
         **({"selected_target": selected_target} if selected_target else {}),
         "selected_providers": {
@@ -101,6 +106,7 @@ def load_config() -> dict:
             **({"repo_dir": ec2_repo_dir} if ec2_repo_dir else {}),
         },
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
+        **({"esp32": {"port": esp32_port}} if esp32_port else {}),
         **(
             {
                 "adb": {
@@ -194,6 +200,21 @@ def set_saved_usb_busid(config: dict, busid: str) -> None:
         usb = {}
         config["usb"] = usb
     usb["busid"] = busid
+
+
+def saved_esp32_serial_port(config: dict) -> str | None:
+    esp32 = config.get("esp32")
+    if isinstance(esp32, dict) and isinstance(esp32.get("port"), str) and esp32["port"]:
+        return esp32["port"]
+    return None
+
+
+def set_saved_esp32_serial_port(config: dict, port: str) -> None:
+    esp32 = config.setdefault("esp32", {})
+    if not isinstance(esp32, dict):
+        esp32 = {}
+        config["esp32"] = esp32
+    esp32["port"] = port
 
 
 def saved_adb_exe(config: dict) -> str | None:

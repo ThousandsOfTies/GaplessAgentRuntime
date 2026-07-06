@@ -44,7 +44,7 @@ class SshRemoteEnvironment(DevEnvironment):
     def start_port_forward(cls, target: str) -> int:
         import subprocess
 
-        from scripts.gar_lib._config import PROJECT_ROOT
+        from scripts.gar_lib.config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target],
             check=False,
@@ -54,7 +54,7 @@ class SshRemoteEnvironment(DevEnvironment):
     def stop_port_forward(cls, target: str) -> int:
         import subprocess
 
-        from scripts.gar_lib._config import PROJECT_ROOT
+        from scripts.gar_lib.config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target, "--stop"],
             check=False,
@@ -64,7 +64,7 @@ class SshRemoteEnvironment(DevEnvironment):
     def status_port_forward(cls, target: str) -> int:
         import subprocess
 
-        from scripts.gar_lib._config import PROJECT_ROOT
+        from scripts.gar_lib.config import PROJECT_ROOT
         return subprocess.run(
             [str(PROJECT_ROOT / "tools" / "forward_ec2_ports.sh"), "--host", target, "--status"],
             check=False,

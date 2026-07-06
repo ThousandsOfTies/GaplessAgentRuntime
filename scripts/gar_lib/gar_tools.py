@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.gar_lib._config import PROJECT_ROOT
+from scripts.gar_lib.config import PROJECT_ROOT
 
 DEFAULT_GAR_TOOLS_REPO = "https://github.com/ThousandsOfTies/gar-tools"
 

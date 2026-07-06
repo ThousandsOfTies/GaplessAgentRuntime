@@ -82,6 +82,54 @@ class GitHubCodespacesEnvironment(DevEnvironment):
         return cls.run_subprocess(argv)
 
     @classmethod
+    def code_command(
+        cls,
+        command: str,
+        *,
+        target: str | None = None,
+        remote_path: str | None = None,
+        mount_dir: str | None = None,
+        settings: str | None = None,
+        profile_name: str | None = None,
+        no_mount: bool = False,
+        shutdown: bool = False,
+        timeout: int | None = None,
+    ) -> int:
+        from scripts.gar_lib.commands import code as code_command
+
+        if command == "boot":
+            return code_command.boot_code_codespace(codespace=target, gh_timeout=timeout)
+        if command == "start":
+            return code_command.start_code_codespace(
+                codespace=target,
+                remote_path=remote_path,
+                mount_dir=mount_dir,
+                settings=settings,
+                profile_name=profile_name,
+                no_mount=no_mount,
+                gh_timeout=timeout,
+            )
+        if command == "stop":
+            return code_command.stop_code_codespace(
+                codespace=target,
+                mount_dir=mount_dir,
+                settings=settings,
+                profile_name=profile_name,
+                shutdown=shutdown,
+                gh_timeout=timeout,
+            )
+        if command == "shutdown":
+            return code_command.shutdown_code_codespace(codespace=target, gh_timeout=timeout)
+        if command == "status":
+            return code_command.status_code_codespace(
+                codespace=target,
+                mount_dir=mount_dir,
+                gh_timeout=timeout,
+            )
+
+        raise NotImplementedError(f"{cls.__name__} does not implement gar code {command}")
+
+    @classmethod
     def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
         import subprocess
         argv = ["gh", "codespace", "ssh", "-c", target, "--", command]

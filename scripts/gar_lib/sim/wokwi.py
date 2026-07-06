@@ -12,8 +12,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.gar_lib._config import PROJECT_ROOT
-from scripts.gar_lib._targets import gar_tools_root
+from scripts.gar_lib.config import PROJECT_ROOT
+from scripts.gar_lib.gar_tools import gar_tools_root
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
 

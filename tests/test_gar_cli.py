@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from scripts.gar_lib._sim import run_sim_panel
-from scripts.gar_lib._sim_parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
-from scripts.gar_lib._targets import TargetManifest, discover_target_manifests, ensure_gar_tools_available
+from scripts.gar_lib.commands.sim import run_sim_panel
+from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.cli import (
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
@@ -27,6 +27,7 @@ from scripts.gar_lib.cli import (
     normalize_question_help,
     parse_esp32_build_artifact_path,
     parse_usbipd_list,
+    run_code_command,
     run_deploy_command,
     run_ec2_command,
     run_esp32_build_command,
@@ -87,20 +88,20 @@ class MissingSimulationProvider(DevEnvironment):
     required_commands = ("missing-sim-command",)
 
 
-class DeviceProvider(DevEnvironment):
+class TargetAccessProvider(DevEnvironment):
     provider_id = "device_test"
     display_name = "Device Test"
-    description = "device"
-    category_id = "device"
+    description = "target_access"
+    category_id = "target_access"
     category_name = "実機環境"
     required_commands = ()
 
 
-class MissingProvider(DevEnvironment):
+class MissingTargetAccessProvider(DevEnvironment):
     provider_id = "missing_test"
     display_name = "Missing Test"
     description = "missing"
-    category_id = "device"
+    category_id = "target_access"
     category_name = "実機環境"
     required_commands = ("missing-command",)
 
@@ -110,7 +111,6 @@ class GarCliTest(unittest.TestCase):
         cases = [
             (["?"], "usage: gar", "code"),
             (["code", "?"], "usage: gar code", "start"),
-            (["sim", "gpio", "?"], "usage: gar sim gpio", "plan"),
             (["sim", "env", "gpio", "?"], "usage: gar sim env gpio", "plan"),
         ]
 
@@ -131,6 +131,13 @@ class GarCliTest(unittest.TestCase):
             ["terminal", "run", "--", "echo", "?"],
             normalize_question_help(["terminal", "run", "--", "echo", "?"]),
         )
+
+    def test_shim_build_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_shim_command", return_value=0) as shim:
+            result = main(["shim", "build", "--json"])
+
+        self.assertEqual(0, result)
+        shim.assert_called_once_with("build", json_output=True)
 
     def test_completion_bash_script_uses_argcomplete(self) -> None:
         text = completion_bash_script()
@@ -153,11 +160,12 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         self.assertIn("env", output.getvalue().splitlines())
-        self.assertIn("gpio", output.getvalue().splitlines())
+        self.assertIn("start", output.getvalue().splitlines())
+        self.assertIn("stop", output.getvalue().splitlines())
         self.assertNotIn("ui", output.getvalue().splitlines())
 
     def test_setup_lists_only_selected_provider_for_configured_category(self) -> None:
-        providers = [DevelopmentProvider, SimulationProvider, DeviceProvider]
+        providers = [DevelopmentProvider, SimulationProvider, TargetAccessProvider]
         targets = [
             TargetManifest(
                 id="test-target",
@@ -167,7 +175,7 @@ class GarCliTest(unittest.TestCase):
                 default_backends={
                     "development": "development_test",
                     "simulation": "simulation_test",
-                    "device": "device_test",
+                    "target_access": "device_test",
                 },
                 backend_notes={},
             ),
@@ -177,15 +185,15 @@ class GarCliTest(unittest.TestCase):
             "selected_providers": {
                 "development": "development_test",
                 "simulation": "simulation_test",
-                "device": "device_test",
+                "target_access": "device_test",
             }
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", return_value=""),
         ):
             output = io.StringIO()
@@ -207,7 +215,7 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("初期化が完了しました。", text)
 
     def test_setup_defaults_to_first_unconfigured_category_provider(self) -> None:
-        providers = [DevelopmentProvider, MissingProvider]
+        providers = [DevelopmentProvider, MissingTargetAccessProvider]
         targets = [
             TargetManifest(
                 id="test-target",
@@ -216,7 +224,7 @@ class GarCliTest(unittest.TestCase):
                 tools_root="targets/test",
                 default_backends={
                     "development": "development_test",
-                    "device": "missing_test",
+                    "target_access": "missing_test",
                 },
                 backend_notes={},
             ),
@@ -227,10 +235,10 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "", "", "q"]),
         ):
             output = io.StringIO()
@@ -259,11 +267,11 @@ class GarCliTest(unittest.TestCase):
         config = {"selected_target": "test-target", "selected_providers": {}}
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "", "", "q"]),
         ):
             output = io.StringIO()
@@ -276,7 +284,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_provider_dependency_success_message_names_provider(self) -> None:
-        from scripts.gar_lib._setup import ensure_provider_dependencies
+        from scripts.gar_lib.commands.setup import ensure_provider_dependencies
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -287,7 +295,7 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("必要なコマンドはすべて見つかりました。", output.getvalue())
 
     def test_setup_saves_selected_target_when_interactive(self) -> None:
-        providers = [DevelopmentProvider, WokwiProvider, DeviceProvider]
+        providers = [DevelopmentProvider, WokwiProvider, TargetAccessProvider]
         targets = [
             TargetManifest(
                 id="linux-device",
@@ -309,13 +317,13 @@ class GarCliTest(unittest.TestCase):
         config = {"selected_providers": {"development": "development_test"}}
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.configure_default_ec2_host"),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["1", "2", "", "", "q"]),
         ):
@@ -353,10 +361,10 @@ class GarCliTest(unittest.TestCase):
         config = {"selected_providers": {}}
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["q"]),
         ):
@@ -390,12 +398,12 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.WokwiSimProvider.prepare_project", return_value=0) as prepare_project,
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             output = io.StringIO()
@@ -407,7 +415,7 @@ class GarCliTest(unittest.TestCase):
         prepare_project.assert_called_once()
 
     def test_setup_wokwi_flow_explains_required_and_optional_steps(self) -> None:
-        providers = [DevelopmentProvider, WokwiProvider, MissingProvider]
+        providers = [DevelopmentProvider, WokwiProvider, MissingTargetAccessProvider]
         targets = [
             TargetManifest(
                 id="esp32",
@@ -417,23 +425,23 @@ class GarCliTest(unittest.TestCase):
                 default_backends={
                     "development": "development_test",
                     "simulation": "wokwi",
-                    "device": "missing_test",
+                    "target_access": "missing_test",
                 },
                 backend_notes={},
             ),
         ]
         config = {
             "selected_target": "esp32",
-            "selected_providers": {"development": "development_test", "simulation": "wokwi", "device": "missing_test"},
+            "selected_providers": {"development": "development_test", "simulation": "wokwi", "target_access": "missing_test"},
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config"),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config"),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.WokwiSimProvider.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             output = io.StringIO()
@@ -456,6 +464,12 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("任意の設定:", text)
         self.assertNotIn("シミュレーション環境と実機書き込み環境は", text)
         self.assertNotIn("確認対象の状況:", text)
+        self.assertIn("次の操作フェーズ", text)
+        self.assertIn("make wokwi-workspace", text)
+        self.assertIn("scripts/gar shim build", text)
+        self.assertIn("make wokwi-build を実行します", text)
+        self.assertIn("scripts/gar sim env start --no-port-forward", text)
+        self.assertIn("人間がUIを確認", text)
         self.assertIn("シミュレート環境", text)
         self.assertIn("実機環境", text)
         self.assertIn("後で設定可", text)
@@ -486,10 +500,10 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             output = io.StringIO()
@@ -504,38 +518,38 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("未完了のセットアップ", text)
 
     def test_setup_defaults_to_optional_category_after_required_items(self) -> None:
-        from scripts.gar_lib._setup import first_unconfigured_category_index
+        from scripts.gar_lib.commands.setup import first_unconfigured_category_index
 
         categories = [
             ("development", "開発環境", [DevelopmentProvider]),
             ("simulation", "シミュレート環境", [WokwiProvider]),
-            ("device", "実機環境", [MissingProvider]),
+            ("target_access", "実機環境", [MissingTargetAccessProvider]),
         ]
         config = {
             "selected_providers": {
                 "development": "development_test",
                 "simulation": "wokwi",
-                "device": "missing_test",
+                "target_access": "missing_test",
             }
         }
 
         selected_index = first_unconfigured_category_index(
             categories,
             config,
-            optional_categories={"device"},
+            optional_categories={"target_access"},
         )
 
         self.assertEqual(3, selected_index)
 
     def test_setup_existing_target_goes_to_environment_overview_without_target_prompt(self) -> None:
-        providers = [DevelopmentProvider, WokwiProvider, DeviceProvider]
+        providers = [DevelopmentProvider, WokwiProvider, TargetAccessProvider]
         targets = [
             TargetManifest(
                 id="esp32",
                 display_name="ESP32",
                 description="esp32",
                 tools_root="targets/esp32",
-                default_backends={"development": "development_test", "simulation": "wokwi", "device": "device_test"},
+                default_backends={"development": "development_test", "simulation": "wokwi", "target_access": "device_test"},
                 backend_notes={},
             ),
             TargetManifest(
@@ -543,7 +557,7 @@ class GarCliTest(unittest.TestCase):
                 display_name="Linux Device",
                 description="linux",
                 tools_root="targets/linux-device",
-                default_backends={"development": "development_test", "simulation": "simulation_test", "device": "device_test"},
+                default_backends={"development": "development_test", "simulation": "simulation_test", "target_access": "device_test"},
                 backend_notes={},
             ),
         ]
@@ -552,7 +566,7 @@ class GarCliTest(unittest.TestCase):
             "selected_providers": {
                 "development": "development_test",
                 "simulation": "wokwi",
-                "device": "device_test",
+                "target_access": "device_test",
                 "boot": "esp32_qemu_firmware",
                 "hostLink": "fake-idf",
                 "probe": "spp-jsonl",
@@ -560,13 +574,13 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.configure_default_ec2_host"),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.WokwiSimProvider.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=[""]),
         ):
@@ -581,7 +595,7 @@ class GarCliTest(unittest.TestCase):
                 "selected_providers": {
                     "development": "development_test",
                     "simulation": "wokwi",
-                    "device": "device_test",
+                    "target_access": "device_test",
                 },
             }
         )
@@ -613,11 +627,11 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.configure_default_ec2_host"),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["2", "", "q"]),
         ):
@@ -633,14 +647,14 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("3. シミュレート環境", text[second_overview:])
 
     def test_setup_prunes_backends_removed_from_target_defaults(self) -> None:
-        providers = [DevelopmentProvider, WokwiProvider, DeviceProvider]
+        providers = [DevelopmentProvider, WokwiProvider, TargetAccessProvider]
         targets = [
             TargetManifest(
                 id="esp32",
                 display_name="ESP32",
                 description="esp32",
                 tools_root="targets/esp32",
-                default_backends={"development": "development_test", "simulation": "wokwi", "device": "device_test"},
+                default_backends={"development": "development_test", "simulation": "wokwi", "target_access": "device_test"},
                 backend_notes={},
             ),
         ]
@@ -649,7 +663,7 @@ class GarCliTest(unittest.TestCase):
             "selected_providers": {
                 "development": "development_test",
                 "simulation": "wokwi",
-                "device": "device_test",
+                "target_access": "device_test",
                 "boot": "esp32_qemu_firmware",
                 "hostLink": "fake-idf",
                 "probe": "spp-jsonl",
@@ -657,12 +671,12 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib._setup.WokwiSimProvider.prepare_project", return_value=0),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.WokwiSimProvider.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             with contextlib.redirect_stdout(io.StringIO()):
@@ -675,7 +689,7 @@ class GarCliTest(unittest.TestCase):
                 "selected_providers": {
                     "development": "development_test",
                     "simulation": "wokwi",
-                    "device": "device_test",
+                    "target_access": "device_test",
                 },
             }
         )
@@ -685,9 +699,9 @@ class GarCliTest(unittest.TestCase):
         config = {"selected_providers": {}}
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "q"]),
         ):
             output = io.StringIO()
@@ -701,8 +715,8 @@ class GarCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             with (
-                mock.patch("scripts.gar_lib._terminal.CONFIG_PATH", tmp_path / ".gar" / "config.json"),
-                mock.patch("scripts.gar_lib._terminal.Path.cwd", return_value=tmp_path),
+                mock.patch("scripts.gar_lib.commands.terminal.CONFIG_PATH", tmp_path / ".gar" / "config.json"),
+                mock.patch("scripts.gar_lib.commands.terminal.Path.cwd", return_value=tmp_path),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -729,9 +743,9 @@ class GarCliTest(unittest.TestCase):
         }
 
         with (
-            mock.patch("scripts.gar_lib._sim.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._sim.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.gar_lib._sim.show_sim_state", return_value=0) as state,
+            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.sim.status_sim_port_forward", return_value=0) as status,
+            mock.patch("scripts.gar_lib.commands.sim.show_sim_state", return_value=0) as state,
         ):
             result = run_sim_command("status")
 
@@ -749,13 +763,13 @@ class GarCliTest(unittest.TestCase):
             },
         }
         with (
-            mock.patch("scripts.gar_lib._ec2._aws_available", return_value=True),
-            mock.patch("scripts.gar_lib._ec2.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.environments.registry.simulation.aws_ec2._aws_available", return_value=True),
+            mock.patch("scripts.gar_lib.environments.registry.simulation.aws_ec2.load_config", return_value=config),
             mock.patch(
-                "scripts.gar_lib._ec2.ec2_instance_state", return_value="running"
+                "scripts.gar_lib.environments.registry.simulation.aws_ec2.ec2_instance_state", return_value="running"
             ) as state,
             mock.patch(
-                "scripts.gar_lib._ec2.ec2_public_ip", return_value="203.0.113.5"
+                "scripts.gar_lib.environments.registry.simulation.aws_ec2.ec2_public_ip", return_value="203.0.113.5"
             ) as ip,
         ):
             output = io.StringIO()
@@ -778,16 +792,16 @@ class GarCliTest(unittest.TestCase):
         }
         completed = mock.Mock(returncode=0, stdout="", stderr="")
         with (
-            mock.patch("scripts.gar_lib._ec2._aws_available", return_value=True),
-            mock.patch("scripts.gar_lib._ec2.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.environments.registry.simulation.aws_ec2._aws_available", return_value=True),
+            mock.patch("scripts.gar_lib.environments.registry.simulation.aws_ec2.load_config", return_value=config),
             mock.patch(
-                "scripts.gar_lib._ec2._run_aws", return_value=completed
+                "scripts.gar_lib.environments.registry.simulation.aws_ec2._run_aws", return_value=completed
             ) as run_aws,
             mock.patch(
-                "scripts.gar_lib._ec2.ec2_public_ip", return_value="203.0.113.5"
+                "scripts.gar_lib.environments.registry.simulation.aws_ec2.ec2_public_ip", return_value="203.0.113.5"
             ),
             mock.patch(
-                "scripts.gar_lib._ec2.update_ssh_config_hostname", return_value=True
+                "scripts.gar_lib.environments.registry.simulation.aws_ec2.update_ssh_config_hostname", return_value=True
             ) as update_ssh,
         ):
             output = io.StringIO()
@@ -819,11 +833,11 @@ class GarCliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with (
-                mock.patch("scripts.gar_lib._infra.TERRAFORM_DIR", Path(tmp)),
-                mock.patch("scripts.gar_lib._infra._terraform_available", return_value=True),
-                mock.patch("scripts.gar_lib._infra.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.infra.TERRAFORM_DIR", Path(tmp)),
+                mock.patch("scripts.gar_lib.commands.infra._terraform_available", return_value=True),
+                mock.patch("scripts.gar_lib.commands.infra.load_config", return_value=config),
                 mock.patch(
-                    "scripts.gar_lib._infra._run_terraform",
+                    "scripts.gar_lib.commands.infra._run_terraform",
                     side_effect=[completed, output_result, completed],
                 ) as run_tf,
             ):
@@ -865,16 +879,16 @@ class GarCliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with (
-                mock.patch("scripts.gar_lib._infra.TERRAFORM_DIR", Path(tmp)),
-                mock.patch("scripts.gar_lib._infra._terraform_available", return_value=True),
-                mock.patch("scripts.gar_lib._infra.load_config", return_value=config),
-                mock.patch("scripts.gar_lib._infra.save_config") as save_config,
+                mock.patch("scripts.gar_lib.commands.infra.TERRAFORM_DIR", Path(tmp)),
+                mock.patch("scripts.gar_lib.commands.infra._terraform_available", return_value=True),
+                mock.patch("scripts.gar_lib.commands.infra.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.infra.save_config") as save_config,
                 mock.patch(
-                    "scripts.gar_lib._infra._run_terraform",
+                    "scripts.gar_lib.commands.infra._run_terraform",
                     side_effect=[init_result, apply_result, output_result],
                 ) as run_tf,
                 mock.patch(
-                    "scripts.gar_lib._infra.update_ssh_config_hostname", return_value=True
+                    "scripts.gar_lib.commands.infra.update_ssh_config_hostname", return_value=True
                 ) as update_ssh,
             ):
                 result = run_sim_infra_command(
@@ -941,14 +955,14 @@ class GarCliTest(unittest.TestCase):
         )
         saved: dict = {}
         with (
-            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch("scripts.gar_lib.commands.usb._usbipd_executable", return_value="usbipd.exe"),
             mock.patch(
-                "scripts.gar_lib._usb.list_usb_devices",
+                "scripts.gar_lib.commands.usb.list_usb_devices",
                 return_value=parse_usbipd_list(output),
             ),
-            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
-            mock.patch("scripts.gar_lib._usb.save_config", side_effect=lambda c: saved.update(c)),
-            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+            mock.patch("scripts.gar_lib.commands.usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib.commands.usb.save_config", side_effect=lambda c: saved.update(c)),
+            mock.patch("scripts.gar_lib.commands.usb._run_usbipd") as run_usbipd,
         ):
             run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
             output_buffer = io.StringIO()
@@ -967,14 +981,14 @@ class GarCliTest(unittest.TestCase):
         )
         saved: dict = {}
         with (
-            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch("scripts.gar_lib.commands.usb._usbipd_executable", return_value="usbipd.exe"),
             mock.patch(
-                "scripts.gar_lib._usb.list_usb_devices",
+                "scripts.gar_lib.commands.usb.list_usb_devices",
                 return_value=parse_usbipd_list(output),
             ),
-            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
-            mock.patch("scripts.gar_lib._usb.save_config", side_effect=lambda c: saved.update(c)),
-            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+            mock.patch("scripts.gar_lib.commands.usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib.commands.usb.save_config", side_effect=lambda c: saved.update(c)),
+            mock.patch("scripts.gar_lib.commands.usb._run_usbipd") as run_usbipd,
         ):
             run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
             result = run_usb_command("attach", match="CH9102")
@@ -990,14 +1004,14 @@ class GarCliTest(unittest.TestCase):
             "3-4    1a86:55d4  USB-Enhanced-SERIAL CH9102      Not shared\n"
         )
         with (
-            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch("scripts.gar_lib.commands.usb._usbipd_executable", return_value="usbipd.exe"),
             mock.patch(
-                "scripts.gar_lib._usb.list_usb_devices",
+                "scripts.gar_lib.commands.usb.list_usb_devices",
                 return_value=parse_usbipd_list(output),
             ),
-            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
-            mock.patch("scripts.gar_lib._usb.save_config"),
-            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+            mock.patch("scripts.gar_lib.commands.usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib.commands.usb.save_config"),
+            mock.patch("scripts.gar_lib.commands.usb._run_usbipd") as run_usbipd,
         ):
             run_usbipd.return_value = mock.Mock(returncode=0, stdout="", stderr="")
             result = run_usb_command("bind", match="CH9102")
@@ -1012,13 +1026,13 @@ class GarCliTest(unittest.TestCase):
             "2-3    18d1:4ee7  Android ADB        Not shared\n"
         )
         with (
-            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch("scripts.gar_lib.commands.usb._usbipd_executable", return_value="usbipd.exe"),
             mock.patch(
-                "scripts.gar_lib._usb.list_usb_devices",
+                "scripts.gar_lib.commands.usb.list_usb_devices",
                 return_value=parse_usbipd_list(output),
             ),
-            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
-            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+            mock.patch("scripts.gar_lib.commands.usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib.commands.usb._run_usbipd") as run_usbipd,
         ):
             err_buffer = io.StringIO()
             with contextlib.redirect_stderr(err_buffer):
@@ -1038,13 +1052,13 @@ class GarCliTest(unittest.TestCase):
             "4-2    1a86:55d4  USB-Enhanced-SERIAL CH9102  Not shared\n"
         )
         with (
-            mock.patch("scripts.gar_lib._usb._usbipd_executable", return_value="usbipd.exe"),
+            mock.patch("scripts.gar_lib.commands.usb._usbipd_executable", return_value="usbipd.exe"),
             mock.patch(
-                "scripts.gar_lib._usb.list_usb_devices",
+                "scripts.gar_lib.commands.usb.list_usb_devices",
                 return_value=parse_usbipd_list(output),
             ),
-            mock.patch("scripts.gar_lib._usb.load_config", return_value={"selected_providers": {}}),
-            mock.patch("scripts.gar_lib._usb._run_usbipd") as run_usbipd,
+            mock.patch("scripts.gar_lib.commands.usb.load_config", return_value={"selected_providers": {}}),
+            mock.patch("scripts.gar_lib.commands.usb._run_usbipd") as run_usbipd,
         ):
             run_usbipd.return_value = mock.Mock(
                 returncode=1,
@@ -1067,8 +1081,8 @@ class GarCliTest(unittest.TestCase):
     def test_sim_start_only_starts_device_runtime(self) -> None:
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib._sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1111,10 +1125,10 @@ class GarCliTest(unittest.TestCase):
             ],
         }
         with (
-            mock.patch("scripts.gar_lib._sim.load_hw_definition", return_value=hw_definition),
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value=hw_definition),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib._sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1152,10 +1166,10 @@ class GarCliTest(unittest.TestCase):
             "spi": [{"dev": "/dev/spidev1.0"}],
         }
         with (
-            mock.patch("scripts.gar_lib._sim.load_hw_definition", return_value=hw_definition),
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value=hw_definition),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib._sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1203,7 +1217,7 @@ class GarCliTest(unittest.TestCase):
     def test_sim_gpio_start_installs_and_restarts_gpio_service(self) -> None:
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1220,7 +1234,7 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_stop_tears_down_gpio_sim(self) -> None:
         with mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run:
-            with mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment):
+            with mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment):
                 run.return_value.returncode = 0
 
                 result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
@@ -1238,9 +1252,9 @@ class GarCliTest(unittest.TestCase):
             settings = home / "settings.json"
 
             with (
-                mock.patch("scripts.gar_lib._sim.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.sim.Path.home", return_value=home),
                 mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-                mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+                mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
             ):
                 run.return_value.returncode = 0
                 output = io.StringIO()
@@ -1282,8 +1296,8 @@ class GarCliTest(unittest.TestCase):
             (template / "wokwi.toml.template").write_text("[wokwi]\nfirmware = '{firmware}'\n", encoding="utf-8")
 
             with (
-                mock.patch("scripts.gar_lib._sim.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=WokwiEnvironment),
+                mock.patch("scripts.gar_lib.commands.sim.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=WokwiEnvironment),
                 mock.patch.dict(
                     os.environ,
                     {
@@ -1316,9 +1330,9 @@ class GarCliTest(unittest.TestCase):
     def test_sim_start_starts_port_forward(self) -> None:
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib._sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib._sim.start_sim_port_forward", return_value=0) as forward,
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
+            mock.patch("scripts.gar_lib.commands.sim.start_sim_port_forward", return_value=0) as forward,
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             run.return_value.returncode = 0
 
@@ -1329,8 +1343,8 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_status_checks_port_forward(self) -> None:
         with (
-            mock.patch("scripts.gar_lib._sim.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.gar_lib._sim.show_sim_state", return_value=0) as state,
+            mock.patch("scripts.gar_lib.commands.sim.status_sim_port_forward", return_value=0) as status,
+            mock.patch("scripts.gar_lib.commands.sim.show_sim_state", return_value=0) as state,
         ):
             result = run_sim_command("status", host="ec2-test")
 
@@ -1340,7 +1354,7 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_status_json_returns_bridge_state(self) -> None:
         with (
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
             mock.patch("scripts.gar_lib.sim.linux.LinuxSystemdSimProvider.panel", return_value=0) as panel,
         ):
             result = run_sim_command("status", host="ec2-test", json_output=True)
@@ -1391,8 +1405,8 @@ class GarCliTest(unittest.TestCase):
 
             config = {"selected_providers": {}, "ec2": {"host": "configured-ec2"}}
             with (
-                mock.patch("scripts.gar_lib._deploy.load_config", return_value=config),
-                mock.patch("scripts.gar_lib._deploy.subprocess.run") as run,
+                mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.deploy.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
 
@@ -1446,8 +1460,8 @@ class GarCliTest(unittest.TestCase):
                 return subprocess.CompletedProcess(args=argv, returncode=0)
 
             with (
-                mock.patch("scripts.gar_lib._deploy.load_config", return_value={"selected_providers": {"device": "adb_usb"}}),
-                mock.patch("scripts.gar_lib._deploy.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value={"selected_providers": {"target_access": "adb_usb"}}),
+                mock.patch("scripts.gar_lib.commands.deploy.subprocess.run", side_effect=run_side_effect) as run,
             ):
 
                 result = run_deploy_command(
@@ -1515,9 +1529,9 @@ class GarCliTest(unittest.TestCase):
                 return subprocess.CompletedProcess(args=argv, returncode=0)
 
             with (
-                mock.patch("scripts.gar_lib._deploy.load_config", return_value={"selected_providers": {"device": "adb_usb"}}),
-                mock.patch("scripts.gar_lib._deploy.subprocess.run", side_effect=run_side_effect) as run,
-                mock.patch("scripts.gar_lib._deploy.run_usb_command", return_value=0) as usb_attach,
+                mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value={"selected_providers": {"target_access": "adb_usb"}}),
+                mock.patch("scripts.gar_lib.commands.deploy.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.gar_lib.commands.deploy.run_usb_command", return_value=0) as usb_attach,
                 contextlib.redirect_stderr(io.StringIO()),
             ):
                 result = run_deploy_command(
@@ -1558,8 +1572,8 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_vm_commands_are_available_from_cli(self) -> None:
         cases = [
-            (["sim", "boot", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
-            (["sim", "shutdown", "--host", "ec2-test"], "stop"),
+            (["sim", "start", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
+            (["sim", "stop", "--host", "ec2-test"], "stop"),
             (["sim", "status", "--host", "ec2-test"], "status"),
         ]
 
@@ -1605,6 +1619,7 @@ class GarCliTest(unittest.TestCase):
             "target",
             artifacts_dir=None,
             serial="raspi",
+            port=None,
             host=None,
             dest="/home/user",
             codespace=None,
@@ -1620,6 +1635,7 @@ class GarCliTest(unittest.TestCase):
             "target",
             artifacts_dir=None,
             serial=None,
+            port=None,
             host="raspi-net",
             dest="/home/user",
             codespace=None,
@@ -1652,10 +1668,10 @@ class GarCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            config = {"selected_providers": {"device": "ssh_scp"}}
+            config = {"selected_providers": {"target_access": "ssh_scp"}}
             with (
-                mock.patch("scripts.gar_lib._deploy.load_config", return_value=config),
-                mock.patch("scripts.gar_lib._deploy.subprocess.run") as run,
+                mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.deploy.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
 
@@ -1679,10 +1695,10 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_target_deploy_with_ssh_provider_requires_host(self) -> None:
-        config = {"selected_providers": {"device": "ssh_scp"}}
+        config = {"selected_providers": {"target_access": "ssh_scp"}}
         with (
-            mock.patch("scripts.gar_lib._deploy.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._deploy.subprocess.run") as run,
+            mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.deploy.subprocess.run") as run,
             contextlib.redirect_stderr(io.StringIO()),
         ):
             result = run_deploy_command(
@@ -1735,8 +1751,8 @@ class GarCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with (
-                mock.patch("scripts.gar_lib._deploy.select_codespace", return_value="codespace-test"),
-                mock.patch("scripts.gar_lib._deploy.gh_codespace_cp", side_effect=fake_cp) as cp,
+                mock.patch("scripts.gar_lib.commands.deploy.select_codespace", return_value="codespace-test"),
+                mock.patch("scripts.gar_lib.commands.deploy.gh_codespace_cp", side_effect=fake_cp) as cp,
             ):
                 result = fetch_codespace_artifacts(root, remote_root="/workspaces/out")
 
@@ -1750,9 +1766,9 @@ class GarCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with (
-                mock.patch("scripts.gar_lib._deploy.fetch_codespace_artifacts", return_value=0) as fetch,
-                mock.patch("scripts.gar_lib._deploy.selected_device_provider_id", return_value=None),
-                mock.patch("scripts.gar_lib._deploy.deploy_target_artifacts", return_value=0) as deploy,
+                mock.patch("scripts.gar_lib.commands.deploy.fetch_codespace_artifacts", return_value=0) as fetch,
+                mock.patch("scripts.gar_lib.commands.deploy.selected_target_access_provider_id", return_value=None),
+                mock.patch("scripts.gar_lib.commands.deploy.deploy_target_artifacts", return_value=0) as deploy,
             ):
                 result = run_deploy_command(
                     "target",
@@ -1770,6 +1786,17 @@ class GarCliTest(unittest.TestCase):
             remote_root="/workspaces/out",
         )
         deploy.assert_called_once_with(root.resolve(), serial="raspi", dest="/home/user")
+
+    def test_target_deploy_with_esp32_esptool_flashes_latest_artifact(self) -> None:
+        config = {"selected_providers": {"target_access": "esp32_esptool"}, "esp32": {"port": "COM4"}}
+        with (
+            mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.run_esp32_flash_command", return_value=0) as flash,
+        ):
+            result = run_deploy_command("target")
+
+        self.assertEqual(0, result)
+        flash.assert_called_once_with(artifact_dir=None, port="COM4")
 
     def test_target_fetch_is_available_from_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1817,6 +1844,7 @@ class GarCliTest(unittest.TestCase):
             "target",
             artifacts_dir=None,
             serial="raspi",
+            port=None,
             host=None,
             dest="/home/user",
             codespace="codespace-test",
@@ -1825,6 +1853,10 @@ class GarCliTest(unittest.TestCase):
 
     def test_esp32_serial_port_maps_windows_com_to_wsl_tty(self) -> None:
         self.assertEqual("/dev/ttyS3", normalize_esp32_serial_port("COM3"))
+
+    def test_esp32_serial_port_uses_setup_saved_port(self) -> None:
+        with mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.load_config", return_value={"esp32": {"port": "COM4"}}):
+            self.assertEqual("/dev/ttyS4", normalize_esp32_serial_port(None))
 
     def test_esp32_build_output_parses_artifact_path(self) -> None:
         output = "\n".join(
@@ -1846,17 +1878,19 @@ class GarCliTest(unittest.TestCase):
             "Artifact: /workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client/"
             "artifacts/20260620-001750-m5stickc-plus2-vibe-min\n"
         )
-        completed = mock.Mock(returncode=0, stdout=build_output, stderr="")
         local_artifact = Path("/tmp/local-artifacts/20260620-001750-m5stickc-plus2-vibe-min")
 
         with (
-            mock.patch("scripts.gar_lib._esp32_flash.select_codespace", return_value="codespace-test"),
-            mock.patch("scripts.gar_lib._esp32_flash.subprocess.run", return_value=completed) as run,
+            mock.patch("scripts.gar_lib.commands.esp32_firmware.select_codespace", return_value="codespace-test"),
             mock.patch(
-                "scripts.gar_lib._esp32_flash.fetch_esp32_codespace_artifact",
+                "scripts.gar_lib.commands.esp32_firmware.run_streaming_command",
+                return_value=(0, build_output),
+            ) as run,
+            mock.patch(
+                "scripts.gar_lib.commands.esp32_firmware.fetch_esp32_codespace_artifact",
                 return_value=local_artifact,
             ) as fetch,
-            mock.patch("scripts.gar_lib._esp32_flash.run_esp32_flash_command", return_value=0) as flash,
+            mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.run_esp32_flash_command", return_value=0) as flash,
         ):
             result = run_esp32_build_command(
                 codespace=None,
@@ -1917,15 +1951,15 @@ class GarCliTest(unittest.TestCase):
             completed = mock.Mock(returncode=0)
             with (
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.ensure_esptool_python",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.ensure_esptool_python",
                     return_value=Path("/opt/gar-esptool/bin/python"),
                 ),
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.esp32_serial_port_access_error",
                     return_value=None,
                 ),
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.subprocess.run",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.subprocess.run",
                     return_value=completed,
                 ) as run,
             ):
@@ -1962,10 +1996,10 @@ class GarCliTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.esp32_serial_port_access_error",
                     return_value="serial port is not readable/writable by current user: /dev/ttyS3",
                 ),
-                mock.patch("scripts.gar_lib._esp32_flash.ensure_esptool_python") as ensure_esptool,
+                mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.ensure_esptool_python") as ensure_esptool,
             ):
                 err = io.StringIO()
                 with contextlib.redirect_stderr(err):
@@ -1993,15 +2027,15 @@ class GarCliTest(unittest.TestCase):
             completed = mock.Mock(returncode=2)
             with (
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.ensure_esptool_python",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.ensure_esptool_python",
                     return_value=Path("/opt/gar-esptool/bin/python"),
                 ),
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.esp32_serial_port_access_error",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.esp32_serial_port_access_error",
                     return_value=None,
                 ),
                 mock.patch(
-                    "scripts.gar_lib._esp32_flash.subprocess.run",
+                    "scripts.gar_lib.environments.registry.target_access.esp32_esptool.subprocess.run",
                     return_value=completed,
                 ),
             ):
@@ -2116,6 +2150,62 @@ class GarCliTest(unittest.TestCase):
             shutdown=False,
         )
 
+    def test_code_boot_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_code_command", return_value=0) as run_code:
+            result = main(["code", "boot", "--codespace", "codespace-test"])
+
+        self.assertEqual(0, result)
+        run_code.assert_called_once_with(
+            "boot",
+            codespace="codespace-test",
+            remote_path=None,
+            mount_dir=None,
+            settings=None,
+            profile_name=None,
+            no_mount=False,
+            shutdown=False,
+        )
+
+    def test_code_status_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_code_command", return_value=0) as run_code:
+            result = main(["code", "status", "--codespace", "codespace-test", "--mount-dir", "/tmp/codespaces"])
+
+        self.assertEqual(0, result)
+        run_code.assert_called_once_with(
+            "status",
+            codespace="codespace-test",
+            remote_path=None,
+            mount_dir="/tmp/codespaces",
+            settings=None,
+            profile_name=None,
+            no_mount=False,
+            shutdown=False,
+        )
+
+    def test_code_command_uses_selected_development_provider(self) -> None:
+        class SelectedDevelopmentProvider(DevelopmentProvider):
+            provider_id = "selected_development"
+
+            @classmethod
+            def code_command(cls, command: str, **kwargs) -> int:
+                self.assertEqual("boot", command)
+                self.assertEqual("selected-target", kwargs["target"])
+                return 0
+
+        with (
+            mock.patch(
+                "scripts.gar_lib.config.load_config",
+                return_value={"selected_providers": {"development": "selected_development"}},
+            ),
+            mock.patch(
+                "scripts.gar_lib.commands.code.discover_environment_providers",
+                return_value=[SelectedDevelopmentProvider],
+            ),
+        ):
+            result = run_code_command("boot", codespace="selected-target")
+
+        self.assertEqual(0, result)
+
     def test_code_start_writes_codespace_state_and_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -2132,9 +2222,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect),
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect),
             ):
                 output = io.StringIO()
                 with contextlib.chdir(cwd), contextlib.redirect_stdout(output):
@@ -2180,9 +2270,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect),
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect),
             ):
                 stderr = io.StringIO()
                 stdout = io.StringIO()
@@ -2232,9 +2322,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -2269,9 +2359,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect),
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -2376,9 +2466,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -2401,7 +2491,7 @@ class GarCliTest(unittest.TestCase):
             completed.stdout = ""
             return completed
 
-        with mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run:
+        with mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect) as run:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 result = shutdown_code_codespace(codespace="codespace-test")
@@ -2441,9 +2531,9 @@ class GarCliTest(unittest.TestCase):
                 return completed
 
             with (
-                mock.patch("scripts.gar_lib._code.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib._code.shutil.which", return_value="/usr/bin/tool"),
-                mock.patch("scripts.gar_lib._code.subprocess.run", side_effect=run_side_effect) as run,
+                mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
+                mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
+                mock.patch("scripts.gar_lib.commands.code.subprocess.run", side_effect=run_side_effect) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -2527,11 +2617,11 @@ class GarCliTest(unittest.TestCase):
         config = {"selected_target": "test-target", "selected_providers": {}}
 
         with (
-            mock.patch("scripts.gar_lib._setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib._setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib._setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib._setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib._setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("builtins.input", side_effect=["", "", ""]),
         ):
             output = io.StringIO()
@@ -2547,6 +2637,47 @@ class GarCliTest(unittest.TestCase):
             }
         )
 
+    def test_setup_can_store_esp32_esptool_port(self) -> None:
+        class Esp32EsptoolProvider(TargetAccessProvider):
+            provider_id = "esp32_esptool"
+            display_name = "ESP32 esptool"
+
+        providers = [DevelopmentProvider, Esp32EsptoolProvider]
+        targets = [
+            TargetManifest(
+                id="esp32",
+                display_name="ESP32",
+                description="target",
+                tools_root="targets/esp32",
+                default_backends={"development": "development_test", "target_access": "esp32_esptool"},
+                backend_notes={},
+            ),
+        ]
+        config = {"selected_target": "esp32", "selected_providers": {"development": "development_test", "target_access": "esp32_esptool"}}
+
+        with (
+            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
+            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
+            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
+            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
+            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
+            mock.patch("sys.stdin.isatty", return_value=False),
+        ):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_setup(no_install=True, esp32_port="COM3")
+
+        self.assertEqual(0, result)
+        self.assertIn("ESP32 Serial Port", output.getvalue())
+        self.assertIn("更新しました", output.getvalue())
+        save_config.assert_any_call(
+            {
+                "selected_target": "esp32",
+                "selected_providers": {"development": "development_test", "target_access": "esp32_esptool"},
+                "esp32": {"port": "COM3"},
+            }
+        )
+
     def test_setup_skips_runtime_host_prompt_for_wokwi(self) -> None:
         config = {
             "selected_providers": {"simulation": "wokwi"},
@@ -2556,7 +2687,7 @@ class GarCliTest(unittest.TestCase):
         with mock.patch("sys.stdin.isatty", return_value=True), mock.patch("builtins.input") as input_mock:
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                from scripts.gar_lib._setup import configure_default_ec2_host
+                from scripts.gar_lib.commands.setup import configure_default_ec2_host
 
                 configure_default_ec2_host(config, ec2_host=None)
 
@@ -2564,7 +2695,7 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("ローカルCLIからクラウドシミュレーション", output.getvalue())
         self.assertIn("SSH runtime host は不要", output.getvalue())
 
-    def test_load_config_keeps_legacy_config_compatible(self) -> None:
+    def test_load_config_preserves_selected_providers_and_defaults_ec2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
             config_path.parent.mkdir()
@@ -2573,7 +2704,7 @@ class GarCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with mock.patch("scripts.gar_lib._config.CONFIG_PATH", config_path):
+            with mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path):
                 config = load_config()
 
         self.assertEqual("wsl", config["selected_providers"]["development"])
@@ -2633,9 +2764,9 @@ class GarCliTest(unittest.TestCase):
             project_root.mkdir()
             completed = subprocess.CompletedProcess(["git"], 0)
             with (
-                mock.patch("scripts.gar_lib._targets.PROJECT_ROOT", project_root),
+                mock.patch("scripts.gar_lib.gar_tools.PROJECT_ROOT", project_root),
                 mock.patch.dict(os.environ, {"GAR_TOOLS_REPO": "https://example.invalid/gar-tools"}, clear=True),
-                mock.patch("scripts.gar_lib._targets.subprocess.run", return_value=completed) as run,
+                mock.patch("scripts.gar_lib.gar_tools.subprocess.run", return_value=completed) as run,
             ):
                 root = ensure_gar_tools_available()
 
@@ -2655,7 +2786,7 @@ class GarCliTest(unittest.TestCase):
 
             stderr = io.StringIO()
             with (
-                mock.patch("scripts.gar_lib._config.CONFIG_PATH", config_path),
+                mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path),
                 contextlib.redirect_stderr(stderr),
             ):
                 config = load_config()
@@ -2677,12 +2808,12 @@ class GarCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
 
-            with mock.patch("scripts.gar_lib._config.CONFIG_PATH", config_path):
-                save_config({"selected_providers": {"device": "ssh_scp"}})
+            with mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path):
+                save_config({"selected_providers": {"target_access": "ssh_scp"}})
 
             self.assertTrue(config_path.is_file())
             data = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual({"device": "ssh_scp"}, data["selected_providers"])
+            self.assertEqual({"target_access": "ssh_scp"}, data["selected_providers"])
 
             leftovers = [
                 path
@@ -2729,8 +2860,8 @@ class GarCliTest(unittest.TestCase):
 
             config = {"selected_providers": {}, "ec2": {"host": "h"}}
             with (
-                mock.patch("scripts.gar_lib._deploy.load_config", return_value=config),
-                mock.patch("scripts.gar_lib._deploy.subprocess.run") as run,
+                mock.patch("scripts.gar_lib.commands.deploy.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.deploy.subprocess.run") as run,
                 contextlib.redirect_stderr(io.StringIO()),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
@@ -2762,7 +2893,7 @@ class GarCliTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "scripts.gar_lib._terminal.CONFIG_PATH",
+                    "scripts.gar_lib.commands.terminal.CONFIG_PATH",
                     tmp_path / ".gar" / "config.json",
                 ),
                 contextlib.redirect_stdout(io.StringIO()),
@@ -2882,7 +3013,7 @@ class GarCliTest(unittest.TestCase):
         )
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -2917,7 +3048,7 @@ class GarCliTest(unittest.TestCase):
         )
         with (
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-            mock.patch("scripts.gar_lib._sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -2946,7 +3077,7 @@ class GarCliTest(unittest.TestCase):
             stderr="",
         )
         with (
-            mock.patch("scripts.gar_lib._sim.load_config", return_value={"selected_providers": {}, "ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"selected_providers": {}, "ec2": {"host": "ec2-test"}}),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
         ):
             output = io.StringIO()
@@ -2975,26 +3106,12 @@ class GarCliTest(unittest.TestCase):
             json_output=True,
         )
 
-    def test_sim_gpio_start_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
-            result = main(["sim", "gpio", "start", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
-
     def test_sim_env_gpio_start_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
             result = main(["sim", "env", "gpio", "start", "--host", "ec2-test"])
 
         self.assertEqual(0, result)
         run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
-
-    def test_sim_gpio_plan_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
-            result = main(["sim", "gpio", "plan", "--json"])
-
-        self.assertEqual(0, result)
-        run_gpio.assert_called_once_with("plan", host=None, json_output=True)
 
     def test_sim_env_gpio_plan_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
@@ -3045,7 +3162,7 @@ class SimPanelTests(unittest.TestCase):
     def test_run_sim_panel_sshes_with_curl(self) -> None:
         completed = mock.Mock(returncode=0)
         with (
-            mock.patch("scripts.gar_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
         ):
             result = run_sim_panel("button-press", host="ec2-test", button="17", duration_ms=150)
@@ -3057,7 +3174,7 @@ class SimPanelTests(unittest.TestCase):
     def test_run_sim_panel_state_pretty_prints_json(self) -> None:
         completed = mock.Mock(returncode=0, stdout='{"led18": 1}', stderr="")
         with (
-            mock.patch("scripts.gar_lib._sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
+            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
             mock.patch("scripts.gar_lib.environments.registry.simulation.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed),
         ):
             output = io.StringIO()

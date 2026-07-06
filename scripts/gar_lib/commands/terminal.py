@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.gar_lib._config import CONFIG_PATH
+from scripts.gar_lib.config import CONFIG_PATH
 
 
 def run_terminal_request(

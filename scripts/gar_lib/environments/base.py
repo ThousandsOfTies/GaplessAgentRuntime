@@ -72,6 +72,23 @@ class DevEnvironment(ABC):
         return 0
 
     @classmethod
+    def code_command(
+        cls,
+        command: str,
+        *,
+        target: str | None = None,
+        remote_path: str | None = None,
+        mount_dir: str | None = None,
+        settings: str | None = None,
+        profile_name: str | None = None,
+        no_mount: bool = False,
+        shutdown: bool = False,
+        timeout: int | None = None,
+    ) -> int:
+        del target, remote_path, mount_dir, settings, profile_name, no_mount, shutdown, timeout
+        raise NotImplementedError(f"{cls.__name__} does not implement gar code {command}")
+
+    @classmethod
     def run_subprocess(cls, argv: list[str]) -> int:
         return subprocess.run(argv, check=False).returncode
 

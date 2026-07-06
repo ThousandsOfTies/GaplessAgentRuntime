@@ -3,10 +3,6 @@
 artifact.json スキーマ:
   deploy.app     — target app バイナリ（VM ・実機共通）
   deploy.sim_env — VM 専用環境インフラ（CUSE stubs / web-bridge）
-
-旧スキーマ（後方互換）:
-  deploy.sim    — deploy.app のフォールバック
-  deploy.target — deploy.app のフォールバック
 """
 
 from __future__ import annotations
@@ -20,13 +16,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.gar_lib._code import select_codespace_from_list
-from scripts.gar_lib._config import (
+from scripts.gar_lib.commands.code import select_codespace_from_list
+from scripts.gar_lib.config import (
     PROJECT_ROOT,
     default_ec2_host,
     load_config,
+    saved_esp32_serial_port,
 )
-from scripts.gar_lib._usb import run_usb_command
+from scripts.gar_lib.commands.usb import run_usb_command
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 
@@ -63,6 +60,7 @@ def run_deploy_command(
     artifacts_dir: str | None = None,
     host: str | None = None,
     serial: str | None = None,
+    port: str | None = None,
     dest: str = "/home/user",
     codespace: str | None = None,
     remote_root: str | None = None,
@@ -75,7 +73,15 @@ def run_deploy_command(
     if target == "sim_env":
         return deploy_sim_artifacts(root, host=host, section="sim_env")
     if target == "target":
-        provider_id = selected_device_provider_id(load_config())
+        config = load_config()
+        provider_id = selected_target_access_provider_id(config)
+        if provider_id == "esp32_esptool":
+            from scripts.gar_lib.environments.registry.target_access.esp32_esptool import run_esp32_flash_command
+
+            return run_esp32_flash_command(
+                artifact_dir=str(root) if artifacts_dir else None,
+                port=port or serial or saved_esp32_serial_port(config),
+            )
         if provider_id == "ssh_scp":
             if not host:
                 print(
@@ -101,10 +107,10 @@ def run_deploy_command(
     return 1
 
 
-def selected_device_provider_id(config: dict) -> str | None:
+def selected_target_access_provider_id(config: dict) -> str | None:
     selected = config.get("selected_providers")
     if isinstance(selected, dict):
-        value = selected.get("device")
+        value = selected.get("target_access")
         if isinstance(value, str) and value:
             return value
     return None
@@ -152,16 +158,9 @@ def artifact_manifest_deploy_sources(manifest: dict) -> list[str] | None:
         print("invalid artifact manifest: deploy must be an object", file=sys.stderr)
         return None
 
-    # normalize: if legacy keys (sim/target) exist alongside new keys (app/sim_env),
-    # skip legacy to avoid collecting duplicate sources
-    has_new_keys = "app" in deploy or "sim_env" in deploy
-    legacy_keys = {"sim", "target"}
-
     sources: list[str] = []
     seen: set[str] = set()
     for target, target_config in deploy.items():
-        if has_new_keys and target in legacy_keys:
-            continue
         if not isinstance(target, str) or not isinstance(target_config, dict):
             print("invalid artifact manifest: deploy targets must be objects", file=sys.stderr)
             return None
@@ -292,28 +291,13 @@ def load_artifact_manifest(root: Path) -> tuple[Path, dict] | None:
 
 
 def artifact_deploy_files(manifest: dict, target: str) -> list[dict] | None:
-    """Return deploy files for *target* section.
-
-    New schema:  deploy.app / deploy.sim_env
-    Legacy compat: deploy.sim -> deploy.app, deploy.target -> deploy.app
-    """
+    """Return deploy files for *target* section."""
     deploy = manifest.get("deploy")
     if not isinstance(deploy, dict):
         print("invalid artifact manifest: deploy must be an object", file=sys.stderr)
         return None
 
-    # resolve legacy section names
-    resolved_target = target
-    if target == "app" and "app" not in deploy:
-        if "sim" in deploy:
-            resolved_target = "sim"
-        elif "target" in deploy:
-            resolved_target = "target"
-    elif target == "sim_env" and "sim_env" not in deploy:
-        # no legacy equivalent for sim_env
-        pass
-
-    target_config = deploy.get(resolved_target)
+    target_config = deploy.get(target)
     if not isinstance(target_config, dict):
         print(f"artifact manifest has no deploy.{target} section", file=sys.stderr)
         return None
@@ -464,7 +448,7 @@ def deploy_target_artifacts(root: Path, *, serial: str | None, dest: str) -> int
     if loaded is None:
         return 1
 
-    provider = _get_provider("device")
+    provider = _get_provider("target_access")
     target = serial if serial else ""
     if provider.provider_id == "adb_usb":
         result = ensure_adb_device(serial=serial)
@@ -535,7 +519,7 @@ def ensure_adb_device(*, serial: str | None) -> int:
 
 def ensure_adb_win_device(*, serial: str | None) -> int:
     """Windows ネイティブ adb.exe で device の存在を確認する（usbipd 不要）。"""
-    from scripts.gar_lib.environments.registry.device.adb_win import _resolve_adb_exe
+    from scripts.gar_lib.environments.registry.target_access.adb_win import _resolve_adb_exe
 
     exe = _resolve_adb_exe()
     if exe is None:
@@ -589,7 +573,7 @@ def deploy_target_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
         return 1
 
     bundle_root, files = loaded
-    provider = _get_provider("device")
+    provider = _get_provider("target_access")
     for entry in files:
         source = resolve_artifact_src(bundle_root, entry["src"])
         if source is None:

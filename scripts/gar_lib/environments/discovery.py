@@ -21,7 +21,7 @@ CATEGORY_METADATA = {
         "name": "シミュレート環境",
         "order": 20,
     },
-    "device": {
+    "target_access": {
         "name": "実機環境",
         "order": 30,
     },
@@ -57,7 +57,7 @@ def discover_environment_providers() -> list[type[DevEnvironment]]:
                 raise ProviderDiscoveryError(
                     "duplicate provider_id "
                     f"{obj.provider_id!r}: {existing.__name__}, {obj.__name__}"
-                )
+            )
             provider_ids[obj.provider_id] = obj
             obj.category_id = category_id
             obj.category_name = category.get("name", category_id)
@@ -91,7 +91,6 @@ def _validate_provider(provider: type[DevEnvironment]) -> None:
         raise ProviderDiscoveryError(
             f"{provider.__name__}.required_commands must contain strings only"
         )
-
 
 def _is_provider_module(module_name: str) -> bool:
     relative = module_name.removeprefix(f"{registry_pkg.__name__}.")

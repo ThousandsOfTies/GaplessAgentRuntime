@@ -7,12 +7,12 @@ import shlex
 import sys
 from pathlib import Path
 
-from scripts.gar_lib._config import (
+from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
 )
-from scripts.gar_lib._hw import load_hw_definition
-from scripts.gar_lib._vscode import write_vscode_terminal_profile
+from scripts.gar_lib.commands.hw import load_hw_definition
+from scripts.gar_lib.integrations.vscode import write_vscode_terminal_profile
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.sim.base import SimProvider

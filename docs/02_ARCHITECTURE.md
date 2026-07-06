@@ -34,7 +34,7 @@ Codespace は build target の実行場所のひとつ。ユーザーは通常 `
 ```text
 target.deploy
   depends on target.artifact
-  depends on target.device
+  depends on target.access
 
 target.artifact
   depends on target.build
@@ -45,7 +45,7 @@ target.build
 ```
 
 `gar setup` は、この graph の各 node が何を意味するかを保存する。たとえば ESP32/M5StickC
-なら `target.device` は USB serial 接続先、`target.build` は PlatformIO/Codespaces build、
+なら `target.access` は USB serial 接続先、`target.build` は PlatformIO/Codespaces build、
 `target.deploy` は最新 firmware artifact の flash になる。RasPi/Linux device なら
 `target.deploy` は adb または SSH/scp での配置になる。
 
@@ -132,6 +132,6 @@ EC2 上では以下の仮想デバイスで `/dev/*` を再現する。
 
 Gapless Agent Runtime では、AI が実機へ到達するための接続経路として **adb（既定）** と **SSH/scp（オプション）** を想定します。どちらか一方を選択して使う方針で、両方を同時に使うことは想定しません。
 
-既定は USB-C を用いた adb です。社内ネットワークなどで作業 PC が複数の NIC を自由に使えない環境でも、USB ケーブル一本で実機にアクセスできるためです（[scripts/gar_lib/environments/registry/device/adb_usb.py](../scripts/gar_lib/environments/registry/device/adb_usb.py)）。
+既定は USB-C を用いた adb です。社内ネットワークなどで作業 PC が複数の NIC を自由に使えない環境でも、USB ケーブル一本で実機にアクセスできるためです（[scripts/gar_lib/environments/registry/target_access/adb_usb.py](../scripts/gar_lib/environments/registry/target_access/adb_usb.py)）。
 
-ネットワーク越しに実機へ到達できる環境では、SSH/scp 経路も選択できます（[scripts/gar_lib/environments/registry/device/ssh_scp.py](../scripts/gar_lib/environments/registry/device/ssh_scp.py)）。`gar setup` の実機環境カテゴリで `SSH / scp` を選ぶと、`gar target deploy --host <ssh-host>` が `scp` と `ssh chmod` で artifact を転送します。adb / SSH の切り替えは `.gar/config.json` の `selected_providers.device` に保存されるため、AI も人間も同じ設定で動作します。
+ネットワーク越しに実機へ到達できる環境では、SSH/scp 経路も選択できます（[scripts/gar_lib/environments/registry/target_access/ssh_scp.py](../scripts/gar_lib/environments/registry/target_access/ssh_scp.py)）。`gar setup` の実機環境カテゴリで `SSH / scp` を選ぶと、`gar target deploy --host <ssh-host>` が `scp` と `ssh chmod` で artifact を転送します。adb / SSH の切り替えは `.gar/config.json` の `selected_providers.target_access` に保存されるため、AI も人間も同じ設定で動作します。

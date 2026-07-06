@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.gar_lib._vscode import (
+from scripts.gar_lib.integrations.vscode import (
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
 )
@@ -18,7 +18,7 @@ from scripts.gar_lib.environments.discovery import discover_environment_provider
 
 
 def _get_dev_provider() -> type[DevEnvironment]:
-    from scripts.gar_lib._config import load_config
+    from scripts.gar_lib.config import load_config
     config = load_config()
     pid = config.get("selected_providers", {}).get("development")
     providers = discover_environment_providers()
@@ -47,33 +47,59 @@ def run_code_command(
     shutdown: bool = False,
     gh_timeout: int | None = None,
 ) -> int:
-    if command == "start":
-        return start_code_codespace(
-            codespace=codespace,
+    provider = _get_dev_provider()
+    try:
+        return provider.code_command(
+            command,
+            target=codespace,
             remote_path=remote_path,
             mount_dir=mount_dir,
             settings=settings,
             profile_name=profile_name,
             no_mount=no_mount,
-            gh_timeout=gh_timeout,
-        )
-    if command == "stop":
-        return stop_code_codespace(
-            codespace=codespace,
-            mount_dir=mount_dir,
-            settings=settings,
-            profile_name=profile_name,
             shutdown=shutdown,
-            gh_timeout=gh_timeout,
+            timeout=gh_timeout,
         )
-    if command == "shutdown":
-        return shutdown_code_codespace(
-            codespace=codespace,
-            gh_timeout=gh_timeout,
-        )
+    except NotImplementedError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
-    print(f"unknown code command: {command}", file=sys.stderr)
-    return 1
+def boot_code_codespace(
+    *,
+    codespace: str | None = None,
+    gh_timeout: int | None = None,
+) -> int:
+    if shutil.which("gh") is None:
+        print("gar code boot: missing required command: gh", file=sys.stderr)
+        return 1
+    if shutil.which("ssh") is None:
+        print("gar code boot: missing required command: ssh", file=sys.stderr)
+        return 1
+
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout)
+    selected_codespace = select_code_codespace(
+        codespace,
+        command_name="gar code boot",
+        gh_timeout=selected_gh_timeout,
+    )
+    if not selected_codespace:
+        return 1
+
+    print(f"Starting Codespace VM: {selected_codespace}")
+    result = run_gh_captured(
+        ["gh", "codespace", "ssh", "-c", selected_codespace, "--", "true"],
+        timeout=selected_gh_timeout,
+        label=f"start Codespace {selected_codespace}",
+        command_name="gar code boot",
+    )
+    if result is None:
+        return 1
+    if result.returncode != 0:
+        print_completed_stderr(result)
+        return result.returncode
+
+    print(f"Codespace VM is reachable: {selected_codespace}")
+    return 0
 
 
 def start_code_codespace(
@@ -326,6 +352,95 @@ def shutdown_code_codespace(
         print_completed_stderr(result)
         return result.returncode
     return 0
+
+
+def status_code_codespace(
+    *,
+    codespace: str | None = None,
+    mount_dir: str | None = None,
+    gh_timeout: int | None = None,
+) -> int:
+    if shutil.which("gh") is None:
+        print("gar code status: missing required command: gh", file=sys.stderr)
+        return 1
+
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout)
+    result = run_gh_captured(
+        ["gh", "codespace", "list"],
+        timeout=selected_gh_timeout,
+        label="list Codespaces",
+        command_name="gar code status",
+    )
+    if result is None:
+        return 1
+    if result.returncode != 0:
+        print_completed_stderr(result)
+        return result.returncode
+
+    selected_codespace = (
+        codespace
+        or os.environ.get("GAR_CODESPACE_NAME")
+        or os.environ.get("CODESPACE_NAME")
+        or load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env").get("CODESPACE_NAME")
+    )
+    rows = codespace_list_rows(result.stdout)
+    if selected_codespace:
+        rows = [fields for fields in rows if fields and fields[0] == selected_codespace]
+
+    if rows:
+        for fields in rows:
+            print("\t".join(fields))
+    else:
+        print("gar code status: no matching Codespace found", file=sys.stderr)
+        return 1
+
+    selected_mount_dir = Path(
+        mount_dir
+        or load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env").get("CODESPACE_MOUNT_DIR", "")
+        or str(default_codespaces_mount_dir())
+    ).expanduser()
+    if shutil.which("mountpoint") is not None:
+        mounted = subprocess.run(["mountpoint", "-q", str(selected_mount_dir)], check=False).returncode == 0
+        print(f"Mount: {'mounted' if mounted else 'not mounted'} at {selected_mount_dir}")
+    else:
+        print(f"Mount: unknown at {selected_mount_dir} (missing mountpoint)")
+
+    return 0
+
+
+def select_code_codespace(
+    codespace: str | None,
+    *,
+    command_name: str,
+    gh_timeout: int | None,
+) -> str | None:
+    selected_codespace = (
+        codespace
+        or os.environ.get("GAR_CODESPACE_NAME")
+        or os.environ.get("CODESPACE_NAME")
+        or load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env").get("CODESPACE_NAME")
+    )
+    if selected_codespace:
+        return selected_codespace
+
+    list_result = run_gh_captured(
+        ["gh", "codespace", "list"],
+        timeout=gh_timeout,
+        label="list Codespaces",
+        command_name=command_name,
+    )
+    if list_result is None:
+        return None
+    if list_result.returncode != 0:
+        print_completed_stderr(list_result)
+        return None
+
+    selected_codespace = select_codespace_from_list(list_result.stdout)
+    if not selected_codespace:
+        print(f"{command_name}: no Codespace found", file=sys.stderr)
+        print(f"Pass one explicitly: {command_name} --codespace NAME", file=sys.stderr)
+        return None
+    return selected_codespace
 
 
 def load_codespace_state(state_file: Path) -> dict[str, str]:

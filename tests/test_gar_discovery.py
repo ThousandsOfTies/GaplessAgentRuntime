@@ -14,9 +14,9 @@ from scripts.gar_lib.environments.discovery import discover_environment_provider
 from scripts.gar_lib.environments.registry.development.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
-from scripts.gar_lib.environments.registry.device.adb_usb import AdbUsbEnvironment
-from scripts.gar_lib.environments.registry.device.esp32_serial import (
-    Esp32SerialEnvironment,
+from scripts.gar_lib.environments.registry.target_access.adb_usb import AdbUsbEnvironment
+from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (
+    Esp32EsptoolEnvironment,
 )
 from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
@@ -44,6 +44,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("local", provider_ids)
         self.assertIn("adb_usb", provider_ids)
         self.assertIn("ssh_scp", provider_ids)
+        self.assertIn("esp32_esptool", provider_ids)
         self.assertTrue(
             all(issubclass(provider, DevEnvironment) for provider in providers)
         )
@@ -64,8 +65,9 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual("simulation", categories_by_provider["esp32_qemu_firmware"])
         self.assertEqual("simulation", categories_by_provider["wokwi"])
         self.assertEqual("simulation", categories_by_provider["vibe_remote_device"])
-        self.assertEqual("device", categories_by_provider["adb_usb"])
-        self.assertEqual("device", categories_by_provider["ssh_scp"])
+        self.assertEqual("target_access", categories_by_provider["adb_usb"])
+        self.assertEqual("target_access", categories_by_provider["ssh_scp"])
+        self.assertEqual("target_access", categories_by_provider["esp32_esptool"])
 
     def test_provider_ids_are_unique(self) -> None:
         providers = discover_environment_providers()
@@ -206,7 +208,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual(str(cli), statuses[0].path)
         self.assertEqual([], missing)
 
-    def test_esp32_serial_dependency_status_finds_project_venv_install(self) -> None:
+    def test_esp32_esptool_dependency_status_finds_project_venv_install(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             cli = root / ".venv" / "bin" / "esptool"
@@ -216,16 +218,16 @@ class GarDiscoveryTest(unittest.TestCase):
 
             with (
                 mock.patch("shutil.which", return_value=None),
-                mock.patch("scripts.gar_lib.environments.registry.device.esp32_serial.PROJECT_ROOT", root),
+                mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.PROJECT_ROOT", root),
             ):
-                statuses = Esp32SerialEnvironment.dependency_status()
-                missing = Esp32SerialEnvironment.missing_commands()
+                statuses = Esp32EsptoolEnvironment.dependency_status()
+                missing = Esp32EsptoolEnvironment.missing_commands()
 
         self.assertEqual(1, len(statuses))
         self.assertEqual(str(cli), statuses[0].path)
         self.assertEqual([], missing)
 
-    def test_esp32_serial_installer_uses_project_venv(self) -> None:
+    def test_esp32_esptool_installer_uses_project_venv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             python = root / ".venv" / "bin" / "python"
@@ -233,12 +235,12 @@ class GarDiscoveryTest(unittest.TestCase):
             python.write_text("#!/bin/sh\n", encoding="utf-8")
 
             with (
-                mock.patch("scripts.gar_lib.environments.registry.device.esp32_serial.PROJECT_ROOT", root),
-                mock.patch.object(Esp32SerialEnvironment, "run_subprocess", return_value=0) as run,
+                mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.PROJECT_ROOT", root),
+                mock.patch.object(Esp32EsptoolEnvironment, "run_subprocess", return_value=0) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
-                    result = Esp32SerialEnvironment.install_dependencies(["esptool"])
+                    result = Esp32EsptoolEnvironment.install_dependencies(["esptool"])
 
         self.assertEqual(0, result)
         run.assert_called_once_with([str(python), "-m", "pip", "install", "esptool"])
@@ -487,11 +489,11 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.device.adb_usb.platform.system",
+                "scripts.gar_lib.environments.registry.target_access.adb_usb.platform.system",
                 return_value="Linux",
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.device.adb_usb.shutil.which",
+                "scripts.gar_lib.environments.registry.target_access.adb_usb.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
