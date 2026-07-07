@@ -75,7 +75,7 @@
 
 ## 🔌 Renode / MCU 拡張（着手済み・ランタイム統合は今後）
 
-- [x] **`gar setup` に Renode(MCU/ベアメタル) simulation プロバイダを追加** — `scripts/gar_lib/environments/registry/simulation/renode_mcu.py`。Linux/WSL2 で最新 portable build を user-local 導入。プラグイン自動発見でコア無改修。ランタイム統合は未配線スタブ（`gar sim env` は当面 `ssh_remote` 利用） — 2026-06-10
+- [x] **`gar setup` に Renode(MCU/ベアメタル) simulation プロバイダを追加** — `scripts/gar_lib/environments/registry/simulator/renode_mcu.py`。Linux/WSL2 で最新 portable build を user-local 導入。プラグイン自動発見でコア無改修。ランタイム統合は未配線スタブ（`gar sim env` は当面 `ssh_remote` 利用） — 2026-06-10
 - [ ] **Renode ランタイム統合（本配線）** — `.resc` 生成・ペリフェラルモデル起動で `gar sim env` を Renode 上で回す。最小実験として Pico の `.elf` を Renode と実機で同一バイナリ実行（sim↔実機パリティのデモ）＝製品が必要とする「2 件目の汎用性実証」
 - [ ] **ターゲット抽象の引き直し（本配線と同時に）** — 現状の simulation/device 抽象（`run_remote`/`push_file`/`start_port_forward`）は「SSH/adb で Linux に繋ぐ」前提に最適化されており、Renode（ローカルプロセス＋ファームロード）や専用 SoC 評価ボード（JTAG/SWD 書き込み・電源/リセット・シリアル/RTT）で破綻する。What（検証対象）と How（接続方法）を分離し、操作を能力（lifecycle / provision / execute / observe）で捉え直す。「SSH」は execute の一実装に格下げ。これは「同一バイナリが sim と実機で動く（バイナリ透過性）」を Linux SBC 以外へ持ち越せるかの試金石。YAGNI に従い、実例 2 つを手にする本配線時に痛みとともに引き直す
 - [x] ドキュメント整理（README + docs 01〜12、WSL 中心方針へ）

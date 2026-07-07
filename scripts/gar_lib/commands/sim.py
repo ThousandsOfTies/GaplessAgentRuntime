@@ -20,9 +20,9 @@ from scripts.gar_lib.config import (
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.sim.base import SimEnvProcessor
-from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
-from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.simulation.base import SimEnvProcessor
+from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
+from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
 
 SIM_DEST_MAP = {
@@ -37,7 +37,7 @@ SIM_DEST_PREFIX_MAP = {
 
 def _get_sim_provider(provider_override: str | None = None) -> type[DevEnvironment]:
     config = load_config()
-    pid = provider_override or config.get("selected_providers", {}).get("simulation")
+    pid = provider_override or config.get("selected_providers", {}).get("simulator")
     providers = discover_environment_providers()
     if pid:
         for p in providers:
@@ -64,7 +64,7 @@ def deploy_sim_artifacts(root: Path, *, host: str | None, section: str = "app") 
         return 1
 
     bundle_root, files = loaded
-    provider = get_provider("simulation")
+    provider = get_provider("simulator")
 
     for entry in files:
         source = resolve_artifact_src(bundle_root, entry["src"])

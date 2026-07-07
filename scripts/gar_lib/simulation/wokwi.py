@@ -15,7 +15,7 @@ from pathlib import Path
 from scripts.gar_lib.config import PROJECT_ROOT
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.gar_tools import gar_tools_root
-from scripts.gar_lib.sim.base import SimCommandBuilder, SimEnvProcessor
+from scripts.gar_lib.simulation.base import SimCommandBuilder, SimEnvProcessor
 
 DEFAULT_WOKWI_WORKSPACE_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
 DEFAULT_WOKWI_DIR = DEFAULT_WOKWI_WORKSPACE_DIR

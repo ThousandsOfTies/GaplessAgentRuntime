@@ -11,22 +11,22 @@ from unittest import mock
 
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.environments.registry.development.github_codespaces import (
+from scripts.gar_lib.environments.registry.codespace.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
-from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
-from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
+from scripts.gar_lib.environments.registry.simulator.aws_ssm import AwsSsmEnvironment
+from scripts.gar_lib.environments.registry.simulator.renode_mcu import (
     RenodeMcuEnvironment,
 )
-from scripts.gar_lib.environments.registry.simulation.vibe_remote_device import (
+from scripts.gar_lib.environments.registry.simulator.vibe_remote_device import (
     VibeRemoteVirtualDeviceEnvironment,
 )
-from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
-from scripts.gar_lib.environments.registry.target_access.adb_usb import AdbUsbEnvironment
-from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (
+from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
+from scripts.gar_lib.environments.registry.target.adb_usb import AdbUsbEnvironment
+from scripts.gar_lib.environments.registry.target.esp32_esptool import (
     Esp32EsptoolEnvironment,
 )
-from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -57,17 +57,17 @@ class GarDiscoveryTest(unittest.TestCase):
         }
 
         self.assertEqual(
-            "development",
+            "codespace",
             categories_by_provider["github_codespaces"],
         )
-        self.assertEqual("simulation", categories_by_provider["aws_ssm"])
-        self.assertEqual("simulation", categories_by_provider["renode_mcu"])
-        self.assertEqual("simulation", categories_by_provider["esp32_qemu_firmware"])
-        self.assertEqual("simulation", categories_by_provider["wokwi"])
-        self.assertEqual("simulation", categories_by_provider["vibe_remote_device"])
-        self.assertEqual("target_access", categories_by_provider["adb_usb"])
-        self.assertEqual("target_access", categories_by_provider["ssh_scp"])
-        self.assertEqual("target_access", categories_by_provider["esp32_esptool"])
+        self.assertEqual("simulator", categories_by_provider["aws_ssm"])
+        self.assertEqual("simulator", categories_by_provider["renode_mcu"])
+        self.assertEqual("simulator", categories_by_provider["esp32_qemu_firmware"])
+        self.assertEqual("simulator", categories_by_provider["wokwi"])
+        self.assertEqual("simulator", categories_by_provider["vibe_remote_device"])
+        self.assertEqual("target", categories_by_provider["adb_usb"])
+        self.assertEqual("target", categories_by_provider["ssh_scp"])
+        self.assertEqual("target", categories_by_provider["esp32_esptool"])
 
     def test_provider_ids_are_unique(self) -> None:
         providers = discover_environment_providers()
@@ -98,7 +98,7 @@ class GarDiscoveryTest(unittest.TestCase):
                 {"VIBE_REMOTE_NODE_SH": str(missing_node_sh)},
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.simulation.vibe_remote_device._find_node",
+                "scripts.gar_lib.environments.registry.simulator.vibe_remote_device._find_node",
                 return_value=None,
             ),
         ):
@@ -218,7 +218,7 @@ class GarDiscoveryTest(unittest.TestCase):
 
             with (
                 mock.patch("shutil.which", return_value=None),
-                mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.PROJECT_ROOT", root),
+                mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.PROJECT_ROOT", root),
             ):
                 statuses = Esp32EsptoolEnvironment.dependency_status()
                 missing = Esp32EsptoolEnvironment.missing_commands()
@@ -235,7 +235,7 @@ class GarDiscoveryTest(unittest.TestCase):
             python.write_text("#!/bin/sh\n", encoding="utf-8")
 
             with (
-                mock.patch("scripts.gar_lib.environments.registry.target_access.esp32_esptool.PROJECT_ROOT", root),
+                mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.PROJECT_ROOT", root),
                 mock.patch.object(Esp32EsptoolEnvironment, "run_subprocess", return_value=0) as run,
             ):
                 output = io.StringIO()
@@ -259,7 +259,7 @@ class GarDiscoveryTest(unittest.TestCase):
             target.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
             launcher = root / "renode"
 
-            from scripts.gar_lib.environments.registry.simulation import renode_mcu
+            from scripts.gar_lib.environments.registry.simulator import renode_mcu
 
             renode_mcu._write_launcher(
                 launcher,
@@ -281,11 +281,11 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -320,11 +320,11 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -359,11 +359,11 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces._is_wsl_or_linux",
                 return_value=True,
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.development.github_codespaces.shutil.which",
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -400,15 +400,15 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.simulation.aws_ssm.platform.system",
+                "scripts.gar_lib.environments.registry.simulator.aws_ssm.platform.system",
                 return_value="Linux",
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.simulation.aws_ssm.platform.machine",
+                "scripts.gar_lib.environments.registry.simulator.aws_ssm.platform.machine",
                 return_value="x86_64",
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.simulation.aws_ssm.shutil.which",
+                "scripts.gar_lib.environments.registry.simulator.aws_ssm.shutil.which",
                 return_value="/usr/bin/tool",
             ),
             mock.patch.object(
@@ -458,7 +458,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn(["sudo", "dpkg", "-i", mock.ANY], commands)
 
     def test_aws_ssm_runtime_operations_fail_closed(self) -> None:
-        with mock.patch("scripts.gar_lib.environments.registry.simulation.aws_ssm.subprocess.run") as run:
+        with mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ssm.subprocess.run") as run:
             result = AwsSsmEnvironment.run_remote(
                 "vibecode-graviton",
                 "echo hello",
@@ -489,11 +489,11 @@ class GarDiscoveryTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "scripts.gar_lib.environments.registry.target_access.adb_usb.platform.system",
+                "scripts.gar_lib.environments.registry.target.adb_usb.platform.system",
                 return_value="Linux",
             ),
             mock.patch(
-                "scripts.gar_lib.environments.registry.target_access.adb_usb.shutil.which",
+                "scripts.gar_lib.environments.registry.target.adb_usb.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
             mock.patch.object(
@@ -524,11 +524,11 @@ class GarDiscoveryTest(unittest.TestCase):
             tmp_path = Path(tmp)
             with (
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.development.github_codespaces._is_wsl_or_linux",
+                    "scripts.gar_lib.environments.registry.codespace.github_codespaces._is_wsl_or_linux",
                     return_value=True,
                 ),
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.development.github_codespaces.shutil.which",
+                    "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                     return_value="/usr/bin/apt-get",
                 ),
                 mock.patch.object(

@@ -17,14 +17,14 @@ from scripts.gar_lib.config import (
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
+from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
 from scripts.gar_lib.gar_tools import (
     TargetManifest,
     discover_target_manifests,
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 from scripts.gar_lib.vscode.terminal_bridge import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
@@ -42,6 +42,7 @@ from scripts.gar_lib.vscode.terminal_ui import (
 )
 
 SKIP_CATEGORY = object()
+TARGET_MENU_ENTRY = "__target_board__"
 
 
 def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None) -> int:
@@ -81,7 +82,7 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
         )
         if category is None:
             break
-        if category[0] == "target":
+        if category[0] == TARGET_MENU_ENTRY:
             selected = select_target(targets, providers)
             if selected is None:
                 break
@@ -189,7 +190,7 @@ def print_terminal_bridge_status(*, offer_install: bool) -> None:
 
 
 def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
-    selected_simulation = config.get("selected_providers", {}).get("simulation")
+    selected_simulation = config.get("selected_providers", {}).get("simulator")
     if selected_simulation is None and ec2_host is None:
         return
 
@@ -225,9 +226,9 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
 
 
 def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) -> None:
-    selected_target_access = config.get("selected_providers", {}).get("target_access")
+    selected_target_provider = config.get("selected_providers", {}).get("target")
     selected_target = config.get("selected_target")
-    if selected_target_access != "esp32_esptool" or selected_target != "esp32":
+    if selected_target_provider != "esp32_esptool" or selected_target != "esp32":
         return
 
     current_port = saved_esp32_serial_port(config)
@@ -280,7 +281,7 @@ def detect_esp32_serial_port_candidates() -> list[str]:
 
 
 def print_target_next_steps(config: dict) -> None:
-    selected_simulation = config.get("selected_providers", {}).get("simulation")
+    selected_simulation = config.get("selected_providers", {}).get("simulator")
     if selected_simulation != "wokwi":
         return
 
@@ -351,9 +352,9 @@ def removable_target_backend_categories() -> set[str]:
 
 def managed_backend_categories() -> set[str]:
     return {
-        "development",
-        "simulation",
-        "target_access",
+        "codespace",
+        "simulator",
+        "target",
         "boot",
         "hostLink",
         "probe",
@@ -361,7 +362,7 @@ def managed_backend_categories() -> set[str]:
 
 
 def prepare_target_backend(target: TargetManifest) -> None:
-    if target.default_backends.get("simulation") != "wokwi":
+    if target.default_backends.get("simulator") != "wokwi":
         return
 
     print()
@@ -429,9 +430,9 @@ def optional_setup_categories(config: dict, targets: Sequence[TargetManifest]) -
     target = selected_target_manifest(config, targets)
     if target is None:
         return set()
-    optional = {"simulation"}
-    if target.default_backends.get("simulation") == "wokwi":
-        optional.add("target_access")
+    optional = {"simulator"}
+    if target.default_backends.get("simulator") == "wokwi":
+        optional.add("target")
     return optional
 
 
@@ -577,7 +578,7 @@ def select_setup_category(
         raw = safe_input(prompt)
         if raw == "":
             if not target_configured:
-                return ("target", "Target", [])
+                return (TARGET_MENU_ENTRY, "Target", [])
             if default_index is None:
                 return None
             return categories[default_index - 1]
@@ -591,7 +592,7 @@ def select_setup_category(
             continue
 
         if selected == 1:
-            return ("target", "Target", [])
+            return (TARGET_MENU_ENTRY, "Target", [])
 
         list_index = selected - start_index
         if 0 <= list_index < len(categories):

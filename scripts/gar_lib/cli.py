@@ -114,7 +114,7 @@ from scripts.gar_lib.commands.target import (  # noqa: F401
     run_target_build_command,
     run_target_deploy_command,
     run_target_flash_command,
-    selected_target_access_provider_id,
+    selected_target_provider_id,
 )
 from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
@@ -140,13 +140,13 @@ from scripts.gar_lib.config import (  # noqa: F401
 from scripts.gar_lib.environments.discovery import (  # noqa: F401
     discover_environment_providers,
 )
-from scripts.gar_lib.environments.registry.simulation.aws_ec2 import (  # noqa: F401
+from scripts.gar_lib.environments.registry.simulator.aws_ec2 import (  # noqa: F401
     ec2_instance_state,
     ec2_public_ip,
     run_ec2_command,
     update_ssh_config_hostname,
 )
-from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (  # noqa: F401
+from scripts.gar_lib.environments.registry.target.esp32_esptool import (  # noqa: F401
     ensure_esptool_python,
     esp32_serial_port_access_error,
     normalize_esp32_serial_port,

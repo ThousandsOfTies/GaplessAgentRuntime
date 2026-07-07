@@ -20,7 +20,7 @@ from scripts.gar_lib.vscode.profile_manage import (
 def _get_dev_provider() -> type[DevEnvironment]:
     from scripts.gar_lib.config import load_config
     config = load_config()
-    pid = config.get("selected_providers", {}).get("development")
+    pid = config.get("selected_providers", {}).get("codespace")
     providers = discover_environment_providers()
     if pid:
         for p in providers:

@@ -19,7 +19,7 @@ from scripts.gar_lib.config import (
     set_default_ec2_instance_id,
     set_default_ec2_region,
 )
-from scripts.gar_lib.environments.registry.simulation.aws_ec2 import update_ssh_config_hostname
+from scripts.gar_lib.environments.registry.simulator.aws_ec2 import update_ssh_config_hostname
 
 TERRAFORM_DIR = PROJECT_ROOT / "infra" / "terraform"
 

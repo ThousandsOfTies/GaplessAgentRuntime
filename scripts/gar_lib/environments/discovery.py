@@ -13,15 +13,15 @@ class ProviderDiscoveryError(RuntimeError):
 
 
 CATEGORY_METADATA = {
-    "development": {
+    "codespace": {
         "name": "開発環境",
         "order": 10,
     },
-    "simulation": {
+    "simulator": {
         "name": "シミュレート環境",
         "order": 20,
     },
-    "target_access": {
+    "target": {
         "name": "実機環境",
         "order": 30,
     },

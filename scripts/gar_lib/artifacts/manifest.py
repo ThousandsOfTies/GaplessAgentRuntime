@@ -38,7 +38,7 @@ def get_provider(category: str) -> type[DevEnvironment]:
             if p.provider_id == pid:
                 return p
     for p in providers:
-        if p.provider_id == ("ssh_remote" if category == "simulation" else "adb_usb"):
+        if p.provider_id == ("ssh_remote" if category == "simulator" else "adb_usb"):
             return p
     raise RuntimeError(f"No {category} provider found")
 

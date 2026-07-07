@@ -69,7 +69,7 @@ GaplessAgentRuntime/
 | `scripts/gar` | yes | `gar` executable wrapper。venv を用意し、`scripts.gar_lib.cli` へ委譲する | 人間/AI が最初に触る薄い起動口 |
 | `scripts/gar_lib/` | yes | GAR CLI の本体実装 | 操作面 runtime の正本 |
 | `scripts/gar_lib/environments/` | yes | development / simulation / target access provider の IF と registry | `gar setup` の選択結果で差し替える拡張点 |
-| `scripts/gar_lib/sim/` | yes | simulation runtime の domain logic | provider 差し替え後も共通に使う simulation 操作 |
+| `scripts/gar_lib/simulation/` | yes | simulation runtime の domain logic | provider 差し替え後も共通に使う simulation 操作 |
 | `scripts/run_scenario.py` | yes | JSON scenario を bridge API へ流す補助スクリプト | AI / CI が再現可能な検証入口 |
 | `docs/` | yes | 操作手順、コマンド、環境境界、引き継ぎ | 利用者が実行するための正本 |
 | `info/` | yes | 背景思想、製品仮説、将来像 | なぜこの構成かを説明する非手順ドキュメント |
@@ -103,9 +103,9 @@ scripts/gar_lib/
   config.py               # .gar/config.json and project paths
   commands/
     code.py               # `gar code` command dispatcher and Codespaces helpers
-    deploy.py             # artifact fetch/deploy for simulation/target access
+    deploy.py             # artifact fetch/deploy for simulator/target access
     hw.py                 # hardware template initialization
-    infra.py              # Terraform wrapper for simulation infra
+    infra.py              # Terraform wrapper for simulator infra
     setup.py              # target/provider selection and dependency checks
     shim.py               # provider/target adapter artifact build command
     sim.py                # `gar sim env ...` orchestration
@@ -118,7 +118,7 @@ scripts/gar_lib/
     terminal_ui.py        # shared terminal UI helpers
     profile_manage.py     # VS Code terminal profile write/remove
     terminal_bridge.py    # VS Code Terminal Bridge extension install
-  sim/
+  simulation/
     parse.py              # parsers for simulation diagnostics
 ```
 
@@ -128,18 +128,18 @@ scripts/gar_lib/
 |---|---|---|
 | CLI 表面 | `cli.py` | argparse の shape と各 command module への dispatch |
 | ローカル状態 | `config.py` | `.gar/config.json` の load/save、既定値、project root |
-| 初期設定 | `commands/setup.py` | target 選択、development/simulation/target access provider 選択、依存コマンド確認 |
+| 初期設定 | `commands/setup.py` | target 選択、codespace/simulator/target provider 選択、依存コマンド確認 |
 | target 定義 | `gar_tools.py` | `gar-tools/targets/*/target.json` の探索と auto clone |
-| development 環境 | `commands/code.py` + `environments/registry/development/*` | build/development target への接続。`gar setup` の development provider に委譲する |
-| simulation 環境 | `commands/sim.py` + `sim/*` + `environments/registry/simulation/*` | VM / Wokwi / Renode 等の simulation runtime 操作 |
-| target access provider | `commands/deploy.py` + `environments/registry/target_access/*` | 実機への artifact 配置、ADB/SSH/esptool 等の接続方式差し替え |
+| codespace 環境 | `commands/code.py` + `environments/registry/codespace/*` | build/development target への接続。`gar setup` の codespace provider に委譲する |
+| simulator 環境 | `commands/sim.py` + `simulation/*` + `environments/registry/simulator/*` | VM / Wokwi / Renode 等の simulation runtime 操作 |
+| target provider | `commands/deploy.py` + `environments/registry/target/*` | 実機への artifact 配置、ADB/SSH/esptool 等の接続方式差し替え |
 | target 固有処理 | `commands/esp32_firmware.py` | ESP32 の firmware artifact / build など target 固有の補助処理 |
-| インフラ | `commands/infra.py`, `environments/registry/simulation/aws_ec2.py` | EC2 instance 操作と Terraform 実行 |
+| インフラ | `commands/infra.py`, `environments/registry/simulator/aws_ec2.py` | EC2 instance 操作と Terraform 実行 |
 | ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `vscode/profile_manage.py`, `vscode/terminal_bridge.py`, `vscode/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
 
 `cli.py` は command line の形を決める場所に留め、環境固有の処理は
 provider / command module へ寄せる。たとえば `gar code` は `cli.py` から
-`run_code_command()` に渡り、そこで `selected_providers.development` の
+`run_code_command()` に渡り、そこで `selected_providers.codespace` の
 `DevEnvironment.code_command()` へ委譲する。Codespaces 固有の `gh codespace`
 処理は `github_codespaces` provider から呼ばれる。
 
@@ -154,10 +154,10 @@ scripts/gar_lib/environments/
   base.py                 # DevEnvironment base class and provider IF
   discovery.py            # registry package scan and category metadata
   registry/
-    development/
+    codespace/
       github_codespaces.py
       local.py
-    simulation/
+    simulator/
       aws_ec2.py
       ssh_remote.py
       wokwi.py
@@ -165,7 +165,7 @@ scripts/gar_lib/environments/
       esp32_qemu.py
       aws_ssm.py
       vibe_remote_device.py
-    target_access/
+    target/
       adb_usb.py
       adb_win.py
       esp32_esptool.py
@@ -177,26 +177,27 @@ scripts/gar_lib/environments/
 
 | category | 代表 provider | 使われる主な command |
 |---|---|---|
-| `development` | `github_codespaces`, `local` | `gar code ...`, target build/fetch |
-| `simulation` | `ssh_remote`, `wokwi`, `renode_mcu`, `esp32_qemu_firmware` | `gar sim env ...`, `gar sim deploy` |
-| `target_access` | `adb_usb`, `adb_win`, `ssh_scp`, `esp32_esptool` | `gar target deploy`, `gar target flash/build` |
+| `codespace` | `github_codespaces`, `local` | `gar code ...`, target build/fetch |
+| `simulator` | `ssh_remote`, `wokwi`, `renode_mcu`, `esp32_qemu_firmware` | `gar sim env ...`, `gar sim deploy` |
+| `target` | `adb_usb`, `adb_win`, `ssh_scp`, `esp32_esptool` | `gar target deploy`, `gar target flash/build` |
 
 設計意図は、CLI の利用者には同じ `gar code` / `gar sim` / `gar target` を見せ、
 実際の接続方式だけを provider で差し替えることにある。
-`target_access` に置くのは target 種別そのものではなく、ADB / SSH / esptool など
-「実機 target へどう到達するか」の provider である。
+`target` category に置くのは target 種別そのものではなく、ADB / SSH / esptool など
+「実機 target へどう到達するか」の provider である（`gar target` コマンドが指す
+ボード種別・`selected_target` とは別の概念）。
 
 そのため、新しい接続先を増やすときは既存 command を増殖させるのではなく、
-`environments/registry/<category>/`（実機接続では `target_access/`）に provider を追加する。
+`environments/registry/<category>/`（実機接続では `target/`）に provider を追加する。
 
 ---
 
 ## Simulation domain logic
 
-`scripts/gar_lib/sim/` は simulation provider の背後にある domain logic を置く。
+`scripts/gar_lib/simulation/` は simulator provider の背後にある domain logic を置く。
 
 ```text
-scripts/gar_lib/sim/
+scripts/gar_lib/simulation/
   base.py                 # SimProvider interface
   linux.py                # Linux/systemd compatible runtime command builder
   wokwi.py                # Wokwi workspace / command helper

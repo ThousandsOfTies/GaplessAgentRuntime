@@ -1,10 +1,10 @@
-"""`gar target build/build-esp32/flash-esp32/deploy`: target_access provider dispatch.
+"""`gar target build/build-esp32/flash-esp32/deploy`: target provider dispatch.
 
 The actual build/flash/deploy work lives on ``DevEnvironment`` subclasses
 (``.build()``/``.flash()``/``.deploy()``, see :mod:`scripts.gar_lib.environments.base`
-and the ``environments/registry/target_access/*`` providers). This module:
+and the ``environments/registry/target/*`` providers). This module:
 
-- resolves the selected ``target_access`` provider and adapts CLI-facing call
+- resolves the selected ``target`` provider and adapts CLI-facing call
   signatures (``run_target_build_command``/``run_target_flash_command``),
   catching ``NotImplementedError`` to print ``gar setup`` guidance
 - provides adb device-readiness helpers and the plain file-push deploy used by
@@ -39,7 +39,7 @@ def run_target_build_command(
     verify: bool,
     install_esptool: bool,
 ) -> int:
-    provider = get_provider("target_access")
+    provider = get_provider("target")
     try:
         return provider.build(
             codespace=codespace,
@@ -56,7 +56,7 @@ def run_target_build_command(
     except NotImplementedError:
         print(
             "gar target build: 現在の setup では対応する build が見つかりません。\n"
-            f"  target_access: {provider.display_name}\n"
+            f"  target: {provider.display_name}\n"
             "  Run `gar setup` and choose ESP32 esptool.",
             file=sys.stderr,
         )
@@ -72,7 +72,7 @@ def run_target_flash_command(
     verify: bool,
     install_esptool: bool,
 ) -> int:
-    provider = get_provider("target_access")
+    provider = get_provider("target")
     try:
         return provider.flash(
             artifact_dir=artifact_dir,
@@ -85,7 +85,7 @@ def run_target_flash_command(
     except NotImplementedError:
         print(
             "gar target flash-esp32: 現在の setup では対応する flash が見つかりません。\n"
-            f"  target_access: {provider.display_name}\n"
+            f"  target: {provider.display_name}\n"
             "  Run `gar setup` and choose ESP32 esptool.",
             file=sys.stderr,
         )
@@ -103,23 +103,23 @@ def run_target_deploy_command(
     remote_root: str | None = None,
 ) -> int:
     del codespace, remote_root
-    provider = get_provider("target_access")
+    provider = get_provider("target")
     try:
         return provider.deploy(artifacts_dir, serial=serial, port=port, host=host, dest=dest)
     except NotImplementedError:
         print(
             "gar target deploy: 現在の setup では対応する deploy が見つかりません。\n"
-            f"  target_access: {provider.display_name}\n"
+            f"  target: {provider.display_name}\n"
             "  Run `gar setup` and choose a target access provider.",
             file=sys.stderr,
         )
         return 1
 
 
-def selected_target_access_provider_id(config: dict) -> str | None:
+def selected_target_provider_id(config: dict) -> str | None:
     selected = config.get("selected_providers")
     if isinstance(selected, dict):
-        value = selected.get("target_access")
+        value = selected.get("target")
         if isinstance(value, str) and value:
             return value
     return None
@@ -130,7 +130,7 @@ def deploy_target_artifacts(root: Path, *, serial: str | None, dest: str) -> int
     if loaded is None:
         return 1
 
-    provider = get_provider("target_access")
+    provider = get_provider("target")
     target = serial if serial else ""
     if provider.provider_id == "adb_usb":
         result = ensure_adb_device(serial=serial)
@@ -201,7 +201,7 @@ def ensure_adb_device(*, serial: str | None) -> int:
 
 def ensure_adb_win_device(*, serial: str | None) -> int:
     """Windows ネイティブ adb.exe で device の存在を確認する（usbipd 不要）。"""
-    from scripts.gar_lib.environments.registry.target_access.adb_win import _resolve_adb_exe
+    from scripts.gar_lib.environments.registry.target.adb_win import _resolve_adb_exe
 
     exe = _resolve_adb_exe()
     if exe is None:
@@ -255,7 +255,7 @@ def deploy_target_artifacts_ssh(root: Path, *, host: str, dest: str) -> int:
         return 1
 
     bundle_root, files = loaded
-    provider = get_provider("target_access")
+    provider = get_provider("target")
     for entry in files:
         source = resolve_artifact_src(bundle_root, entry["src"])
         if source is None:

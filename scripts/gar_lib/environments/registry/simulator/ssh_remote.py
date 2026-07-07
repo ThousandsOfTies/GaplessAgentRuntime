@@ -92,7 +92,7 @@ exec ssh -F "$HOME/.ssh/config" -t {quoted_host} "cd ~ && exec bash -l"
         pull: bool = False,
         json_output: bool = False,
     ) -> int:
-        from scripts.gar_lib.environments.registry.simulation.aws_ec2 import run_ec2_command
+        from scripts.gar_lib.environments.registry.simulator.aws_ec2 import run_ec2_command
 
         return run_ec2_command(
             command,
