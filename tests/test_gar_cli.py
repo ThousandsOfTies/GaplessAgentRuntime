@@ -1866,13 +1866,13 @@ class GarCliTest(unittest.TestCase):
         local_artifact = Path("/tmp/local-artifacts/20260620-001750-m5stickc-plus2-vibe-min")
 
         with (
-            mock.patch("scripts.gar_lib.commands.esp32_firmware.select_codespace", return_value="codespace-test"),
+            mock.patch("scripts.gar_lib.targets.esp32.select_codespace", return_value="codespace-test"),
             mock.patch(
-                "scripts.gar_lib.commands.esp32_firmware.run_streaming_command",
+                "scripts.gar_lib.targets.esp32.run_streaming_command",
                 return_value=(0, build_output),
             ) as run,
             mock.patch(
-                "scripts.gar_lib.commands.esp32_firmware.fetch_esp32_codespace_artifact",
+                "scripts.gar_lib.targets.esp32.fetch_esp32_codespace_artifact",
                 return_value=local_artifact,
             ) as fetch,
             mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.run_esp32_flash_command", return_value=0) as flash,

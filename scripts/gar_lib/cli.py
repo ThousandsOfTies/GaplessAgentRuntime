@@ -60,16 +60,6 @@ from scripts.gar_lib.commands.code import (  # noqa: F401
     stop_code_codespace,
     unmount_codespace_code,
 )
-from scripts.gar_lib.commands.esp32_firmware import (  # noqa: F401
-    DEFAULT_ESP32_ARTIFACT_ROOT,
-    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-    DEFAULT_ESP32_PIO_ENV,
-    fetch_esp32_codespace_artifact,
-    find_latest_esp32_artifact,
-    parse_esp32_build_artifact_path,
-    resolve_esp32_artifact_dir,
-    run_esp32_build_command,
-)
 from scripts.gar_lib.commands.hw import (  # noqa: F401
     HW_TEMPLATE_FILES,
     run_hw_command,
@@ -153,6 +143,16 @@ from scripts.gar_lib.environments.registry.target.esp32_esptool import (  # noqa
     run_esp32_flash_command,
     validate_esp32_artifact,
     verify_esp32_artifact_checksums,
+)
+from scripts.gar_lib.targets.esp32 import (  # noqa: F401
+    DEFAULT_ESP32_ARTIFACT_ROOT,
+    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+    DEFAULT_ESP32_PIO_ENV,
+    fetch_esp32_codespace_artifact,
+    find_latest_esp32_artifact,
+    parse_esp32_build_artifact_path,
+    resolve_esp32_artifact_dir,
+    run_esp32_build_command,
 )
 from scripts.gar_lib.vscode.profile_manage import (  # noqa: F401
     remove_vscode_terminal_profile,

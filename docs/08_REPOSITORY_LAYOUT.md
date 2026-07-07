@@ -111,8 +111,9 @@ scripts/gar_lib/
     sim.py                # `gar sim env ...` orchestration
     terminal.py           # VS Code terminal request writer
     usb.py                # usbipd / USB helper command
-    esp32_firmware.py     # ESP32 firmware artifact fetch / build helpers
   gar_tools.py            # gar-tools target manifest discovery
+  targets/
+    esp32.py              # ESP32 firmware artifact fetch / build helpers
   environments/
   vscode/
     terminal_ui.py        # shared terminal UI helpers
@@ -133,7 +134,7 @@ scripts/gar_lib/
 | codespace 環境 | `commands/code.py` + `environments/registry/codespace/*` | build/development target への接続。`gar setup` の codespace provider に委譲する |
 | simulator 環境 | `commands/sim.py` + `simulation/*` + `environments/registry/simulator/*` | VM / Wokwi / Renode 等の simulation runtime 操作 |
 | target provider | `commands/deploy.py` + `environments/registry/target/*` | 実機への artifact 配置、ADB/SSH/esptool 等の接続方式差し替え |
-| target 固有処理 | `commands/esp32_firmware.py` | ESP32 の firmware artifact / build など target 固有の補助処理 |
+| target 固有処理 | `targets/esp32.py` | ESP32 の firmware artifact / build など target 固有の補助処理。`commands/` のどの `gar <verb>` にも 1:1 対応しないため `commands/` の外に置く。cli.py と `environments/registry/target/esp32_esptool.py` の両方から参照される |
 | インフラ | `commands/infra.py`, `environments/registry/simulator/aws_ec2.py` | EC2 instance 操作と Terraform 実行 |
 | ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `vscode/profile_manage.py`, `vscode/terminal_bridge.py`, `vscode/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
 

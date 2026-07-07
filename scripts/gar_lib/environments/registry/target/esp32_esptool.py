@@ -12,7 +12,9 @@ import sys
 import venv
 from pathlib import Path
 
-from scripts.gar_lib.commands.esp32_firmware import (
+from scripts.gar_lib.config import PROJECT_ROOT, load_config, saved_esp32_serial_port
+from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
+from scripts.gar_lib.targets.esp32 import (
     DEFAULT_ESP32_ARTIFACT_ROOT,
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
@@ -20,8 +22,6 @@ from scripts.gar_lib.commands.esp32_firmware import (
     resolve_esp32_artifact_dir,
     run_esp32_build_command,
 )
-from scripts.gar_lib.config import PROJECT_ROOT, load_config, saved_esp32_serial_port
-from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
 
 ESPTOOL_VENV = Path.home() / ".local" / "share" / "gar" / "esptool-venv"
 
