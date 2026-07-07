@@ -6,6 +6,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
@@ -14,12 +15,19 @@ from scripts.gar_lib.config import (
     set_default_ec2_host,
     set_saved_esp32_serial_port,
 )
-from scripts.gar_lib.commands.hw import load_hw_definition
+from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.discovery import discover_environment_providers
+from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
 from scripts.gar_lib.gar_tools import (
     TargetManifest,
     discover_target_manifests,
     ensure_gar_tools_available,
     target_by_id,
+)
+from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.vscode.terminal_bridge import (
+    install_vscode_terminal_bridge,
+    installed_vscode_terminal_bridge_path,
 )
 from scripts.gar_lib.vscode.terminal_ui import (
     BLUE,
@@ -32,14 +40,6 @@ from scripts.gar_lib.vscode.terminal_ui import (
     safe_input,
     style,
 )
-from scripts.gar_lib.vscode.terminal_bridge import (
-    install_vscode_terminal_bridge,
-    installed_vscode_terminal_bridge_path,
-)
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
-from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
 
 SKIP_CATEGORY = object()
 

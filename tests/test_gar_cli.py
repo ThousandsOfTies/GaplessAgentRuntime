@@ -12,9 +12,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from scripts.gar_lib.commands.sim import run_sim_panel
-from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
-from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.cli import (
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
@@ -46,11 +43,14 @@ from scripts.gar_lib.cli import (
     stop_code_codespace,
     update_ssh_config_hostname,
 )
+from scripts.gar_lib.commands.sim import run_sim_panel
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulation.ssh_remote import SshRemoteEnvironment
 from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
 from scripts.gar_lib.environments.registry.target_access.esp32_esptool import Esp32EsptoolEnvironment
+from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, gpio_sim_plan
+from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
 
 

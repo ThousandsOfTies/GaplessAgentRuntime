@@ -35,7 +35,7 @@ class SimCommandBuilder(ABC):
     def build_panel(self, action: str, params: dict) -> str: ...
 
 
-class SimEnvProcessor(ABC):
+class SimEnvProcessor:
     """High-level ``gar sim env`` operations on a target device.
 
     Mirrors :class:`~scripts.gar_lib.environments.base.DevEnvironment`: every

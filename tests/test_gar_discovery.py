@@ -14,10 +14,6 @@ from scripts.gar_lib.environments.discovery import discover_environment_provider
 from scripts.gar_lib.environments.registry.development.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
-from scripts.gar_lib.environments.registry.target_access.adb_usb import AdbUsbEnvironment
-from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (
-    Esp32EsptoolEnvironment,
-)
 from scripts.gar_lib.environments.registry.simulation.aws_ssm import AwsSsmEnvironment
 from scripts.gar_lib.environments.registry.simulation.renode_mcu import (
     RenodeMcuEnvironment,
@@ -26,6 +22,10 @@ from scripts.gar_lib.environments.registry.simulation.vibe_remote_device import 
     VibeRemoteVirtualDeviceEnvironment,
 )
 from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
+from scripts.gar_lib.environments.registry.target_access.adb_usb import AdbUsbEnvironment
+from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (
+    Esp32EsptoolEnvironment,
+)
 from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
 
 

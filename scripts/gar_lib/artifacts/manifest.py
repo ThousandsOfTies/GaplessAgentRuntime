@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import re
 from pathlib import Path
 
 from scripts.gar_lib.commands.code import select_codespace_from_list

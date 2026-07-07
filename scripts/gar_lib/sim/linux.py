@@ -10,9 +10,9 @@ import textwrap
 from urllib.parse import quote
 
 from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.sim.base import SimCommandBuilder, SimEnvProcessor
+from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 
 # Linux constants
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")

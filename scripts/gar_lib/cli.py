@@ -26,6 +26,22 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from scripts.gar_lib.artifacts.manifest import (  # noqa: F401
+    DEFAULT_CODESPACE_ARTIFACT_ROOT,
+    artifact_deploy_files,
+    artifact_manifest_deploy_sources,
+    default_artifacts_dir,
+    default_codespace_artifact_root,
+    fetch_codespace_artifacts,
+    find_artifact_manifest,
+    gh_codespace_cp,
+    load_artifact_manifest,
+    load_deploy_files,
+    resolve_artifact_src,
+    select_codespace,
+    target_dest_path,
+)
+
 # Re-exports — keep public surface stable for callers and tests.
 from scripts.gar_lib.commands.code import (  # noqa: F401
     boot_code_codespace,
@@ -43,56 +59,6 @@ from scripts.gar_lib.commands.code import (  # noqa: F401
     status_code_codespace,
     stop_code_codespace,
     unmount_codespace_code,
-)
-from scripts.gar_lib.config import (  # noqa: F401
-    CONFIG_PATH,
-    PROJECT_ROOT,
-    VSCODE_EXT_NAME,
-    VSCODE_EXT_VERSION,
-    default_config,
-    default_ec2_host,
-    load_config,
-    save_config,
-    set_default_ec2_host,
-)
-from scripts.gar_lib.artifacts.manifest import (  # noqa: F401
-    DEFAULT_CODESPACE_ARTIFACT_ROOT,
-    artifact_deploy_files,
-    artifact_manifest_deploy_sources,
-    default_artifacts_dir,
-    default_codespace_artifact_root,
-    fetch_codespace_artifacts,
-    find_artifact_manifest,
-    gh_codespace_cp,
-    load_artifact_manifest,
-    load_deploy_files,
-    resolve_artifact_src,
-    select_codespace,
-    target_dest_path,
-)
-from scripts.gar_lib.commands.target import (  # noqa: F401
-    adb_device_available,
-    deploy_target_artifacts,
-    deploy_target_artifacts_ssh,
-    ensure_adb_device,
-    run_target_build_command,
-    run_target_deploy_command,
-    run_target_flash_command,
-    selected_target_access_provider_id,
-)
-from scripts.gar_lib.environments.registry.simulation.aws_ec2 import (  # noqa: F401
-    ec2_instance_state,
-    ec2_public_ip,
-    run_ec2_command,
-    update_ssh_config_hostname,
-)
-from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (  # noqa: F401
-    ensure_esptool_python,
-    esp32_serial_port_access_error,
-    normalize_esp32_serial_port,
-    run_esp32_flash_command,
-    validate_esp32_artifact,
-    verify_esp32_artifact_checksums,
 )
 from scripts.gar_lib.commands.esp32_firmware import (  # noqa: F401
     DEFAULT_ESP32_ARTIFACT_ROOT,
@@ -140,9 +106,61 @@ from scripts.gar_lib.commands.sim import (  # noqa: F401
     stop_sim_port_forward,
     write_sim_terminal_profile,
 )
+from scripts.gar_lib.commands.target import (  # noqa: F401
+    adb_device_available,
+    deploy_target_artifacts,
+    deploy_target_artifacts_ssh,
+    ensure_adb_device,
+    run_target_build_command,
+    run_target_deploy_command,
+    run_target_flash_command,
+    selected_target_access_provider_id,
+)
 from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
+)
+from scripts.gar_lib.commands.usb import (  # noqa: F401
+    UsbDevice,
+    list_usb_devices,
+    parse_usbipd_list,
+    run_usb_command,
+)
+from scripts.gar_lib.config import (  # noqa: F401
+    CONFIG_PATH,
+    PROJECT_ROOT,
+    VSCODE_EXT_NAME,
+    VSCODE_EXT_VERSION,
+    default_config,
+    default_ec2_host,
+    load_config,
+    save_config,
+    set_default_ec2_host,
+)
+from scripts.gar_lib.environments.discovery import (  # noqa: F401
+    discover_environment_providers,
+)
+from scripts.gar_lib.environments.registry.simulation.aws_ec2 import (  # noqa: F401
+    ec2_instance_state,
+    ec2_public_ip,
+    run_ec2_command,
+    update_ssh_config_hostname,
+)
+from scripts.gar_lib.environments.registry.target_access.esp32_esptool import (  # noqa: F401
+    ensure_esptool_python,
+    esp32_serial_port_access_error,
+    normalize_esp32_serial_port,
+    run_esp32_flash_command,
+    validate_esp32_artifact,
+    verify_esp32_artifact_checksums,
+)
+from scripts.gar_lib.vscode.profile_manage import (  # noqa: F401
+    remove_vscode_terminal_profile,
+    write_vscode_terminal_profile,
+)
+from scripts.gar_lib.vscode.terminal_bridge import (  # noqa: F401
+    install_vscode_terminal_bridge,
+    installed_vscode_terminal_bridge_path,
 )
 from scripts.gar_lib.vscode.terminal_ui import (  # noqa: F401
     BLUE,
@@ -155,23 +173,6 @@ from scripts.gar_lib.vscode.terminal_ui import (  # noqa: F401
     YELLOW,
     safe_input,
     style,
-)
-from scripts.gar_lib.commands.usb import (  # noqa: F401
-    UsbDevice,
-    list_usb_devices,
-    parse_usbipd_list,
-    run_usb_command,
-)
-from scripts.gar_lib.vscode.profile_manage import (  # noqa: F401
-    remove_vscode_terminal_profile,
-    write_vscode_terminal_profile,
-)
-from scripts.gar_lib.vscode.terminal_bridge import (  # noqa: F401
-    install_vscode_terminal_bridge,
-    installed_vscode_terminal_bridge_path,
-)
-from scripts.gar_lib.environments.discovery import (  # noqa: F401
-    discover_environment_providers,
 )
 
 SIM_VM_COMMAND_MAP = {

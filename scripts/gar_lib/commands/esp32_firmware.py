@@ -11,8 +11,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from scripts.gar_lib.config import PROJECT_ROOT, load_config
 from scripts.gar_lib.artifacts.manifest import gh_env, select_codespace
+from scripts.gar_lib.config import PROJECT_ROOT, load_config
 
 DEFAULT_ESP32_ARTIFACT_ROOT = (
     PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "artifacts"

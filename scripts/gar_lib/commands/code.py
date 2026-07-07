@@ -9,12 +9,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.vscode.profile_manage import (
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
 )
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.discovery import discover_environment_providers
 
 
 def _get_dev_provider() -> type[DevEnvironment]:

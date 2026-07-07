@@ -13,17 +13,17 @@ from scripts.gar_lib.artifacts.manifest import (
     load_deploy_files,
     resolve_artifact_src,
 )
+from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
 )
-from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.sim.base import SimEnvProcessor
 from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
 from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
 
 SIM_DEST_MAP = {
     "~/cuse_i2c": "/usr/local/sbin/cuse_i2c",
