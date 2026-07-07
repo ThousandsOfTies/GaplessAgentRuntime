@@ -117,6 +117,22 @@ EOF
 exit 1
 """
 
+    @classmethod
+    def host_command(
+        cls,
+        command: str,
+        *,
+        host: str | None = None,
+        instance_id: str | None = None,
+        region: str | None = None,
+        update_ssh: bool = True,
+        pull: bool = False,
+        json_output: bool = False,
+    ) -> int:
+        del host, instance_id, region, update_ssh, pull, json_output
+        print(_runtime_unsupported_message(), file=sys.stderr)
+        return 1
+
 
 
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from scripts.gar_lib.config import PROJECT_ROOT
 from scripts.gar_lib.gar_tools import gar_tools_root
 from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
+from scripts.gar_lib.sim.base import SimCommandBuilder, SimEnvProcessor
 
 DEFAULT_WOKWI_WORKSPACE_DIR = PROJECT_ROOT / ".gar" / "wokwi" / "m5stackc"
 DEFAULT_WOKWI_DIR = DEFAULT_WOKWI_WORKSPACE_DIR
@@ -111,7 +111,7 @@ class WokwiSimCommandBuilder(SimCommandBuilder):
         return ":"
 
 
-class WokwiSimProvider(SimProvider):
+class WokwiSimEnvProcessor(SimEnvProcessor):
     """High-level Wokwi simulation operations.
 
     The provider creates a local Wokwi project for an M5StickC/M5StackC-style
@@ -272,6 +272,45 @@ class WokwiSimProvider(SimProvider):
             json_output=json_output,
         )
         return 0
+
+    def build(self, *, json_output: bool = False) -> int:
+        client_dir = PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client"
+        if not (client_dir / "Makefile").is_file():
+            print(f"gar sim env build: Wokwi client Makefile が見つかりません: {client_dir}")
+            return 1
+
+        env = os.environ.copy()
+        platformio_bin = Path.home() / ".venvs" / "platformio" / "bin"
+        env["PATH"] = f"{platformio_bin}:{Path.home() / 'bin'}:{env.get('PATH', '')}"
+
+        if not json_output:
+            print("gar sim env build: Wokwi firmware build を実行します。")
+            print(f"  cwd: {client_dir}")
+            print("  command: make wokwi-build")
+
+        result = subprocess.run(
+            ["make", "wokwi-build"],
+            cwd=client_dir,
+            env=env,
+            stdout=sys.stderr if json_output else None,
+            stderr=sys.stderr if json_output else None,
+        )
+        if json_output:
+            print(
+                json.dumps(
+                    {
+                        "command": "sim env build",
+                        "provider": "wokwi",
+                        "cwd": str(client_dir),
+                        "delegated_command": "make wokwi-build",
+                        "ok": result.returncode == 0,
+                        "exit_code": result.returncode,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return result.returncode
 
     def _start_cli(self) -> int:
         cli = shutil.which("wokwi-cli")

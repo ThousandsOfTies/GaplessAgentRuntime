@@ -35,29 +35,40 @@ class SimCommandBuilder(ABC):
     def build_panel(self, action: str, params: dict) -> str: ...
 
 
-class SimProvider(ABC):
-    """High-level simulation operations on a target device."""
+class SimEnvProcessor(ABC):
+    """High-level ``gar sim env`` operations on a target device.
 
-    @abstractmethod
-    def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int: ...
+    Mirrors :class:`~scripts.gar_lib.environments.base.DevEnvironment`: every
+    verb has a default implementation here that raises ``NotImplementedError``
+    with a message explaining what is missing. Concrete providers (Wokwi,
+    Linux systemd, ...) override only the verbs they actually support; callers
+    catch ``NotImplementedError`` to show ``gar setup`` guidance instead of a
+    bare traceback.
+    """
 
-    @abstractmethod
-    def stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> int: ...
+    def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement start")
 
-    @abstractmethod
-    def status(self, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int: ...
+    def stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement stop")
 
-    @abstractmethod
-    def log(self) -> int: ...
+    def status(self, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement status")
 
-    @abstractmethod
-    def diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> int: ...
+    def log(self) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement log")
 
-    @abstractmethod
-    def gpio_sim_check(self, json_output: bool = False) -> int: ...
+    def diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement diag_json")
 
-    @abstractmethod
-    def gpio_command(self, command: str, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int: ...
+    def gpio_sim_check(self, json_output: bool = False) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement gpio_sim_check")
 
-    @abstractmethod
-    def panel(self, action: str, params: dict, json_output: bool = False) -> int: ...
+    def gpio_command(self, command: str, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement gpio_command")
+
+    def panel(self, action: str, params: dict, json_output: bool = False) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement panel")
+
+    def build(self, *, json_output: bool = False) -> int:
+        raise NotImplementedError(f"{type(self).__name__} does not implement build")

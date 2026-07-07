@@ -21,7 +21,7 @@ from scripts.gar_lib.gar_tools import (
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib.integrations.terminal_ui import (
+from scripts.gar_lib.vscode.terminal_ui import (
     BLUE,
     BOLD,
     CYAN,
@@ -32,14 +32,14 @@ from scripts.gar_lib.integrations.terminal_ui import (
     safe_input,
     style,
 )
-from scripts.gar_lib.integrations.vscode import (
+from scripts.gar_lib.vscode.terminal_bridge import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
-from scripts.gar_lib.sim.wokwi import WokwiSimProvider
+from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
 
 SKIP_CATEGORY = object()
 
@@ -286,7 +286,7 @@ def print_target_next_steps(config: dict) -> None:
 
     print(style("次の操作フェーズ:", BOLD, BLUE))
     print(f"  {style('1. Wokwi firmware/shim をビルド:', BOLD)}")
-    print("    scripts/gar shim build")
+    print("    scripts/gar sim env build")
     print(f"     {style('このtargetのWokwi build入口です。workspace生成後、内部で m5stickc-client の make wokwi-build を実行します。', DIM)}")
     print(f"     {style('workspace生成だけをしたい場合: cd ../gar-vibe-ui/vibe-remote/m5stickc-client && make wokwi-workspace', DIM)}")
     print(f"  {style('2. Wokwi simulation を起動:', BOLD)}")
@@ -366,7 +366,7 @@ def prepare_target_backend(target: TargetManifest) -> None:
 
     print()
     print(style("Wokwi project:", BOLD, BLUE))
-    result = WokwiSimProvider(WokwiEnvironment, host=None).prepare_project(load_hw_definition())
+    result = WokwiSimEnvProcessor(WokwiEnvironment, host=None).prepare_project(load_hw_definition())
     if result == 0:
         print(style("Wokwi プロジェクトを生成しました。", GREEN))
 

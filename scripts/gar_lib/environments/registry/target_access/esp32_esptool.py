@@ -16,8 +16,11 @@ from scripts.gar_lib.config import PROJECT_ROOT, load_config, saved_esp32_serial
 from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
 from scripts.gar_lib.commands.esp32_firmware import (
     DEFAULT_ESP32_ARTIFACT_ROOT,
+    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+    DEFAULT_ESP32_PIO_ENV,
     FLASH_LAYOUT,
     resolve_esp32_artifact_dir,
+    run_esp32_build_command,
 )
 
 ESPTOOL_VENV = Path.home() / ".local" / "share" / "gar" / "esptool-venv"
@@ -78,6 +81,73 @@ class Esp32EsptoolEnvironment(DevEnvironment):
     def pull_file(cls, target: str, src, dest) -> int:
         print("gar: ESP32 esptool provider cannot pull files from firmware flash.", file=sys.stderr)
         return 1
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        codespace: str | None = None,
+        remote_project_root: str | None = None,
+        pio_env: str | None = None,
+        local_artifact_root: str | None = None,
+        flash: bool = False,
+        port: str | None = None,
+        baud: int = 921600,
+        chip: str = "esp32",
+        verify: bool = True,
+        install_esptool: bool = True,
+    ) -> int:
+        return run_esp32_build_command(
+            codespace=codespace,
+            remote_project_root=remote_project_root or DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
+            pio_env=pio_env or DEFAULT_ESP32_PIO_ENV,
+            local_artifact_root=local_artifact_root,
+            flash=flash,
+            port=port,
+            baud=baud,
+            chip=chip,
+            verify=verify,
+            install_esptool=install_esptool,
+        )
+
+    @classmethod
+    def flash(
+        cls,
+        *,
+        artifact_dir: str | None = None,
+        port: str | None = None,
+        baud: int = 921600,
+        chip: str = "esp32",
+        verify: bool = True,
+        install_esptool: bool = True,
+    ) -> int:
+        return run_esp32_flash_command(
+            artifact_dir=artifact_dir,
+            port=port,
+            baud=baud,
+            chip=chip,
+            verify=verify,
+            install_esptool=install_esptool,
+        )
+
+    @classmethod
+    def deploy(
+        cls,
+        artifacts_dir: str | None = None,
+        *,
+        serial: str | None = None,
+        port: str | None = None,
+        host: str | None = None,
+        dest: str = "/home/user",
+    ) -> int:
+        """ESP32 has no plain file-push deploy; ``deploy`` flashes the artifact
+        directory at ``artifacts_dir`` via esptool instead (or the latest
+        artifact under the default ESP32 artifact root when omitted)."""
+        del host, dest
+        return cls.flash(
+            artifact_dir=str(Path(artifacts_dir).expanduser().resolve()) if artifacts_dir else None,
+            port=port or serial or saved_esp32_serial_port(load_config()),
+        )
 
 
 def normalize_esp32_serial_port(port: str | None) -> str | None:

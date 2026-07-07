@@ -114,9 +114,10 @@ scripts/gar_lib/
     esp32_firmware.py     # ESP32 firmware artifact fetch / build helpers
   gar_tools.py            # gar-tools target manifest discovery
   environments/
-  integrations/
+  vscode/
     terminal_ui.py        # shared terminal UI helpers
-    vscode.py             # VS Code settings/profile helpers
+    profile_manage.py     # VS Code terminal profile write/remove
+    terminal_bridge.py    # VS Code Terminal Bridge extension install
   sim/
     parse.py              # parsers for simulation diagnostics
 ```
@@ -134,7 +135,7 @@ scripts/gar_lib/
 | target access provider | `commands/deploy.py` + `environments/registry/target_access/*` | 実機への artifact 配置、ADB/SSH/esptool 等の接続方式差し替え |
 | target 固有処理 | `commands/esp32_firmware.py` | ESP32 の firmware artifact / build など target 固有の補助処理 |
 | インフラ | `commands/infra.py`, `environments/registry/simulation/aws_ec2.py` | EC2 instance 操作と Terraform 実行 |
-| ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `integrations/vscode.py`, `integrations/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
+| ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `vscode/profile_manage.py`, `vscode/terminal_bridge.py`, `vscode/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
 
 `cli.py` は command line の形を決める場所に留め、環境固有の処理は
 provider / command module へ寄せる。たとえば `gar code` は `cli.py` から

@@ -7,22 +7,37 @@ import shlex
 import sys
 from pathlib import Path
 
+from scripts.gar_lib.artifacts.manifest import (
+    default_artifacts_dir,
+    get_provider,
+    load_deploy_files,
+    resolve_artifact_src,
+)
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
 )
 from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.integrations.vscode import write_vscode_terminal_profile
+from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.sim.base import SimProvider
-from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, LinuxSystemdSimProvider
-from scripts.gar_lib.sim.wokwi import WokwiSimProvider
+from scripts.gar_lib.sim.base import SimEnvProcessor
+from scripts.gar_lib.sim.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
+from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
+
+SIM_DEST_MAP = {
+    "~/cuse_i2c": "/usr/local/sbin/cuse_i2c",
+    "~/cuse_spi": "/usr/local/sbin/cuse_spi",
+    "~/web-bridge": "/usr/local/lib/gar/web-bridge",
+}
+SIM_DEST_PREFIX_MAP = {
+    "~/web-bridge/": "/usr/local/lib/gar/web-bridge/",
+}
 
 
-def _get_sim_provider() -> type[DevEnvironment]:
+def _get_sim_provider(provider_override: str | None = None) -> type[DevEnvironment]:
     config = load_config()
-    pid = config.get("selected_providers", {}).get("simulation")
+    pid = provider_override or config.get("selected_providers", {}).get("simulation")
     providers = discover_environment_providers()
     if pid:
         for p in providers:
@@ -34,11 +49,157 @@ def _get_sim_provider() -> type[DevEnvironment]:
     raise RuntimeError("No simulation provider found")
 
 
-def _get_sim_target(host: str) -> SimProvider:
-    provider = _get_sim_provider()
+def run_sim_deploy_command(artifacts_dir: str | None, *, host: str | None, section: str = "app") -> int:
+    """``gar sim deploy`` / ``gar sim env deploy``: resolve the artifact bundle
+    root and push its ``deploy.<section>`` files to the simulation host.
+    """
+    root = Path(artifacts_dir).expanduser().resolve() if artifacts_dir else default_artifacts_dir().resolve()
+    return deploy_sim_artifacts(root, host=host, section=section)
+
+
+def deploy_sim_artifacts(root: Path, *, host: str | None, section: str = "app") -> int:
+    resolved_host = host or default_ec2_host(load_config())
+    loaded = load_deploy_files(root, section)
+    if loaded is None:
+        return 1
+
+    bundle_root, files = loaded
+    provider = get_provider("simulation")
+
+    for entry in files:
+        source = resolve_artifact_src(bundle_root, entry["src"])
+        if source is None:
+            return 1
+
+        target_dest = sim_dest_path(entry["dest"])
+        staging_path = f"/tmp/gar-deploy-{os.getpid()}-{source.name}"
+
+        result = provider.push_file(resolved_host, source, staging_path)
+        if result != 0:
+            return result
+
+        mode = entry.get("mode")
+        install_command = remote_install_command(
+            staging_path,
+            target_dest,
+            source_is_dir=source.is_dir(),
+            mode=mode if isinstance(mode, str) else None,
+        )
+        proc = provider.run_remote(resolved_host, install_command, check=False)
+        if proc.returncode != 0:
+            return proc.returncode
+
+    return 0
+
+
+def sim_dest_path(manifest_dest: str) -> str:
+    mapped = SIM_DEST_MAP.get(manifest_dest)
+    if mapped:
+        return mapped
+    for source_prefix, target_prefix in SIM_DEST_PREFIX_MAP.items():
+        if manifest_dest.startswith(source_prefix):
+            return target_prefix + manifest_dest.removeprefix(source_prefix)
+    return manifest_dest
+
+
+def _shlex_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _remote_path_expr(dest: str) -> str:
+    if dest == "~":
+        return '"${HOME}"'
+    if dest.startswith("~/"):
+        return f'"${{HOME}}"/{_shlex_quote(dest[2:])}'
+    return _shlex_quote(dest)
+
+
+def remote_install_command(staging_path: str, dest: str, *, source_is_dir: bool, mode: str | None) -> str:
+    dest_expr = _remote_path_expr(dest)
+    if dest.startswith("~"):
+        commands = [f"mkdir -p $(dirname {dest_expr})"]
+        if source_is_dir:
+            commands.append(f"mkdir -p {dest_expr}")
+            commands.append(f"cp -a {_shlex_quote(staging_path)}/. {dest_expr}/")
+        else:
+            commands.append(f"cp {_shlex_quote(staging_path)} {dest_expr}")
+        if mode:
+            commands.append(f"chmod {_shlex_quote(mode)} {dest_expr}")
+        return "; ".join(commands)
+
+    commands = [f"sudo mkdir -p $(dirname {dest_expr})"]
+    if source_is_dir:
+        commands.append(f"sudo mkdir -p {dest_expr}")
+        commands.append(f"sudo cp -a {_shlex_quote(staging_path)}/. {dest_expr}/")
+    else:
+        commands.append(f"sudo cp {_shlex_quote(staging_path)} {dest_expr}")
+    if mode:
+        commands.append(f"sudo chmod {_shlex_quote(mode)} {dest_expr}")
+    return "; ".join(commands)
+
+
+def _get_sim_target(host: str | None, *, provider_override: str | None = None) -> SimEnvProcessor:
+    provider = _get_sim_provider(provider_override)
     if provider.provider_id == "wokwi":
-        return WokwiSimProvider(provider, host)
-    return LinuxSystemdSimProvider(provider, host, LinuxSimCommandBuilder())
+        return WokwiSimEnvProcessor(provider, host)
+    return LinuxSystemdSimEnvProcessor(provider, host, LinuxSimCommandBuilder())
+
+
+def run_sim_env_build_command(
+    *,
+    provider: str | None = None,
+    json_output: bool = False,
+) -> int:
+    """``gar sim env build``: resolve the simulation provider and call its
+    ``build()``. ``provider`` lets a caller narrow the resolution beyond the
+    ``gar setup`` saved config (``selected_providers.simulation``).
+    """
+    resolved_provider = _get_sim_provider(provider)
+    target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
+    try:
+        return target.build(json_output=json_output)
+    except NotImplementedError:
+        print(
+            "gar sim env build: 現在の設定では対応する build が見つかりません。\n"
+            f"  simulation: {resolved_provider.provider_id}\n"
+            "  --provider で明示的に指定するか、`gar setup` で Wokwi を選択してください。",
+            file=sys.stderr,
+        )
+        return 1
+
+
+def run_sim_host_command(
+    command: str,
+    *,
+    host: str | None = None,
+    instance_id: str | None = None,
+    region: str | None = None,
+    update_ssh: bool = True,
+    pull: bool = False,
+    json_output: bool = False,
+) -> int:
+    """``gar sim start/stop/status``: resolve the simulation provider and call
+    its ``host_command()``.
+    """
+    provider = _get_sim_provider()
+    try:
+        return provider.host_command(
+            command,
+            host=host,
+            instance_id=instance_id,
+            region=region,
+            update_ssh=update_ssh,
+            pull=pull,
+            json_output=json_output,
+        )
+    except NotImplementedError:
+        print(
+            f"gar sim {command}: 現在の設定では対応するホストVM操作が見つかりません。\n"
+            f"  simulation: {provider.provider_id}\n"
+            "  `gar setup` で SSH Remote を選択してください。",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def run_sim_diag_json(host: str) -> int:

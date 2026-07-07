@@ -1,11 +1,13 @@
 """`gar` CLI entry point. Argument parsing and dispatch only.
 
 Implementation lives in sibling submodules:
-- :mod:`scripts.gar_lib.integrations.terminal_ui` — color / safe_input helpers
+- :mod:`scripts.gar_lib.vscode.terminal_ui` — color / safe_input helpers
 - :mod:`scripts.gar_lib.config` — config IO, paths, EC2 host helpers
-- :mod:`scripts.gar_lib.integrations.vscode` — VSCode terminal profile / Bridge install
+- :mod:`scripts.gar_lib.vscode.profile_manage` — VSCode terminal profile write/remove
+- :mod:`scripts.gar_lib.vscode.terminal_bridge` — VSCode Terminal Bridge extension install
 - :mod:`scripts.gar_lib.commands.code` — ``gar code``
-- :mod:`scripts.gar_lib.commands.deploy` — ``gar sim env deploy`` / ``gar target deploy``
+- :mod:`scripts.gar_lib.artifacts.manifest` — artifact.json 共通基盤・Codespace fetch（CLI引数に対応しないドメインロジック）
+- :mod:`scripts.gar_lib.commands.target` — ``gar target``
 - :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
 - :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
 - :mod:`scripts.gar_lib.commands.shim` — ``gar shim``
@@ -53,27 +55,30 @@ from scripts.gar_lib.config import (  # noqa: F401
     save_config,
     set_default_ec2_host,
 )
-from scripts.gar_lib.commands.deploy import (  # noqa: F401
+from scripts.gar_lib.artifacts.manifest import (  # noqa: F401
     DEFAULT_CODESPACE_ARTIFACT_ROOT,
-    adb_device_available,
     artifact_deploy_files,
     artifact_manifest_deploy_sources,
     default_artifacts_dir,
     default_codespace_artifact_root,
-    deploy_sim_artifacts,
-    deploy_target_artifacts,
-    deploy_target_artifacts_ssh,
-    ensure_adb_device,
     fetch_codespace_artifacts,
     find_artifact_manifest,
     gh_codespace_cp,
     load_artifact_manifest,
     load_deploy_files,
     resolve_artifact_src,
-    run_deploy_command,
     select_codespace,
-    selected_target_access_provider_id,
     target_dest_path,
+)
+from scripts.gar_lib.commands.target import (  # noqa: F401
+    adb_device_available,
+    deploy_target_artifacts,
+    deploy_target_artifacts_ssh,
+    ensure_adb_device,
+    run_target_build_command,
+    run_target_deploy_command,
+    run_target_flash_command,
+    selected_target_access_provider_id,
 )
 from scripts.gar_lib.environments.registry.simulation.aws_ec2 import (  # noqa: F401
     ec2_instance_state,
@@ -120,10 +125,14 @@ from scripts.gar_lib.commands.setup import (  # noqa: F401
 )
 from scripts.gar_lib.commands.shim import run_shim_command  # noqa: F401
 from scripts.gar_lib.commands.sim import (  # noqa: F401
+    deploy_sim_artifacts,
     run_gpio_sim_check,
     run_sim_command,
+    run_sim_deploy_command,
     run_sim_diag_json,
+    run_sim_env_build_command,
     run_sim_gpio_command,
+    run_sim_host_command,
     show_sim_state,
     sim_terminal_script,
     start_sim_port_forward,
@@ -135,7 +144,7 @@ from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
 )
-from scripts.gar_lib.integrations.terminal_ui import (  # noqa: F401
+from scripts.gar_lib.vscode.terminal_ui import (  # noqa: F401
     BLUE,
     BOLD,
     CYAN,
@@ -153,11 +162,13 @@ from scripts.gar_lib.commands.usb import (  # noqa: F401
     parse_usbipd_list,
     run_usb_command,
 )
-from scripts.gar_lib.integrations.vscode import (  # noqa: F401
-    install_vscode_terminal_bridge,
-    installed_vscode_terminal_bridge_path,
+from scripts.gar_lib.vscode.profile_manage import (  # noqa: F401
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
+)
+from scripts.gar_lib.vscode.terminal_bridge import (  # noqa: F401
+    install_vscode_terminal_bridge,
+    installed_vscode_terminal_bridge_path,
 )
 from scripts.gar_lib.environments.discovery import (  # noqa: F401
     discover_environment_providers,
@@ -432,12 +443,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     shim_parser = subparsers.add_parser(
         "shim",
-        help="setup 済み target の simulation/target access shim をビルドします",
+        help="[非推奨: gar sim env build を使ってください] setup 済み target の simulation shim をビルドします",
     )
     shim_subparsers = shim_parser.add_subparsers(dest="shim_command", metavar="command")
     shim_build_parser = shim_subparsers.add_parser(
         "build",
-        help="setup 済み target/provider に対応する shim artifact をビルドします",
+        help="[非推奨: gar sim env build のエイリアス] setup 済み target/provider に対応する shim artifact をビルドします",
     )
     shim_build_parser.add_argument(
         "--json",
@@ -497,6 +508,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="simulation services を配置・起動・停止・診断します",
     )
     sim_env_subparsers = sim_env_parser.add_subparsers(dest="sim_env_command", metavar="command")
+    sim_env_build_parser = sim_env_subparsers.add_parser(
+        "build",
+        help="仮想デバイススタブ（CUSE I2C/SPI など）や Wokwi firmware をビルドします",
+    )
+    sim_env_build_parser.add_argument(
+        "--provider",
+        default=None,
+        help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
+    )
+    sim_env_build_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
+    )
     sim_deploy_parser = sim_env_subparsers.add_parser(
         "deploy",
         help="simulation 環境インフラ（CUSE stubs / web-bridge）を VM へ配置します（artifact.json の deploy.sim_env セクション）",
@@ -889,7 +915,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             subcommand_parsers["sim"].print_help()
             return 1
         if args.sim_command in SIM_VM_COMMAND_MAP:
-            return run_ec2_command(
+            return run_sim_host_command(
                 SIM_VM_COMMAND_MAP[args.sim_command],
                 host=args.host,
                 instance_id=args.instance_id,
@@ -899,20 +925,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "deploy":
-            return run_deploy_command(
-                "sim",
-                artifacts_dir=getattr(args, "artifacts_dir", None),
+            return run_sim_deploy_command(
+                getattr(args, "artifacts_dir", None),
                 host=getattr(args, "host", None),
+                section="app",
             )
         if args.sim_command == "env":
             if args.sim_env_command is None:
                 subcommand_parsers["sim_env"].print_help()
                 return 1
+            if args.sim_env_command == "build":
+                return run_sim_env_build_command(
+                    provider=getattr(args, "provider", None),
+                    json_output=getattr(args, "json_output", False),
+                )
             if args.sim_env_command == "deploy":
-                return run_deploy_command(
-                    "sim_env",
-                    artifacts_dir=args.artifacts_dir,
+                return run_sim_deploy_command(
+                    args.artifacts_dir,
                     host=args.host,
+                    section="sim_env",
                 )
             if args.sim_env_command == "gpio":
                 if args.gpio_command is None:
@@ -949,9 +980,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             subcommand_parsers["target"].print_help()
             return 1
         if args.target_command == "deploy":
-            return run_deploy_command(
-                "target",
-                artifacts_dir=args.artifacts_dir,
+            return run_target_deploy_command(
+                args.artifacts_dir,
                 serial=args.serial,
                 port=args.port,
                 host=args.host,
@@ -971,7 +1001,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 remote_root=args.remote_root,
             )
         if args.target_command == "build":
-            return run_esp32_build_command(
+            return run_target_build_command(
                 codespace=args.codespace,
                 remote_project_root=args.remote_project_root,
                 pio_env=args.pio_env,
@@ -984,7 +1014,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 install_esptool=True,
             )
         if args.target_command == "build-esp32":
-            return run_esp32_build_command(
+            return run_target_build_command(
                 codespace=args.codespace,
                 remote_project_root=args.remote_project_root,
                 pio_env=args.pio_env,
@@ -1000,7 +1030,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_with_json_summary(
                 "target flash-esp32",
                 getattr(args, "json_output", False),
-                lambda: run_esp32_flash_command(
+                lambda: run_target_flash_command(
                     artifact_dir=args.artifact_dir,
                     port=args.port,
                     baud=args.baud,

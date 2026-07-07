@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.gar_lib.integrations.vscode import (
+from scripts.gar_lib.vscode.profile_manage import (
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
 )
@@ -60,8 +60,13 @@ def run_code_command(
             shutdown=shutdown,
             timeout=gh_timeout,
         )
-    except NotImplementedError as exc:
-        print(str(exc), file=sys.stderr)
+    except NotImplementedError:
+        print(
+            f"gar code {command}: 現在の setup では対応する development target が見つかりません。\n"
+            f"  development: {provider.display_name}\n"
+            "  Run `gar setup` and choose a supported development provider.",
+            file=sys.stderr,
+        )
         return 1
 
 def boot_code_codespace(

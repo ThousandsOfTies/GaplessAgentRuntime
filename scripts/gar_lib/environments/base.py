@@ -114,6 +114,76 @@ class DevEnvironment(ABC):
         raise NotImplementedError(f"{cls.__name__} does not implement pull_file")
 
     @classmethod
+    def host_command(
+        cls,
+        command: str,
+        *,
+        host: str | None = None,
+        instance_id: str | None = None,
+        region: str | None = None,
+        update_ssh: bool = True,
+        pull: bool = False,
+        json_output: bool = False,
+    ) -> int:
+        """``gar sim start/stop/status``: control the simulation host VM/instance.
+
+        Providers that do not manage a separate host VM (e.g. Wokwi, which runs
+        entirely through a local CLI) leave this unimplemented.
+        """
+        del host, instance_id, region, update_ssh, pull, json_output
+        raise NotImplementedError(f"{cls.__name__} does not implement gar sim {command}")
+
+    @classmethod
+    def deploy(
+        cls,
+        artifacts_dir: str | Path | None = None,
+        *,
+        serial: str | None = None,
+        port: str | None = None,
+        host: str | None = None,
+        dest: str = "/home/user",
+    ) -> int:
+        """``gar target deploy``: push each ``deploy.app`` artifact file via
+        :meth:`push_file`/:meth:`run_remote`. This default works for any
+        provider that exposes plain file push + remote command execution
+        (adb, scp, ...). Providers whose deploy is not a simple file copy
+        (e.g. esptool flashing) override this entirely. ``artifacts_dir=None``
+        resolves to the shared default artifact bundle root.
+        """
+        del port
+        from scripts.gar_lib.artifacts.manifest import (
+            default_artifacts_dir,
+            load_deploy_files,
+            resolve_artifact_src,
+            target_dest_path,
+        )
+
+        root = Path(artifacts_dir).expanduser().resolve() if artifacts_dir else default_artifacts_dir().resolve()
+        loaded = load_deploy_files(root, "app")
+        if loaded is None:
+            return 1
+
+        target = host if host is not None else (serial or "")
+        bundle_root, files = loaded
+        for entry in files:
+            source = resolve_artifact_src(bundle_root, entry["src"])
+            if source is None:
+                return 1
+
+            remote_dest = target_dest_path(entry["dest"], dest)
+            result = cls.push_file(target, source, remote_dest)
+            if result != 0:
+                return result
+
+            mode = entry.get("mode")
+            if isinstance(mode, str):
+                proc = cls.run_remote(target, f"chmod {mode} {remote_dest}", check=False)
+                if proc.returncode != 0:
+                    return proc.returncode
+
+        return 0
+
+    @classmethod
     def start_port_forward(cls, target: str) -> int:
         raise NotImplementedError(f"{cls.__name__} does not implement start_port_forward")
 
@@ -128,6 +198,47 @@ class DevEnvironment(ABC):
     @classmethod
     def interactive_shell_script(cls, target: str) -> str:
         raise NotImplementedError(f"{cls.__name__} does not implement interactive_shell_script")
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        codespace: str | None = None,
+        remote_project_root: str | None = None,
+        pio_env: str | None = None,
+        local_artifact_root: str | None = None,
+        flash: bool = False,
+        port: str | None = None,
+        baud: int = 921600,
+        chip: str = "esp32",
+        verify: bool = True,
+        install_esptool: bool = True,
+    ) -> int:
+        """``gar target build``: produce a fresh artifact for this target_access
+        provider. Most providers do not (yet) implement a build step of their
+        own; the default raises so callers can show ``gar setup`` guidance.
+        """
+        del codespace, remote_project_root, pio_env, local_artifact_root, flash
+        del port, baud, chip, verify, install_esptool
+        raise NotImplementedError(f"{cls.__name__} does not implement build")
+
+    @classmethod
+    def flash(
+        cls,
+        *,
+        artifact_dir: str | None = None,
+        port: str | None = None,
+        baud: int = 921600,
+        chip: str = "esp32",
+        verify: bool = True,
+        install_esptool: bool = True,
+    ) -> int:
+        """``gar target flash-esp32`` (and similar): write a built artifact to
+        the physical device. Default raises; only providers with a real flash
+        tool (e.g. esptool) override this.
+        """
+        del artifact_dir, port, baud, chip, verify, install_esptool
+        raise NotImplementedError(f"{cls.__name__} does not implement flash")
 
     @classmethod
     def sudo_block_reason(cls) -> str | None:

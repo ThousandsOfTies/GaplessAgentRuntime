@@ -26,7 +26,7 @@ from scripts.gar_lib.environments.registry.simulation.vibe_remote_device import 
     VibeRemoteVirtualDeviceEnvironment,
 )
 from scripts.gar_lib.environments.registry.simulation.wokwi import WokwiEnvironment
-from scripts.gar_lib.sim.wokwi import WokwiSimProvider
+from scripts.gar_lib.sim.wokwi import WokwiSimEnvProcessor
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -150,7 +150,7 @@ class GarDiscoveryTest(unittest.TestCase):
                 project.mkdir()
                 (project / "diagram.json").write_text(json.dumps({"version": 1, "parts": []}), encoding="utf-8")
                 (project / "wokwi.toml").write_text("[wokwi]\nfirmware = 'stale.bin'\n", encoding="utf-8")
-                provider = WokwiSimProvider(WokwiEnvironment, host=None)
+                provider = WokwiSimEnvProcessor(WokwiEnvironment, host=None)
 
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(0, provider.start({}))

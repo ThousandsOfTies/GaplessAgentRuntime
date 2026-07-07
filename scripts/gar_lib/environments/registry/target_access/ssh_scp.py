@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from scripts.gar_lib.environments.base import DevEnvironment
 
 
@@ -46,3 +48,19 @@ class SshScpEnvironment(DevEnvironment):
         config_arg = str(Path.home() / ".ssh" / "config")
         cmd = ["scp", "-F", config_arg, "-r", f"{target}:{src}", str(dest)]
         return subprocess.run(cmd, check=False).returncode
+
+    @classmethod
+    def deploy(
+        cls,
+        artifacts_dir: str | None = None,
+        *,
+        serial: str | None = None,
+        port: str | None = None,
+        host: str | None = None,
+        dest: str = "/home/user",
+    ) -> int:
+        del serial, port
+        if not host:
+            print("gar target deploy: SSH/scp provider requires --host", file=sys.stderr)
+            return 1
+        return super().deploy(artifacts_dir, host=host, dest=dest)

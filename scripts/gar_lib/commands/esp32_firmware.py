@@ -11,8 +11,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from scripts.gar_lib.config import PROJECT_ROOT
-from scripts.gar_lib.commands.deploy import gh_env, select_codespace
+from scripts.gar_lib.config import PROJECT_ROOT, load_config
+from scripts.gar_lib.artifacts.manifest import gh_env, select_codespace
 
 DEFAULT_ESP32_ARTIFACT_ROOT = (
     PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "artifacts"
@@ -20,6 +20,7 @@ DEFAULT_ESP32_ARTIFACT_ROOT = (
 DEFAULT_ESP32_CODESPACE_PROJECT_ROOT = (
     "/workspaces/gar-build-env/repos/apps/gar-vibe-ui/vibe-remote/m5stickc-client"
 )
+DEFAULT_ESP32_LOCAL_PROJECT_ROOT = DEFAULT_ESP32_ARTIFACT_ROOT.parent
 DEFAULT_ESP32_PIO_ENV = "m5stickc-plus2-vibe-min"
 FLASH_LAYOUT = (
     ("0x1000", "bootloader.bin"),
@@ -57,7 +58,12 @@ def parse_esp32_build_artifact_path(output: str) -> str | None:
     return None
 
 
-def run_streaming_command(command: list[str], *, env: dict[str, str] | None = None) -> tuple[int, str]:
+def run_streaming_command(
+    command: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    cwd: Path | str | None = None,
+) -> tuple[int, str]:
     """Run a command while streaming output and keeping a copy for parsing."""
     process = subprocess.Popen(
         command,
@@ -65,6 +71,7 @@ def run_streaming_command(command: list[str], *, env: dict[str, str] | None = No
         stderr=subprocess.STDOUT,
         text=True,
         env=env,
+        cwd=cwd,
         bufsize=1,
     )
     output_parts: list[str] = []
@@ -147,6 +154,30 @@ def run_esp32_build_command(
     verify: bool = True,
     install_esptool: bool = True,
 ) -> int:
+    config = load_config()
+    development_provider = config.get("selected_providers", {}).get("development")
+
+    if development_provider == "local":
+        return run_esp32_build_local(
+            pio_env=pio_env,
+            local_artifact_root=local_artifact_root,
+            flash=flash,
+            port=port,
+            baud=baud,
+            chip=chip,
+            verify=verify,
+            install_esptool=install_esptool,
+        )
+
+    if development_provider not in (None, "github_codespaces"):
+        print(
+            "gar target build: 現在の setup では対応する build が見つかりません。\n"
+            f"  development: {development_provider}\n"
+            "  Run `gar setup` and choose Local or GitHub Codespaces.",
+            file=sys.stderr,
+        )
+        return 1
+
     selected_codespace = select_codespace(codespace)
     if not selected_codespace:
         print("gar target build-esp32: pass --codespace NAME or set GAR_CODESPACE_NAME", file=sys.stderr)
@@ -181,6 +212,71 @@ def run_esp32_build_command(
     )
     if local_artifact_dir is None:
         return 1
+    print(f"Artifact: {local_artifact_dir}")
+
+    if flash:
+        from scripts.gar_lib.environments.registry.target_access.esp32_esptool import run_esp32_flash_command
+
+        return run_esp32_flash_command(
+            artifact_dir=str(local_artifact_dir),
+            port=port,
+            baud=baud,
+            chip=chip,
+            verify=verify,
+            install_esptool=install_esptool,
+        )
+    return 0
+
+
+def run_esp32_build_local(
+    *,
+    pio_env: str = DEFAULT_ESP32_PIO_ENV,
+    local_artifact_root: str | None = None,
+    flash: bool = False,
+    port: str | None = None,
+    baud: int = 921600,
+    chip: str = "esp32",
+    verify: bool = True,
+    install_esptool: bool = True,
+) -> int:
+    project_root = DEFAULT_ESP32_LOCAL_PROJECT_ROOT
+    build_script = project_root / "scripts" / "vm_build_and_package.sh"
+    if not build_script.is_file():
+        print(f"gar target build: build script not found: {build_script}", file=sys.stderr)
+        return 1
+
+    env = os.environ.copy()
+    platformio_bin = Path.home() / ".venvs" / "platformio" / "bin"
+    env["PATH"] = f"{platformio_bin}:{env.get('PATH', '')}"
+
+    print(f"Local project: {project_root}")
+    print(f"PIO env: {pio_env}")
+    returncode, build_output = run_streaming_command(
+        ["./scripts/vm_build_and_package.sh", pio_env],
+        env=env,
+        cwd=project_root,
+    )
+    if returncode != 0:
+        return returncode
+
+    artifact_dir = parse_esp32_build_artifact_path(build_output)
+    if not artifact_dir:
+        print("gar target build: build output did not include an Artifact path", file=sys.stderr)
+        return 1
+    local_artifact_dir = Path(artifact_dir).expanduser().resolve()
+
+    if local_artifact_root:
+        root = Path(local_artifact_root).expanduser().resolve()
+        if root != local_artifact_dir.parent:
+            import shutil
+
+            root.mkdir(parents=True, exist_ok=True)
+            dest = root / local_artifact_dir.name
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(local_artifact_dir, dest)
+            local_artifact_dir = dest
+
     print(f"Artifact: {local_artifact_dir}")
 
     if flash:

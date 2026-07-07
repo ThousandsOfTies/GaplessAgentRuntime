@@ -12,7 +12,7 @@ from urllib.parse import quote
 from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.sim.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.sim.base import SimCommandBuilder, SimProvider
+from scripts.gar_lib.sim.base import SimCommandBuilder, SimEnvProcessor
 
 # Linux constants
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
@@ -594,7 +594,7 @@ def _button_line(params: dict) -> int:
     raise ValueError(f"unknown button: {value}")
 
 
-class LinuxSystemdSimProvider(SimProvider):
+class LinuxSystemdSimEnvProcessor(SimEnvProcessor):
     def __init__(self, dev_env: DevEnvironment, host: str, builder: SimCommandBuilder):
         self.dev_env = dev_env
         self.host = host

@@ -1,17 +1,10 @@
-"""VSCode terminal profile management and Terminal Bridge extension install."""
+"""VS Code integrated terminal profile management (settings.json)."""
 
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
-
-from scripts.gar_lib.config import (
-    PROJECT_ROOT,
-    VSCODE_EXT_NAME,
-    VSCODE_EXT_VERSION,
-)
 
 
 def write_vscode_terminal_profile(
@@ -48,36 +41,4 @@ def remove_vscode_terminal_profile(settings_path: Path, profile_name: str) -> in
     del profiles[profile_name]
     settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"Profile:   removed {profile_name} from {settings_path}")
-    return 0
-
-
-def installed_vscode_terminal_bridge_path() -> Path | None:
-    extension_dir_name = f"{VSCODE_EXT_NAME}-{VSCODE_EXT_VERSION}"
-    candidates = (
-        Path.home() / ".vscode-server" / "extensions" / extension_dir_name,
-        Path.home() / ".vscode" / "extensions" / extension_dir_name,
-    )
-
-    for path in candidates:
-        if path.exists():
-            return path
-
-    return None
-
-
-def install_vscode_terminal_bridge() -> int:
-    src = PROJECT_ROOT / "tools" / "vscode-gar"
-    dest = (
-        Path.home()
-        / ".vscode-server"
-        / "extensions"
-        / f"{VSCODE_EXT_NAME}-{VSCODE_EXT_VERSION}"
-    )
-    try:
-        if dest.exists():
-            shutil.rmtree(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dest)
-    except OSError:
-        return 1
     return 0
