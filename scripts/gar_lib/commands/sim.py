@@ -37,7 +37,7 @@ SIM_DEST_PREFIX_MAP = {
 
 def _get_sim_provider(provider_override: str | None = None) -> type[DevEnvironment]:
     config = load_config()
-    pid = provider_override or config.get("selected_providers", {}).get("simulator")
+    pid = provider_override or os.environ.get("GAR_SIM_PROVIDER") or config.get("selected_providers", {}).get("simulator")
     providers = discover_environment_providers()
     if pid:
         for p in providers:

@@ -1578,6 +1578,17 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         run_build.assert_called_once_with(provider="wokwi", json_output=True)
 
+    def test_sim_build_uses_product_provider_environment(self) -> None:
+        with (
+            mock.patch.dict("os.environ", {"GAR_SIM_PROVIDER": "wokwi"}),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_target") as get_target,
+        ):
+            get_target.return_value.build.return_value = 0
+            result = main(["sim", "build"])
+
+        self.assertEqual(0, result)
+        get_target.assert_called_once_with(host=None, provider_override="wokwi")
+
     def test_sim_vm_commands_are_available_from_cli(self) -> None:
         cases = [
             (["sim", "start", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
