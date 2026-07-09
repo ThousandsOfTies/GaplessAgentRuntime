@@ -68,6 +68,14 @@ def _vibe_remote_m5_src_dir() -> Path | None:
     return None
 
 
+def _wokwi_client_dir() -> Path:
+    raw = os.environ.get("GAR_WOKWI_CLIENT_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+
+    return PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client"
+
+
 class WokwiSimCommandBuilder(SimCommandBuilder):
     """Generates local shell commands for Wokwi simulation operations."""
 
@@ -274,17 +282,20 @@ class WokwiSimEnvProcessor(SimEnvProcessor):
         return 0
 
     def build(self, *, json_output: bool = False) -> int:
-        client_dir = PROJECT_ROOT.parent / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client"
+        client_dir = _wokwi_client_dir()
         if not (client_dir / "Makefile").is_file():
-            print(f"gar sim env build: Wokwi client Makefile が見つかりません: {client_dir}")
+            print(f"gar sim build: Wokwi client Makefile が見つかりません: {client_dir}")
             return 1
 
         env = os.environ.copy()
         platformio_bin = Path.home() / ".venvs" / "platformio" / "bin"
         env["PATH"] = f"{platformio_bin}:{Path.home() / 'bin'}:{env.get('PATH', '')}"
+        env.setdefault("GAR_ROOT", str(PROJECT_ROOT))
+        env.setdefault("GAR_TOOLS_ROOT", str(gar_tools_root()))
+        env.setdefault("WOKWI_WORKSPACE", str(self.project_dir))
 
         if not json_output:
-            print("gar sim env build: Wokwi firmware build を実行します。")
+            print("gar sim build: Wokwi firmware build を実行します。")
             print(f"  cwd: {client_dir}")
             print("  command: make wokwi-build")
 
@@ -299,7 +310,7 @@ class WokwiSimEnvProcessor(SimEnvProcessor):
             print(
                 json.dumps(
                     {
-                        "command": "sim env build",
+                        "command": "sim build",
                         "provider": "wokwi",
                         "cwd": str(client_dir),
                         "delegated_command": "make wokwi-build",

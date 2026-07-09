@@ -460,6 +460,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sim_parser = subparsers.add_parser("sim", help="simulation VM / services / virtual H/W を操作します")
     sim_subparsers = sim_parser.add_subparsers(dest="sim_command", metavar="command")
+    sim_build_parser = sim_subparsers.add_parser(
+        "build",
+        help="選択中の simulator 向けの firmware / runtime をビルドします",
+    )
+    sim_build_parser.add_argument(
+        "--provider",
+        default=None,
+        help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
+    )
+    sim_build_parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
+    )
     for sim_vm_command_name, ec2_command_name in SIM_VM_COMMAND_MAP.items():
         help_text = {
             "start": "simulation VM を起動します",
@@ -930,6 +945,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 getattr(args, "artifacts_dir", None),
                 host=getattr(args, "host", None),
                 section="app",
+            )
+        if args.sim_command == "build":
+            return run_sim_env_build_command(
+                provider=getattr(args, "provider", None),
+                json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "env":
             if args.sim_env_command is None:

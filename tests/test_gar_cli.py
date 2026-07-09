@@ -1571,6 +1571,13 @@ class GarCliTest(unittest.TestCase):
             section="sim_env",
         )
 
+    def test_sim_build_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_env_build_command", return_value=0) as run_build:
+            result = main(["sim", "build", "--provider", "wokwi", "--json"])
+
+        self.assertEqual(0, result)
+        run_build.assert_called_once_with(provider="wokwi", json_output=True)
+
     def test_sim_vm_commands_are_available_from_cli(self) -> None:
         cases = [
             (["sim", "start", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
