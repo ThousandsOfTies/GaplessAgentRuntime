@@ -27,7 +27,7 @@ def _get_dev_provider() -> type[DevEnvironment]:
             if p.provider_id == pid:
                 return p
     for p in providers:
-        if p.provider_id == "github_codespaces":
+        if p.provider_id == "local":
             return p
     raise RuntimeError("No development provider found")
 
@@ -552,13 +552,15 @@ def first_ssh_host(config_text: str) -> str | None:
 
 
 def remote_path_exists(host: str, remote_path: str) -> bool:
-    provider = _get_dev_provider()
+    from scripts.gar_lib.environments.registry.codespace.github_codespaces import GitHubCodespacesEnvironment
+    provider = GitHubCodespacesEnvironment
     result = provider.run_remote(host, f"test -d {shlex.quote(remote_path)}", capture_output=True, check=False)
     return result.returncode == 0
 
 
 def detect_codespace_workspace(host: str) -> str | None:
-    provider = _get_dev_provider()
+    from scripts.gar_lib.environments.registry.codespace.github_codespaces import GitHubCodespacesEnvironment
+    provider = GitHubCodespacesEnvironment
     result = provider.run_remote(
         host,
         'find /workspaces -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sort | head -n 1',

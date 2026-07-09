@@ -2209,6 +2209,39 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
 
+    def test_code_command_defaults_to_local_provider(self) -> None:
+        class LocalDevelopmentProvider(DevelopmentProvider):
+            provider_id = "local"
+            display_name = "Local Docker"
+
+            @classmethod
+            def code_command(cls, command: str, **kwargs) -> int:
+                self.assertEqual("status", command)
+                self.assertIsNone(kwargs["target"])
+                return 0
+
+        class GitHubDevelopmentProvider(DevelopmentProvider):
+            provider_id = "github_codespaces"
+            display_name = "GitHub Codespaces"
+
+            @classmethod
+            def code_command(cls, command: str, **kwargs) -> int:
+                raise AssertionError("github_codespaces should not be the default")
+
+        with (
+            mock.patch(
+                "scripts.gar_lib.config.load_config",
+                return_value={"selected_providers": {}},
+            ),
+            mock.patch(
+                "scripts.gar_lib.commands.code.discover_environment_providers",
+                return_value=[GitHubDevelopmentProvider, LocalDevelopmentProvider],
+            ),
+        ):
+            result = run_code_command("status")
+
+        self.assertEqual(0, result)
+
     def test_code_start_writes_codespace_state_and_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

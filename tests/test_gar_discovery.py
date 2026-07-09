@@ -14,6 +14,7 @@ from scripts.gar_lib.environments.discovery import discover_environment_provider
 from scripts.gar_lib.environments.registry.codespace.github_codespaces import (
     GitHubCodespacesEnvironment,
 )
+from scripts.gar_lib.environments.registry.codespace.local import LocalEnvironment
 from scripts.gar_lib.environments.registry.simulator.aws_ssm import AwsSsmEnvironment
 from scripts.gar_lib.environments.registry.simulator.renode_mcu import (
     RenodeMcuEnvironment,
@@ -74,6 +75,22 @@ class GarDiscoveryTest(unittest.TestCase):
         provider_ids = [provider.provider_id for provider in providers]
 
         self.assertEqual(len(provider_ids), len(set(provider_ids)))
+
+    def test_local_development_provider_is_default_before_github_codespaces(self) -> None:
+        providers = discover_environment_providers()
+        codespace_provider_ids = [
+            provider.provider_id
+            for provider in providers
+            if provider.category_id == "codespace"
+        ]
+
+        self.assertLess(
+            codespace_provider_ids.index("local"),
+            codespace_provider_ids.index("github_codespaces"),
+        )
+
+    def test_local_development_provider_requires_docker(self) -> None:
+        self.assertEqual(("docker",), LocalEnvironment.required_commands)
 
     def test_vibe_remote_device_uses_node_sh_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -310,6 +327,78 @@ class GarDiscoveryTest(unittest.TestCase):
             ],
             commands,
         )
+
+    def test_local_development_provider_installs_docker_with_apt_get(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_run_subprocess(argv: list[str]) -> int:
+            commands.append(argv)
+            return 0
+
+        with (
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.local._is_wsl_or_linux",
+                return_value=True,
+            ),
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.local.shutil.which",
+                return_value="/usr/bin/apt-get",
+            ),
+            mock.patch.object(
+                LocalEnvironment,
+                "sudo_block_reason",
+                return_value=None,
+            ),
+            mock.patch.object(
+                LocalEnvironment,
+                "run_subprocess",
+                side_effect=fake_run_subprocess,
+            ),
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.local.getpass.getuser",
+                return_value="testuser",
+            ),
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = LocalEnvironment.install_dependencies(["docker"])
+
+        self.assertEqual(0, result)
+        self.assertEqual(
+            [
+                ["sudo", "apt-get", "update"],
+                ["sudo", "apt-get", "install", "-y", "docker.io"],
+                ["sudo", "groupadd", "-f", "docker"],
+                ["sudo", "usermod", "-aG", "docker", "testuser"],
+                ["sudo", "service", "docker", "start"],
+            ],
+            commands,
+        )
+
+    def test_local_development_provider_prints_handoff_when_sudo_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            with (
+                mock.patch(
+                    "scripts.gar_lib.environments.registry.codespace.local._is_wsl_or_linux",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "scripts.gar_lib.environments.registry.codespace.local.shutil.which",
+                    return_value="/usr/bin/apt-get",
+                ),
+                mock.patch.object(
+                    LocalEnvironment,
+                    "sudo_block_reason",
+                    return_value="sudo: The no new privileges flag is set",
+                ),
+            ):
+                with contextlib.chdir(tmp_path), contextlib.redirect_stdout(io.StringIO()) as output:
+                    result = LocalEnvironment.install_dependencies(["docker"])
+
+            self.assertEqual(1, result)
+            self.assertIn("Local Docker のインストールには sudo が必要です。", output.getvalue())
+            requests = list((tmp_path / ".gar" / "terminal-requests").glob("*.json"))
+            self.assertEqual(1, len(requests))
 
     def test_github_codespaces_installs_sshfs_with_apt_get(self) -> None:
         commands: list[list[str]] = []
