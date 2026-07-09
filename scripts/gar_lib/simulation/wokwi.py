@@ -22,7 +22,6 @@ DEFAULT_WOKWI_DIR = DEFAULT_WOKWI_WORKSPACE_DIR
 DEFAULT_WOKWI_TEMPLATE_REL = Path("targets") / "esp32" / "wokwi" / "m5stackc"
 IGNORED_TEMPLATE_PARTS = {".git", ".pio", "__pycache__"}
 DEFAULT_TIMEOUT_MS = 30000
-VIBE_REMOTE_M5_SRC_REL = Path("vibe-remote") / "m5stickc-client" / "src"
 
 
 def _now_iso() -> str:
@@ -53,18 +52,11 @@ def _template_dir() -> Path:
     return gar_tools_root() / DEFAULT_WOKWI_TEMPLATE_REL
 
 
-def _vibe_remote_m5_src_dir() -> Path | None:
-    raw = os.environ.get("GAR_VIBE_REMOTE_M5_SRC_DIR")
+def _wokwi_app_src_dir() -> Path | None:
+    raw = os.environ.get("GAR_WOKWI_APP_SRC_DIR")
     if raw:
         path = Path(raw).expanduser().resolve()
         return path if path.is_dir() else None
-
-    for candidate in (
-        PROJECT_ROOT.parent / "gar-vibe-ui" / VIBE_REMOTE_M5_SRC_REL,
-        PROJECT_ROOT / "gar-vibe-ui" / VIBE_REMOTE_M5_SRC_REL,
-    ):
-        if candidate.is_dir():
-            return candidate
     return None
 
 
@@ -173,7 +165,7 @@ class WokwiSimEnvProcessor(SimEnvProcessor):
         self.state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def _workspace_context(self) -> dict[str, str | None]:
-        app_src_dir = _vibe_remote_m5_src_dir()
+        app_src_dir = _wokwi_app_src_dir()
         return {
             "workspace_dir": str(self.project_dir),
             "project_dir": str(self.project_dir),
@@ -228,11 +220,10 @@ class WokwiSimEnvProcessor(SimEnvProcessor):
         if not template_path.exists():
             return None
 
-        app_src_dir = _vibe_remote_m5_src_dir()
+        app_src_dir = _wokwi_app_src_dir()
         if app_src_dir is None:
             raise FileNotFoundError(
-                "Vibe Remote M5 app source not found. "
-                "Clone gar-vibe-ui next to GaplessAgentRuntime or set GAR_VIBE_REMOTE_M5_SRC_DIR."
+                "Wokwi application source not found. Set GAR_WOKWI_APP_SRC_DIR."
             )
 
         template = template_path.read_text(encoding="utf-8")

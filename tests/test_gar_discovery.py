@@ -158,7 +158,7 @@ class GarDiscoveryTest(unittest.TestCase):
             with mock.patch.dict(
                 "os.environ",
                 {
-                    "GAR_VIBE_REMOTE_M5_SRC_DIR": str(app_src),
+                    "GAR_WOKWI_APP_SRC_DIR": str(app_src),
                     "GAR_WOKWI_PROJECT_DIR": str(project),
                     "GAR_WOKWI_TEMPLATE_DIR": str(template),
                 },
