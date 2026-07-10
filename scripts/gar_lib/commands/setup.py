@@ -17,15 +17,15 @@ from scripts.gar_lib.config import (
     set_saved_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment  # compatibility for setup tests
 from scripts.gar_lib.environments.discovery import discover_environment_providers
+from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment  # noqa: F401
 from scripts.gar_lib.gar_tools import (
     TargetManifest,
     discover_target_manifests,
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor  # compatibility for setup tests
+from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor  # noqa: F401
 from scripts.gar_lib.vscode.terminal_bridge import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
