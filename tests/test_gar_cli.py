@@ -337,7 +337,7 @@ class GarCliTest(unittest.TestCase):
         save_config.assert_any_call(
             {"selected_target": "esp32", "selected_providers": {"codespace": "development_test"}}
         )
-        prepare_project.assert_called_once()
+        prepare_project.assert_not_called()
         text = output.getvalue()
         saved_at = text.index("更新しました: Target = ESP32")
         self.assertIn("1. Target", text[saved_at:])
@@ -414,7 +414,7 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         save_config.assert_not_called()
-        prepare_project.assert_called_once()
+        prepare_project.assert_not_called()
 
     def test_setup_wokwi_flow_explains_required_and_optional_steps(self) -> None:
         providers = [DevelopmentProvider, WokwiProvider, MissingTargetAccessProvider]

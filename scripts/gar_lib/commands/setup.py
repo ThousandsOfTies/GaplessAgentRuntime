@@ -6,7 +6,6 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
@@ -18,15 +17,15 @@ from scripts.gar_lib.config import (
     set_saved_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment  # compatibility for setup tests
 from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
 from scripts.gar_lib.gar_tools import (
     TargetManifest,
     discover_target_manifests,
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
+from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor  # compatibility for setup tests
 from scripts.gar_lib.vscode.terminal_bridge import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,
@@ -400,9 +399,7 @@ def prepare_target_backend(target: TargetManifest) -> None:
 
     print()
     print(style("Wokwi project:", BOLD, BLUE))
-    result = WokwiSimEnvProcessor(WokwiEnvironment, host=None).prepare_project(load_hw_definition())
-    if result == 0:
-        print(style("Wokwi プロジェクトを生成しました。", GREEN))
+    print(f"  {style('製品 workspace の scripts/product-sim-build.sh が gar sim build 実行時に生成します。', DIM)}")
 
 
 def select_target(
