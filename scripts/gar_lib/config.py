@@ -93,6 +93,11 @@ def load_config() -> dict:
     if isinstance(esp32, dict) and isinstance(esp32.get("port"), str) and esp32["port"]:
         esp32_port = esp32["port"]
 
+    workspace = data.get("workspace")
+    workspace_root = None
+    if isinstance(workspace, dict) and isinstance(workspace.get("root"), str) and workspace["root"]:
+        workspace_root = workspace["root"]
+
     return {
         **({"selected_target": selected_target} if selected_target else {}),
         "selected_providers": {
@@ -107,6 +112,7 @@ def load_config() -> dict:
         },
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
         **({"esp32": {"port": esp32_port}} if esp32_port else {}),
+        **({"workspace": {"root": workspace_root}} if workspace_root else {}),
         **(
             {
                 "adb": {
@@ -215,6 +221,21 @@ def set_saved_esp32_serial_port(config: dict, port: str) -> None:
         esp32 = {}
         config["esp32"] = esp32
     esp32["port"] = port
+
+
+def saved_workspace_root(config: dict) -> str | None:
+    workspace = config.get("workspace")
+    if isinstance(workspace, dict) and isinstance(workspace.get("root"), str) and workspace["root"]:
+        return workspace["root"]
+    return None
+
+
+def set_saved_workspace_root(config: dict, root: str) -> None:
+    workspace = config.setdefault("workspace", {})
+    if not isinstance(workspace, dict):
+        workspace = {}
+        config["workspace"] = workspace
+    workspace["root"] = root
 
 
 def saved_adb_exe(config: dict) -> str | None:

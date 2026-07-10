@@ -328,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ESP32 esptool provider が使う serial port を保存します（例: COM3, /dev/ttyUSB0）",
     )
+    setup_parser.add_argument(
+        "--workspace-root",
+        default=None,
+        help="local development provider が使う製品 workspace path",
+    )
     code_parser = subparsers.add_parser(
         "code",
         help="Build Artifacts workspace との接続を管理します",
@@ -881,7 +886,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise
 
     if args.command == "setup":
-        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host, esp32_port=args.esp32_port)
+        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host, esp32_port=args.esp32_port, workspace_root=args.workspace_root)
     if args.command == "code":
         if args.code_command is None:
             subcommand_parsers["code"].print_help()

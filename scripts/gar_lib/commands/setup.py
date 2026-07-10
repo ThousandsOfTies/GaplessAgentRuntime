@@ -12,8 +12,10 @@ from scripts.gar_lib.config import (
     load_config,
     save_config,
     saved_esp32_serial_port,
+    saved_workspace_root,
     set_default_ec2_host,
     set_saved_esp32_serial_port,
+    set_saved_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -45,7 +47,7 @@ SKIP_CATEGORY = object()
 TARGET_MENU_ENTRY = "__target_board__"
 
 
-def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None) -> int:
+def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None, workspace_root: str | None = None) -> int:
     providers = discover_environment_providers()
     if not providers:
         print("接続環境プロバイダが見つかりません。", file=sys.stderr)
@@ -131,6 +133,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     configure_default_ec2_host(config, ec2_host=ec2_host)
     print()
     configure_esp32_serial_port(config, esp32_port=esp32_port)
+    print()
+    configure_workspace_root(config, workspace_root=workspace_root)
     print()
     print_target_next_steps(config)
     print()
@@ -268,6 +272,35 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
         set_saved_esp32_serial_port(config, selected_port)
         save_config(config)
         print(f"  {style('更新しました:', GREEN)} {selected_port}")
+
+
+def configure_workspace_root(config: dict, *, workspace_root: str | None) -> None:
+    if config.get("selected_providers", {}).get("codespace") != "local":
+        return
+
+    current_root = saved_workspace_root(config)
+    print(style("Local Product Workspace:", BOLD, BLUE))
+    if workspace_root:
+        selected_root = Path(workspace_root).expanduser().resolve()
+    elif not sys.stdin.isatty():
+        if current_root:
+            print(f"  {style('設定済み', GREEN)} {style(current_root, BOLD)}")
+        else:
+            print(f"  {style('未設定', YELLOW)} --workspace-root または対話 setup で設定してください。")
+        return
+    else:
+        prompt = f" [{current_root}]" if current_root else " (例: /home/user/Yurufuwa/GarVibeRemote)"
+        answer = safe_input(f"製品 workspace path を入力してください{prompt}: ", default_on_eof=current_root or "").strip()
+        if not answer:
+            return
+        selected_root = Path(answer).expanduser().resolve()
+
+    if not selected_root.is_dir():
+        print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+        return
+    set_saved_workspace_root(config, str(selected_root))
+    save_config(config)
+    print(f"  {style('更新しました:', GREEN)} {selected_root}")
 
 
 def detect_esp32_serial_port_candidates() -> list[str]:

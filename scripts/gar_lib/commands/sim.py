@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
+    saved_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -155,6 +157,8 @@ def run_sim_env_build_command(
     ``gar setup`` saved config (``selected_providers.simulation``).
     """
     resolved_provider = _get_sim_provider(provider)
+    if resolved_provider.provider_id == "wokwi":
+        return run_product_sim_build()
     target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
     try:
         return target.build(json_output=json_output)
@@ -166,6 +170,36 @@ def run_sim_env_build_command(
             file=sys.stderr,
         )
         return 1
+
+
+def run_product_sim_build() -> int:
+    config = load_config()
+    development = config.get("selected_providers", {}).get("codespace")
+    if development == "local":
+        workspace_root = saved_workspace_root(config)
+        if not workspace_root:
+            print("gar sim build: local product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+            return 1
+        script = Path(workspace_root).expanduser() / "scripts" / "product-sim-build.sh"
+        if not script.is_file():
+            print(f"gar sim build: product build hook が見つかりません: {script}", file=sys.stderr)
+            return 1
+        return subprocess.run([str(script)], check=False).returncode
+
+    if development == "github_codespaces":
+        from scripts.gar_lib.commands.code import load_codespace_state
+
+        state = load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env")
+        codespace = state.get("CODESPACE_NAME")
+        workspace_root = state.get("CODESPACE_REMOTE_PATH")
+        if not codespace or not workspace_root:
+            print("gar sim build: Codespace 接続先が未設定です。`gar code start` を実行してください。", file=sys.stderr)
+            return 1
+        command = f"cd {shlex.quote(workspace_root)} && scripts/product-sim-build.sh"
+        return subprocess.run(["gh", "codespace", "ssh", "-c", codespace, "--", command], check=False).returncode
+
+    print("gar sim build: development provider が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+    return 1
 
 
 def run_sim_host_command(
