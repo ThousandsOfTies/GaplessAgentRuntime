@@ -15,7 +15,7 @@ application + gar-tools submodules. PRODUCT_NAME is used for both the branch
 and, by default, the checkout directory.
 
 Options:
-  --destination DIR       Checkout path (default: ../PRODUCT_NAME from cwd)
+  --destination DIR       Checkout path (default: PRODUCT_NAME in the current directory)
   --app-path PATH         App submodule path (default: sources/<repo-name>)
   --build-env-repo URL    gar-build-env repository URL
   --gar-tools-repo URL    gar-tools repository URL
@@ -116,7 +116,7 @@ repo_name="${repo_name##*/}"
 repo_name="${repo_name%.git}"
 [[ -n "${repo_name}" ]] || die "cannot derive an app name from: ${app_repository}"
 
-destination="${destination:-../${product_name}}"
+destination="${destination:-${product_name}}"
 app_path="${app_path:-sources/${repo_name}}"
 [[ "${app_path}" != /* && "${app_path}" != *".."* ]] || die "app path must be a relative path below the workspace"
 
