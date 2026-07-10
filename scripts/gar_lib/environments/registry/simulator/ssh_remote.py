@@ -6,7 +6,7 @@ from scripts.gar_lib.environments.base import DevEnvironment
 class SshRemoteEnvironment(DevEnvironment):
     provider_id = "ssh_remote"
     display_name = "SSH Remote"
-    description = "ssh コマンドで任意のリモート環境に接続します"
+    description = "AWS EC2 を使う場合はこれを選択します。SSH config 経由で任意のリモート環境にも接続できます"
     display_order = 30
     required_commands = ("ssh",)
 
