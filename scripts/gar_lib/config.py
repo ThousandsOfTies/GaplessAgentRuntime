@@ -8,10 +8,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-CONFIG_PATH = Path(".gar") / "config.json"
-
 # scripts/gar_lib/config.py -> scripts/gar_lib -> scripts -> repo root
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# GAR's control-plane settings belong to the Runtime checkout, never to the
+# current product workspace from which the command happened to be invoked.
+CONFIG_PATH = PROJECT_ROOT / ".gar" / "config.json"
 
 VSCODE_EXT_NAME = "gar-terminal-bridge"
 VSCODE_EXT_VERSION = "0.0.1"

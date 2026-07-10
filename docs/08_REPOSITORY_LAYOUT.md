@@ -81,7 +81,7 @@ GaplessAgentRuntime/
 | `Makefile` | yes | `make init` / `make start` などの bootstrap | 初回導入と日常開始の入口 |
 | `pyproject.toml` | yes | Ruff 設定 | Python 実装の静的品質設定 |
 | `requirements-gar.txt` | yes | `argcomplete` など CLI 実行に必要な依存 | GAR 自体の最小依存 |
-| `.gar/` | no | `config.json`、terminal request、generated workspace、`.gar/tools` | machine-local state。正本ではない |
+| `.gar/` | no | `config.json`、terminal request、generated workspace、`.gar/tools` | GaplessAgentRuntime 直下の machine-local state。製品 workspace ではなく操作ハブに保存する |
 | `.venv/` | no | `make init` / `scripts/gar` が作る Python venv | local execution cache |
 | `codespaces/` | no | `gar code start` が作る sshfs mount | Codespace の一時的な視界。正本ではない |
 | `hardware/` | no/任意 | `gar hw init` が作るローカル hardware CSV override | target 標準値からのプロジェクト固有上書き |
