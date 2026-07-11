@@ -2757,7 +2757,10 @@ class GarCliTest(unittest.TestCase):
                     {
                         "workspaces": [
                             {
-                                "root": str(Path(tmp) / "product"),
+                                "id": "ws_test",
+                                "name": "product · main",
+                                "connection": {"type": "local", "path": str(Path(tmp) / "product")},
+                                "branch": "main",
                                 "selected_providers": {"codespace": "wsl"},
                             }
                         ]
@@ -2894,13 +2897,23 @@ class GarCliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
-            workspace_root = str(Path(tmp) / "product")
+            workspace_path = str(Path(tmp) / "product")
 
             with mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path):
                 save_config(
                     {
-                        "root": workspace_root,
-                        "workspaces": [{"root": workspace_root}],
+                        "workspace_id": "ws_test",
+                        "workspace_name": "product · main",
+                        "workspace_connection": {"type": "local", "path": workspace_path},
+                        "workspace_branch": "main",
+                        "workspaces": [
+                            {
+                                "id": "ws_test",
+                                "name": "product · main",
+                                "connection": {"type": "local", "path": workspace_path},
+                                "branch": "main",
+                            }
+                        ],
                         "selected_providers": {"target": "ssh_scp"},
                     }
                 )

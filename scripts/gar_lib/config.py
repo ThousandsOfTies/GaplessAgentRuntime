@@ -38,11 +38,30 @@ def _workspace_entries(data: dict) -> list[dict]:
     for raw_entry in raw_entries:
         if not isinstance(raw_entry, dict):
             continue
-        root = raw_entry.get("root")
-        if not isinstance(root, str) or not root:
+        entry_id = raw_entry.get("id")
+        name = raw_entry.get("name")
+        branch = raw_entry.get("branch")
+        connection = raw_entry.get("connection")
+        if not all(isinstance(value, str) and value for value in (entry_id, name, branch)):
+            continue
+        if not isinstance(connection, dict):
+            continue
+        connection_type = connection.get("type")
+        path = connection.get("path")
+        if connection_type not in {"local", "codespaces", "network"} or not isinstance(path, str) or not path:
+            continue
+        if connection_type == "codespaces" and not isinstance(connection.get("codespace"), str):
+            continue
+        if connection_type == "network" and not isinstance(connection.get("host"), str):
             continue
         entry = dict(raw_entry)
-        entry["root"] = str(Path(root).expanduser().resolve())
+        entry["id"] = entry_id
+        entry["name"] = name
+        entry["branch"] = branch
+        entry_connection = dict(connection)
+        if connection_type == "local":
+            entry_connection["path"] = str(Path(path).expanduser().resolve())
+        entry["connection"] = entry_connection
         entries.append(entry)
     return entries
 
@@ -50,18 +69,31 @@ def _workspace_entries(data: dict) -> list[dict]:
 def _select_workspace_entry(entries: list[dict]) -> dict | None:
     requested_root = _ACTIVE_WORKSPACE_ROOT or os.environ.get("GAR_WORKSPACE_ROOT")
     if requested_root:
+        exact = next((entry for entry in entries if entry["id"] == requested_root), None)
+        if exact is not None:
+            return exact
         resolved = str(Path(requested_root).expanduser().resolve())
-        return next((entry for entry in entries if entry["root"] == resolved), None)
+        return next(
+            (
+                entry
+                for entry in entries
+                if entry["connection"]["type"] == "local" and entry["connection"]["path"] == resolved
+            ),
+            None,
+        )
 
     current = Path.cwd().resolve()
     matching = [
         entry
         for entry in entries
-        if current == Path(entry["root"]).resolve()
-        or current.is_relative_to(Path(entry["root"]).resolve())
+        if entry["connection"]["type"] == "local"
+        and (
+            current == Path(entry["connection"]["path"])
+            or current.is_relative_to(Path(entry["connection"]["path"]))
+        )
     ]
     if matching:
-        return max(matching, key=lambda entry: len(entry["root"]))
+        return max(matching, key=lambda entry: len(entry["connection"]["path"]))
     if len(entries) == 1:
         return entries[0]
     return None
@@ -146,7 +178,10 @@ def load_config() -> dict:
         esp32_port = esp32["port"]
 
     return {
-        "root": data["root"],
+        "workspace_id": data["id"],
+        "workspace_name": data["name"],
+        "workspace_connection": data["connection"],
+        "workspace_branch": data["branch"],
         "workspaces": entries,
         **({"selected_target": selected_target} if selected_target else {}),
         "selected_providers": {
@@ -176,15 +211,29 @@ def load_config() -> dict:
 
 def save_config(config: dict) -> None:
     entries = _workspace_entries(config)
-    root = config.get("root")
-    if isinstance(root, str) and root and any(entry["root"] == root for entry in entries):
+    workspace_id = config.get("workspace_id")
+    if isinstance(workspace_id, str) and workspace_id and any(entry["id"] == workspace_id for entry in entries):
         active = {
             key: value
             for key, value in config.items()
-            if key not in {"root", "workspaces"}
+            if key
+            not in {
+                "workspace_id",
+                "workspace_name",
+                "workspace_connection",
+                "workspace_branch",
+                "workspaces",
+            }
         }
-        active["root"] = root
-        entries = [entry for entry in entries if entry["root"] != root]
+        active.update(
+            {
+                "id": workspace_id,
+                "name": config["workspace_name"],
+                "connection": config["workspace_connection"],
+                "branch": config["workspace_branch"],
+            }
+        )
+        entries = [entry for entry in entries if entry["id"] != workspace_id]
         entries.append(active)
     payload_config = {"workspaces": entries}
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -284,16 +333,19 @@ def set_saved_esp32_serial_port(config: dict, port: str) -> None:
     esp32["port"] = port
 
 
-def saved_workspace_roots(config: dict) -> list[str]:
-    return [entry["root"] for entry in _workspace_entries(config)]
+def saved_workspaces(config: dict) -> list[dict]:
+    return _workspace_entries(config)
 
 
-def set_saved_workspace_roots(config: dict, roots: list[str]) -> None:
-    old_entries = {entry["root"]: entry for entry in _workspace_entries(config)}
-    config["workspaces"] = [
-        old_entries.get(root, {"root": root})
-        for root in dict.fromkeys(roots)
-    ]
+def set_saved_workspaces(config: dict, entries: list[dict]) -> None:
+    normalized = _workspace_entries({"workspaces": entries})
+    config["workspaces"] = normalized
+    active_id = config.get("workspace_id")
+    active = next((entry for entry in normalized if entry["id"] == active_id), None)
+    if active is not None:
+        config["workspace_name"] = active["name"]
+        config["workspace_connection"] = active["connection"]
+        config["workspace_branch"] = active["branch"]
 
 
 def saved_adb_exe(config: dict) -> str | None:

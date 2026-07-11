@@ -18,7 +18,6 @@ from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
-    saved_workspace_roots,
     set_active_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
@@ -181,37 +180,35 @@ def run_product_sim_build(*, workspace_root: str | None = None) -> int:
         set_active_workspace_root(str(Path(workspace_root).expanduser().resolve()))
     config = load_config()
     development = config.get("selected_providers", {}).get("codespace")
+    connection = config.get("workspace_connection")
+    if not isinstance(connection, dict):
+        print("gar sim build: product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+        return 1
     if development == "local":
-        roots = saved_workspace_roots(config)
-        if workspace_root:
-            selected_root = Path(workspace_root).expanduser().resolve()
-        elif len(roots) == 1:
-            selected_root = Path(roots[0])
-        elif not roots:
-            print("gar sim build: local product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+        if connection.get("type") != "local":
+            print("gar sim build: local provider には local workspace を選択してください。", file=sys.stderr)
             return 1
-        else:
-            print("gar sim build: workspace が複数登録されています。--workspace-root で選択してください。", file=sys.stderr)
-            for root in roots:
-                print(f"  - {root}", file=sys.stderr)
-            return 1
-        script = selected_root / "scripts" / "product-sim-build.sh"
+        script = Path(connection["path"]) / "scripts" / "product-sim-build.sh"
         if not script.is_file():
             print(f"gar sim build: product build hook が見つかりません: {script}", file=sys.stderr)
             return 1
         return subprocess.run([str(script)], check=False).returncode
 
     if development == "github_codespaces":
-        from scripts.gar_lib.commands.code import load_codespace_state
-
-        state = load_codespace_state(Path.home() / ".config" / "codespace-dev" / "env")
-        codespace = state.get("CODESPACE_NAME")
-        workspace_root = state.get("CODESPACE_REMOTE_PATH")
-        if not codespace or not workspace_root:
-            print("gar sim build: Codespace 接続先が未設定です。`gar code start` を実行してください。", file=sys.stderr)
+        if connection.get("type") != "codespaces":
+            print("gar sim build: Codespaces provider には Codespaces workspace を選択してください。", file=sys.stderr)
+            return 1
+        codespace = connection.get("codespace")
+        workspace_root = connection.get("path")
+        if not isinstance(codespace, str) or not isinstance(workspace_root, str):
+            print("gar sim build: Codespaces workspace 設定が不完全です。`gar setup` を実行してください。", file=sys.stderr)
             return 1
         command = f"cd {shlex.quote(workspace_root)} && scripts/product-sim-build.sh"
         return subprocess.run(["gh", "codespace", "ssh", "-c", codespace, "--", command], check=False).returncode
+
+    if connection.get("type") == "network":
+        print("gar sim build: network workspace は build 実行先にできません。Codespaces workspace を選択してください。", file=sys.stderr)
+        return 1
 
     print("gar sim build: development provider が未設定です。`gar setup` を実行してください。", file=sys.stderr)
     return 1

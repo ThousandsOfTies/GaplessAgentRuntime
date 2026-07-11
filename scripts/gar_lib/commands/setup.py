@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -11,11 +14,11 @@ from scripts.gar_lib.config import (
     load_config,
     save_config,
     saved_esp32_serial_port,
-    saved_workspace_roots,
+    saved_workspaces,
     set_active_workspace_root,
     set_default_ec2_host,
     set_saved_esp32_serial_port,
-    set_saved_workspace_roots,
+    set_saved_workspaces,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -281,34 +284,35 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
 
 
 def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str | None:
-    current_roots = saved_workspace_roots(config)
-    print(style("Local Product Workspaces:", BOLD, BLUE))
+    workspaces = saved_workspaces(config)
+    print(style("Product Workspaces:", BOLD, BLUE))
     if workspace_root:
-        selected_root = Path(workspace_root).expanduser().resolve()
-        if not selected_root.is_dir():
-            print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+        entry = prompt_workspace_entry("local", path_override=workspace_root)
+        if entry is None:
             return None
-        if str(selected_root) not in current_roots:
-            current_roots.append(str(selected_root))
-            set_saved_workspace_roots(config, current_roots)
+        if workspace_duplicate(entry, workspaces):
+            print(f"  {style('既に登録済みです:', YELLOW)} {entry['name']}")
+        else:
+            workspaces.append(entry)
+            set_saved_workspaces(config, workspaces)
             save_config(config)
-        print(f"  {style('追加しました:', GREEN)} {selected_root}")
-        return str(selected_root)
+            print(f"  {style('追加しました:', GREEN)} {entry['name']}")
+        return entry["id"]
     elif not sys.stdin.isatty():
-        if current_roots:
+        if workspaces:
             print(f"  {style('設定済み', GREEN)}")
-            for root in current_roots:
-                print(f"    - {style(root, BOLD)}")
+            for entry in workspaces:
+                print_workspace_entry(entry, indent="    - ")
         else:
             print(f"  {style('未設定', YELLOW)} --workspace-root または対話 setup で設定してください。")
-        return current_roots[0] if len(current_roots) == 1 else None
+        return workspaces[0]["id"] if len(workspaces) == 1 else None
 
     changed = False
     while True:
-        if current_roots:
+        if workspaces:
             print(f"  {style('設定済み:', GREEN)}")
-            for index, root in enumerate(current_roots, start=1):
-                print(f"    {index}. {style(root, BOLD)}")
+            for index, entry in enumerate(workspaces, start=1):
+                print_workspace_entry(entry, indent=f"    {index}. ")
         else:
             print(f"  {style('未設定', YELLOW)}")
         action = safe_input(
@@ -318,83 +322,215 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str
         if not action:
             break
         if action in {"a", "add", "追加"}:
-            answer = safe_input("  追加する製品 workspace path: ", default_on_eof="").strip()
-            if not answer:
+            entry = prompt_workspace_entry()
+            if entry is None:
                 continue
-            selected_root = Path(answer).expanduser().resolve()
-            if not selected_root.is_dir():
-                print(f"  {style('存在しない directory です:', RED)} {selected_root}")
-                continue
-            selected_root_text = str(selected_root)
-            if selected_root_text not in current_roots:
-                current_roots.append(selected_root_text)
+            if not workspace_duplicate(entry, workspaces):
+                workspaces.append(entry)
                 changed = True
-                print(f"  {style('追加しました:', GREEN)} {selected_root}")
+                print(f"  {style('追加しました:', GREEN)} {entry['name']}")
             else:
-                print(f"  {style('既に登録済みです:', YELLOW)} {selected_root}")
+                print(f"  {style('既に登録済みです:', YELLOW)} {entry['name']}")
             continue
         if action in {"d", "delete", "削除"}:
-            if not current_roots:
+            if not workspaces:
                 print(f"  {style('削除できる workspace がありません。', YELLOW)}")
                 continue
             answer = safe_input("  削除する番号: ", default_on_eof="").strip()
             try:
                 index = int(answer) - 1
-                removed = current_roots.pop(index)
+                removed = workspaces.pop(index)
             except (ValueError, IndexError):
                 print(f"  {style('番号が正しくありません。', RED)}")
                 continue
             changed = True
-            print(f"  {style('削除しました:', GREEN)} {removed}")
+            print(f"  {style('削除しました:', GREEN)} {removed['name']}")
             continue
         if action in {"e", "edit", "modify", "修正"}:
-            if not current_roots:
+            if not workspaces:
                 print(f"  {style('修正できる workspace がありません。', YELLOW)}")
                 continue
             answer = safe_input("  修正する番号: ", default_on_eof="").strip()
             try:
                 index = int(answer) - 1
-                current_roots[index]
+                previous = workspaces[index]
             except (ValueError, IndexError):
                 print(f"  {style('番号が正しくありません。', RED)}")
                 continue
-            answer = safe_input("  新しい製品 workspace path: ", default_on_eof="").strip()
-            if not answer:
+            entry = prompt_workspace_entry(existing=previous)
+            if entry is None:
                 continue
-            selected_root = Path(answer).expanduser().resolve()
-            if not selected_root.is_dir():
-                print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+            other_entries = [candidate for candidate in workspaces if candidate["id"] != previous["id"]]
+            if workspace_duplicate(entry, other_entries):
+                print(f"  {style('既に登録済みです:', YELLOW)} {entry['name']}")
                 continue
-            selected_root_text = str(selected_root)
-            if selected_root_text in current_roots and current_roots[index] != selected_root_text:
-                print(f"  {style('既に登録済みです:', YELLOW)} {selected_root}")
-                continue
-            replaced = current_roots[index]
-            current_roots[index] = selected_root_text
+            workspaces[index] = entry
             changed = True
-            print(f"  {style('修正しました:', GREEN)} {replaced} -> {selected_root}")
+            print(f"  {style('修正しました:', GREEN)} {entry['name']}")
             continue
         print(f"  {style('a（追加）/ d（削除）/ e（修正）/ Enter（終了）を入力してください。', YELLOW)}")
 
     if changed:
-        set_saved_workspace_roots(config, current_roots)
+        set_saved_workspaces(config, workspaces)
         save_config(config)
 
-    if not current_roots:
+    if not workspaces:
         return None
-    active_root = config.get("root")
-    if isinstance(active_root, str) and active_root in current_roots:
-        return active_root
-    if len(current_roots) == 1:
-        return current_roots[0]
+    active_id = config.get("workspace_id")
+    if isinstance(active_id, str) and any(entry["id"] == active_id for entry in workspaces):
+        return active_id
+    if len(workspaces) == 1:
+        return workspaces[0]["id"]
     while True:
         answer = safe_input("  設定する workspace の番号 [1]: ", default_on_eof="1").strip()
         if not answer:
-            return current_roots[0]
+            return workspaces[0]["id"]
         try:
-            return current_roots[int(answer) - 1]
+            return workspaces[int(answer) - 1]["id"]
         except (ValueError, IndexError):
             print(f"  {style('番号が正しくありません。', RED)}")
+
+
+def print_workspace_entry(entry: dict, *, indent: str) -> None:
+    connection = entry["connection"]
+    type_label = {"local": "local", "codespaces": "Codespaces", "network": "network"}[connection["type"]]
+    location = connection["path"]
+    if connection["type"] == "codespaces":
+        location = f"{connection['codespace']}:{location}"
+    elif connection["type"] == "network":
+        location = f"{connection['host']}:{location}"
+    print(f"{indent}{style(entry['name'], BOLD)} ({type_label} · {entry['branch']})")
+    print(f"       {style(location, DIM)}")
+
+
+def workspace_duplicate(candidate: dict, entries: Sequence[dict]) -> bool:
+    connection = candidate["connection"]
+    fingerprint = (
+        connection["type"],
+        connection.get("codespace") or connection.get("host") or "",
+        connection["path"],
+        candidate["branch"],
+    )
+    return any(
+        (
+            entry["connection"]["type"],
+            entry["connection"].get("codespace") or entry["connection"].get("host") or "",
+            entry["connection"]["path"],
+            entry["branch"],
+        )
+        == fingerprint
+        for entry in entries
+    )
+
+
+def prompt_workspace_entry(
+    connection_type: str | None = None,
+    *,
+    existing: dict | None = None,
+    path_override: str | None = None,
+) -> dict | None:
+    connection = existing.get("connection", {}) if existing else {}
+    selected_type = connection_type or connection.get("type")
+    if selected_type is None:
+        print("  接続種別を選択してください:")
+        print("    1. Codespaces")
+        print("    2. Local")
+        print("    3. Network (SSH)")
+        selected = safe_input("  番号 [2]: ", default_on_eof="").strip() or "2"
+        selected_type = {"1": "codespaces", "2": "local", "3": "network"}.get(selected)
+        if selected_type is None:
+            print(f"  {style('番号が正しくありません。', RED)}")
+            return None
+
+    if selected_type == "local":
+        default_path = path_override or connection.get("path", "")
+        answer = path_override or safe_input(
+            f"  local path{f' [{default_path}]' if default_path else ''}: ",
+            default_on_eof=default_path,
+        ).strip()
+        if not answer:
+            return None
+        path = Path(answer).expanduser().resolve()
+        if not path.is_dir():
+            print(f"  {style('存在しない directory です:', RED)} {path}")
+            return None
+        workspace_connection = {"type": "local", "path": str(path)}
+        repo_name, branch = probe_git_workspace(["git", "-C", str(path)])
+    elif selected_type == "codespaces":
+        print_codespace_candidates()
+        default_codespace = connection.get("codespace", "")
+        codespace = safe_input(
+            f"  Codespace名{f' [{default_codespace}]' if default_codespace else ''}: ",
+            default_on_eof=default_codespace,
+        ).strip() or default_codespace
+        if not codespace:
+            return None
+        default_path = connection.get("path", "/workspaces/gar-build-env")
+        path = safe_input(f"  Codespace内の path [{default_path}]: ", default_on_eof=default_path).strip() or default_path
+        workspace_connection = {"type": "codespaces", "codespace": codespace, "path": path}
+        repo_name, branch = probe_git_workspace(["gh", "codespace", "ssh", "-c", codespace, "--", "git", "-C", path])
+    else:
+        default_host = connection.get("host", "")
+        host = safe_input(
+            f"  IP address または SSH host{f' [{default_host}]' if default_host else ''}: ",
+            default_on_eof=default_host,
+        ).strip() or default_host
+        if not host:
+            return None
+        default_path = connection.get("path", "")
+        path = safe_input(
+            f"  remote path{f' [{default_path}]' if default_path else ''}: ",
+            default_on_eof=default_path,
+        ).strip() or default_path
+        if not path:
+            return None
+        workspace_connection = {"type": "network", "host": host, "path": path}
+        repo_name, branch = probe_git_workspace(["ssh", host, "git", "-C", path])
+
+    if not branch:
+        branch = safe_input("  branch [main]: ", default_on_eof="main").strip() or "main"
+    if not repo_name:
+        repo_name = Path(workspace_connection["path"]).name or "workspace"
+    default_name = f"{repo_name} · {branch}"
+    name = safe_input(f"  表示名 [{default_name}]: ", default_on_eof=default_name).strip() or default_name
+    return {
+        "id": existing["id"] if existing else f"ws_{uuid.uuid4().hex}",
+        "name": name,
+        "connection": workspace_connection,
+        "branch": branch,
+    }
+
+
+def print_codespace_candidates() -> None:
+    if shutil.which("gh") is None:
+        return
+    result = subprocess.run(["gh", "codespace", "list"], check=False, capture_output=True, text=True)
+    if result.returncode == 0 and result.stdout.strip():
+        print(f"  {style('利用可能な Codespaces:', DIM)}")
+        for line in result.stdout.splitlines():
+            print(f"    {line}")
+
+
+def probe_git_workspace(command_prefix: list[str]) -> tuple[str | None, str | None]:
+    try:
+        branch_result = subprocess.run(
+            [*command_prefix, "rev-parse", "--abbrev-ref", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        repo_result = subprocess.run(
+            [*command_prefix, "config", "--get", "remote.origin.url"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None, None
+    branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
+    remote = repo_result.stdout.strip() if repo_result.returncode == 0 else ""
+    repo_name = Path(remote.removesuffix(".git")).name if remote else None
+    return repo_name, branch
 
 
 def detect_esp32_serial_port_candidates() -> list[str]:
