@@ -470,10 +470,17 @@ def build_parser() -> argparse.ArgumentParser:
         "build",
         help="選択した product workspace の simulation build hook を実行します",
     )
-    sim_build_parser.add_argument(
+    sim_build_workspace = sim_build_parser.add_mutually_exclusive_group()
+    sim_build_workspace.add_argument(
         "--workspace-root",
         default=None,
         help="複数の local product workspace がある場合にビルド対象を指定します",
+    )
+    sim_build_workspace.add_argument(
+        "--workspace",
+        default=None,
+        metavar="NAME",
+        help="gar setup に表示される workspace名でビルド対象を指定します",
     )
     sim_build_parser.add_argument(
         "action",
@@ -539,10 +546,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
     )
-    sim_env_build_parser.add_argument(
+    sim_env_build_workspace = sim_env_build_parser.add_mutually_exclusive_group()
+    sim_env_build_workspace.add_argument(
         "--workspace-root",
         default=None,
         help="複数の local product workspace がある場合にビルド対象を指定します",
+    )
+    sim_env_build_workspace.add_argument(
+        "--workspace",
+        default=None,
+        metavar="NAME",
+        help="gar setup に表示される workspace名でビルド対象を指定します",
     )
     sim_env_build_parser.add_argument(
         "--json",
@@ -958,7 +972,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 section="app",
             )
         if args.sim_command == "build":
-            workspace_root = getattr(args, "workspace_root", None)
+            workspace_root = getattr(args, "workspace", None) or getattr(args, "workspace_root", None)
             clean = getattr(args, "action", None) == "clean"
             if workspace_root is None:
                 return run_product_sim_build(clean=clean) if clean else run_product_sim_build()
@@ -968,7 +982,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 subcommand_parsers["sim_env"].print_help()
                 return 1
             if args.sim_env_command == "build":
-                workspace_root = getattr(args, "workspace_root", None)
+                workspace_root = getattr(args, "workspace", None) or getattr(args, "workspace_root", None)
                 build_kwargs = {
                     "provider": getattr(args, "provider", None),
                     "json_output": getattr(args, "json_output", False),

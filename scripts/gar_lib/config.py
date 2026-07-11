@@ -78,6 +78,9 @@ def _select_workspace_entry(entries: list[dict]) -> dict | None:
         exact = next((entry for entry in entries if entry["id"] == requested_root), None)
         if exact is not None:
             return exact
+        name_matches = [entry for entry in entries if entry["name"] == requested_root]
+        if len(name_matches) == 1:
+            return name_matches[0]
         resolved = str(Path(requested_root).expanduser().resolve())
         return next(
             (

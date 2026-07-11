@@ -40,11 +40,12 @@ target、provider、EC2 接続先は各 workspace 要素に保存され、別ア
 ```
 
 `id` は GAR が自動生成する内部用の不変 ID で、ユーザーが入力する必要はありません。
-`name` は自動生成された表示名で、setup の修正画面で変更できます。connection は
+`name` は自動生成された workspace名で、setup の修正画面で変更できます。`gar setup` の
+一覧に表示され、`--workspace NAME` で指定する識別子でもあります。connection は
 `local`、`codespaces`、`network` のいずれかです。複数 workspace がある場合、product
 workspace 内で `gar` を実行するとその path の設定が選ばれます。GAR root から Wokwi build を実行する場合は、
-`gar sim build --workspace-root PATH` を指定してください。`GAR_WORKSPACE_ROOT=PATH`
-環境変数でも対象を固定できます。
+`gar sim build --workspace NAME` を指定してください。`--workspace-root PATH` と
+`GAR_WORKSPACE_ROOT=PATH` も引き続き利用できます。登録が1件だけなら指定は不要です。
 
 `gar setup` の workspace 追加では接続種別を選びます。Codespaces は Codespace 名と
 その中の path、network は IP address または SSH host と remote path を入力します。
@@ -153,8 +154,9 @@ gar sim stop
 | コマンド | 内容 |
 |---|---|
 | `gar sim build` | シミュレーション用のアプリケーション成果物をビルド (※現在は移行中のため、一部ターゲットは Makefile を経由) |
+| `gar sim build --workspace NAME` | `gar setup` 一覧の workspace名でビルド対象を指定 |
 | `gar sim build --workspace-root PATH` | 複数登録した local product workspace のうち PATH をビルド |
-| `gar sim build clean [--workspace-root PATH]` | 選択した product workspace の simulation build artifact を削除 |
+| `gar sim build clean [--workspace NAME]` | 選択した product workspace の simulation build artifact を削除 |
 | `gar sim deploy` | 最新のアプリケーション成果物をシミュレーションホストの実行可能パスへ反映 |
 
 #### インフラ管理 (`gar sim infra`)

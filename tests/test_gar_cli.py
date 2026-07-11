@@ -1585,6 +1585,13 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         run_product_build.assert_called_once_with()
 
+    def test_sim_build_accepts_setup_workspace_name(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
+            result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
+
+        self.assertEqual(0, result)
+        run_build.assert_called_once_with(workspace_root="local/GarStreamRx")
+
     def test_sim_build_clean_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
             result = main(["sim", "build", "clean", "--workspace-root", "/tmp/product"])
@@ -2753,6 +2760,41 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual("wsl", config["selected_providers"]["codespace"])
         self.assertEqual("vibecode-graviton", config["ec2"]["host"])
+
+    def test_load_config_selects_workspace_by_setup_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / ".gar" / "config.json"
+            config_path.parent.mkdir()
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "workspaces": [
+                            {
+                                "id": "ws_tx",
+                                "name": "local/GarStreamTx",
+                                "connection": {"type": "local", "path": str(Path(tmp) / "tx")},
+                                "branch": "GarStreamTx",
+                            },
+                            {
+                                "id": "ws_rx",
+                                "name": "local/GarStreamRx",
+                                "connection": {"type": "local", "path": str(Path(tmp) / "rx")},
+                                "branch": "GarStreamRx",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path),
+                mock.patch("scripts.gar_lib.config._ACTIVE_WORKSPACE_ROOT", "local/GarStreamRx"),
+            ):
+                config = load_config()
+
+        self.assertEqual("ws_rx", config["workspace_id"])
+        self.assertEqual("GarStreamRx", config["workspace_branch"])
 
     def test_load_config_ignores_legacy_top_level_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

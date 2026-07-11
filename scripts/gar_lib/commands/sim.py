@@ -184,7 +184,9 @@ def run_sim_env_build_command(
 def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = False) -> int:
     """Run the selected product's simulation build hook or clean its output."""
     if workspace_root is not None:
-        set_active_workspace_root(str(Path(workspace_root).expanduser().resolve()))
+        # A selector may be either a local path, a GAR-generated workspace ID,
+        # or the user-facing workspace name shown by `gar setup`.
+        set_active_workspace_root(workspace_root)
     config = load_config()
     development = config.get("selected_providers", {}).get("codespace")
     connection = config.get("workspace_connection")

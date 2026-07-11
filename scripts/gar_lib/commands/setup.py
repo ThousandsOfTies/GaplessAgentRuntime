@@ -411,6 +411,8 @@ def print_workspace_entry(entry: dict, *, indent: str) -> None:
 
 
 def workspace_duplicate(candidate: dict, entries: Sequence[dict]) -> bool:
+    if any(entry["name"] == candidate["name"] for entry in entries):
+        return True
     connection = candidate["connection"]
     fingerprint = (
         connection["type"],
@@ -499,7 +501,10 @@ def prompt_workspace_entry(
     if not repo_name:
         repo_name = Path(workspace_connection["path"]).name or "workspace"
     default_name = f"{repo_name} · {branch}"
-    name = safe_input(f"  表示名 [{default_name}]: ", default_on_eof=default_name).strip() or default_name
+    name = safe_input(
+        f"  workspace名（--workspace に使用） [{default_name}]: ",
+        default_on_eof=default_name,
+    ).strip() or default_name
     return {
         "id": existing["id"] if existing else f"ws_{uuid.uuid4().hex}",
         "name": name,
