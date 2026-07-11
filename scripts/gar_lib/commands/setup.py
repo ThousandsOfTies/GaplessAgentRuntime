@@ -207,9 +207,9 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
     if selected_simulation is None and ec2_host is None:
         return
 
-    if selected_simulation == "wokwi" and ec2_host is None:
+    if selected_simulation != "ssh_remote" and ec2_host is None:
         print(style("Simulation Runtime:", BOLD, BLUE))
-        print(f"  {style('Wokwi はローカルCLIからクラウドシミュレーションを呼び出すため、SSH runtime host は不要です。', GREEN)}")
+        print(f"  {style('選択中の simulation provider は SSH runtime host を必要としません。', GREEN)}")
         return
 
     current_host = default_ec2_host(config)

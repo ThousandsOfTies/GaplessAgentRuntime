@@ -2745,8 +2745,7 @@ class GarCliTest(unittest.TestCase):
                 configure_default_ec2_host(config, ec2_host=None)
 
         input_mock.assert_not_called()
-        self.assertIn("ローカルCLIからクラウドシミュレーション", output.getvalue())
-        self.assertIn("SSH runtime host は不要", output.getvalue())
+        self.assertIn("SSH runtime host を必要としません", output.getvalue())
 
     def test_load_config_preserves_selected_providers_and_defaults_ec2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
