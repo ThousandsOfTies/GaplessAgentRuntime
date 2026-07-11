@@ -2801,11 +2801,19 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("GarStreamRx", config["workspace_branch"])
 
     def test_default_workspace_name_has_no_spaces(self) -> None:
-        from scripts.gar_lib.commands.setup import default_workspace_name
+        from scripts.gar_lib.commands.setup import default_workspace_name, default_workspace_product_name
 
         self.assertEqual("Local/GarStreamTx", default_workspace_name("local", "GarStreamTx"))
         self.assertEqual("Codespaces/GarStreamTx", default_workspace_name("codespaces", "GarStreamTx"))
         self.assertEqual("Network/GarStreamTx", default_workspace_name("network", "GarStreamTx"))
+        self.assertEqual(
+            "GarStreamTx",
+            default_workspace_product_name("GarStreamTx", "/home/user/Yurufuwa/GarStreamTx"),
+        )
+        self.assertEqual(
+            "GarVibeRemote",
+            default_workspace_product_name("main", "/home/user/Yurufuwa/GarVibeRemote"),
+        )
 
     def test_load_config_ignores_legacy_top_level_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

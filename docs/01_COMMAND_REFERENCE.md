@@ -40,8 +40,9 @@ target、provider、EC2 接続先は各 workspace 要素に保存され、別ア
 ```
 
 `id` は GAR が自動生成する内部用の不変 ID で、ユーザーが入力する必要はありません。
-`name` は自動生成された workspace名で、既定値は `Local/<repo>`、
-`Codespaces/<repo>`、`Network/<repo>` です。setup の修正画面で変更できます。`gar setup` の
+`name` は自動生成された workspace名で、既定値は `Local/<product-branch>`、
+`Codespaces/<product-branch>`、`Network/<product-branch>` です。`main` branch の場合は
+workspace directory 名を使います。setup の修正画面で変更できます。`gar setup` の
 一覧に表示され、`--workspace NAME` で指定する識別子でもあります。connection は
 `local`、`codespaces`、`network` のいずれかです。複数 workspace がある場合、product
 workspace 内で `gar` を実行するとその path の設定が選ばれます。GAR root から Wokwi build を実行する場合は、

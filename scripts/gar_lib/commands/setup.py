@@ -420,10 +420,17 @@ def workspace_duplicate(candidate: dict, entries: Sequence[dict]) -> bool:
     )
 
 
-def default_workspace_name(connection_type: str, repo_name: str) -> str:
+def default_workspace_name(connection_type: str, product_name: str) -> str:
     """Return the concise, user-facing selector for a workspace."""
     type_label = {"local": "Local", "codespaces": "Codespaces", "network": "Network"}[connection_type]
-    return f"{type_label}/{repo_name}"
+    return f"{type_label}/{product_name}"
+
+
+def default_workspace_product_name(branch: str, workspace_path: str) -> str:
+    """Prefer the product branch over gar-build-env's shared remote name."""
+    if branch != "main":
+        return branch
+    return Path(workspace_path).name or "workspace"
 
 
 def prompt_workspace_entry(
@@ -458,7 +465,7 @@ def prompt_workspace_entry(
             print(f"  {style('存在しない directory です:', RED)} {path}")
             return None
         workspace_connection = {"type": "local", "path": str(path)}
-        repo_name, branch = probe_git_workspace(["git", "-C", str(path)])
+        _, branch = probe_git_workspace(["git", "-C", str(path)])
     elif selected_type == "codespaces":
         print_codespace_candidates()
         default_codespace = connection.get("codespace", "")
@@ -471,7 +478,7 @@ def prompt_workspace_entry(
         default_path = connection.get("path", "/workspaces/gar-build-env")
         path = safe_input(f"  Codespace内の path [{default_path}]: ", default_on_eof=default_path).strip() or default_path
         workspace_connection = {"type": "codespaces", "codespace": codespace, "path": path}
-        repo_name, branch = probe_git_workspace(["gh", "codespace", "ssh", "-c", codespace, "--", "git", "-C", path])
+        _, branch = probe_git_workspace(["gh", "codespace", "ssh", "-c", codespace, "--", "git", "-C", path])
     else:
         default_host = connection.get("host", "")
         host = safe_input(
@@ -488,13 +495,12 @@ def prompt_workspace_entry(
         if not path:
             return None
         workspace_connection = {"type": "network", "host": host, "path": path}
-        repo_name, branch = probe_git_workspace(["ssh", host, "git", "-C", path])
+        _, branch = probe_git_workspace(["ssh", host, "git", "-C", path])
 
     if not branch:
         branch = safe_input("  branch [main]: ", default_on_eof="main").strip() or "main"
-    if not repo_name:
-        repo_name = Path(workspace_connection["path"]).name or "workspace"
-    default_name = default_workspace_name(selected_type, repo_name)
+    product_name = default_workspace_product_name(branch, workspace_connection["path"])
+    default_name = default_workspace_name(selected_type, product_name)
     name = safe_input(
         f"  workspace名（--workspace に使用） [{default_name}]: ",
         default_on_eof=default_name,
