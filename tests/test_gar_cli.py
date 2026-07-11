@@ -2772,6 +2772,31 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("wsl", config["selected_providers"]["codespace"])
         self.assertEqual("vibecode-graviton", config["ec2"]["host"])
 
+    def test_load_config_ignores_legacy_top_level_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / ".gar" / "config.json"
+            config_path.parent.mkdir()
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "selected_providers": {"codespace": "wsl"},
+                        "selected_target": "esp32",
+                        "workspace": {"roots": ["/legacy"]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path),
+                mock.patch("scripts.gar_lib.config._ACTIVE_WORKSPACE_ROOT", None),
+            ):
+                config = load_config()
+
+        self.assertEqual([], config["workspaces"])
+        self.assertEqual({}, config["selected_providers"])
+        self.assertNotIn("selected_target", config)
+
     def test_discover_target_manifests_reads_gar_tools_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target_dir = Path(tmp) / "esp32"
