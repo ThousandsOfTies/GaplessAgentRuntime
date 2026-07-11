@@ -154,6 +154,7 @@ gar sim stop
 |---|---|
 | `gar sim build` | シミュレーション用のアプリケーション成果物をビルド (※現在は移行中のため、一部ターゲットは Makefile を経由) |
 | `gar sim build --workspace-root PATH` | 複数登録した local product workspace のうち PATH をビルド |
+| `gar sim build clean [--workspace-root PATH]` | 選択した product workspace の simulation build artifact を削除 |
 | `gar sim deploy` | 最新のアプリケーション成果物をシミュレーションホストの実行可能パスへ反映 |
 
 #### インフラ管理 (`gar sim infra`)

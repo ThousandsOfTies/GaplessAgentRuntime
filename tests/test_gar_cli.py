@@ -1585,6 +1585,13 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         run_product_build.assert_called_once_with()
 
+    def test_sim_build_clean_is_available_from_cli(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
+            result = main(["sim", "build", "clean", "--workspace-root", "/tmp/product"])
+
+        self.assertEqual(0, result)
+        run_product_build.assert_called_once_with(workspace_root="/tmp/product", clean=True)
+
     def test_sim_vm_commands_are_available_from_cli(self) -> None:
         cases = [
             (["sim", "start", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),

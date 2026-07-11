@@ -475,6 +475,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="複数の local product workspace がある場合にビルド対象を指定します",
     )
+    sim_build_parser.add_argument(
+        "action",
+        nargs="?",
+        choices=("clean",),
+        help="clean を指定すると product の simulation build artifact を削除します",
+    )
     for sim_vm_command_name, ec2_command_name in SIM_VM_COMMAND_MAP.items():
         help_text = {
             "start": "simulation VM を起動します",
@@ -953,9 +959,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.sim_command == "build":
             workspace_root = getattr(args, "workspace_root", None)
+            clean = getattr(args, "action", None) == "clean"
             if workspace_root is None:
-                return run_product_sim_build()
-            return run_product_sim_build(workspace_root=workspace_root)
+                return run_product_sim_build(clean=clean) if clean else run_product_sim_build()
+            return run_product_sim_build(workspace_root=workspace_root, clean=clean) if clean else run_product_sim_build(workspace_root=workspace_root)
         if args.sim_command == "env":
             if args.sim_env_command is None:
                 subcommand_parsers["sim_env"].print_help()

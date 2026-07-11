@@ -181,7 +181,8 @@ def run_sim_env_build_command(
         return 1
 
 
-def run_product_sim_build(*, workspace_root: str | None = None) -> int:
+def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = False) -> int:
+    """Run the selected product's simulation build hook or clean its output."""
     if workspace_root is not None:
         set_active_workspace_root(str(Path(workspace_root).expanduser().resolve()))
     config = load_config()
@@ -198,7 +199,10 @@ def run_product_sim_build(*, workspace_root: str | None = None) -> int:
         if not script.is_file():
             print(f"gar sim build: product build hook が見つかりません: {script}", file=sys.stderr)
             return 1
-        return subprocess.run([str(script)], check=False).returncode
+        command = [str(script)]
+        if clean:
+            command.append("clean")
+        return subprocess.run(command, check=False).returncode
 
     if development == "github_codespaces":
         if connection.get("type") != "codespaces":
@@ -209,7 +213,8 @@ def run_product_sim_build(*, workspace_root: str | None = None) -> int:
         if not isinstance(codespace, str) or not isinstance(workspace_root, str):
             print("gar sim build: Codespaces workspace 設定が不完全です。`gar setup` を実行してください。", file=sys.stderr)
             return 1
-        command = f"cd {shlex.quote(workspace_root)} && scripts/product-sim-build.sh"
+        hook_args = " clean" if clean else ""
+        command = f"cd {shlex.quote(workspace_root)} && scripts/product-sim-build.sh{hook_args}"
         return subprocess.run(["gh", "codespace", "ssh", "-c", codespace, "--", command], check=False).returncode
 
     if connection.get("type") == "network":
