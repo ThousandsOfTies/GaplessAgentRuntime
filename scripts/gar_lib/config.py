@@ -101,9 +101,6 @@ def load_config() -> dict:
         configured_roots = workspace.get("roots")
         if isinstance(configured_roots, list):
             workspace_roots = [root for root in configured_roots if isinstance(root, str) and root]
-        elif isinstance(workspace.get("root"), str) and workspace["root"]:
-            # Migrate the pre-multi-workspace schema on read.
-            workspace_roots = [workspace["root"]]
 
     return {
         **({"selected_target": selected_target} if selected_target else {}),
@@ -237,8 +234,7 @@ def saved_workspace_roots(config: dict) -> list[str]:
     roots = workspace.get("roots")
     if isinstance(roots, list):
         return [root for root in roots if isinstance(root, str) and root]
-    root = workspace.get("root")
-    return [root] if isinstance(root, str) and root else []
+    return []
 
 
 def set_saved_workspace_roots(config: dict, roots: list[str]) -> None:
@@ -246,17 +242,7 @@ def set_saved_workspace_roots(config: dict, roots: list[str]) -> None:
     if not isinstance(workspace, dict):
         workspace = {}
         config["workspace"] = workspace
-    workspace.pop("root", None)
     workspace["roots"] = list(dict.fromkeys(roots))
-
-
-# Compatibility helpers for callers that still need a single workspace.
-def saved_workspace_root(config: dict) -> str | None:
-    return next(iter(saved_workspace_roots(config)), None)
-
-
-def set_saved_workspace_root(config: dict, root: str) -> None:
-    set_saved_workspace_roots(config, [root])
 
 
 def saved_adb_exe(config: dict) -> str | None:
