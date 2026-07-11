@@ -329,11 +329,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ESP32 esptool provider が使う serial port を保存します（例: COM3, /dev/ttyUSB0）",
     )
-    setup_parser.add_argument(
-        "--workspace-root",
-        default=None,
-        help="local product workspace を追加します（複数指定は gar setup の対話画面で管理）",
-    )
     code_parser = subparsers.add_parser(
         "code",
         help="Build Artifacts workspace との接続を管理します",
@@ -470,13 +465,7 @@ def build_parser() -> argparse.ArgumentParser:
         "build",
         help="選択した product workspace の simulation build hook を実行します",
     )
-    sim_build_workspace = sim_build_parser.add_mutually_exclusive_group()
-    sim_build_workspace.add_argument(
-        "--workspace-root",
-        default=None,
-        help="複数の local product workspace がある場合にビルド対象を指定します",
-    )
-    sim_build_workspace.add_argument(
+    sim_build_parser.add_argument(
         "--workspace",
         default=None,
         metavar="NAME",
@@ -546,13 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
     )
-    sim_env_build_workspace = sim_env_build_parser.add_mutually_exclusive_group()
-    sim_env_build_workspace.add_argument(
-        "--workspace-root",
-        default=None,
-        help="複数の local product workspace がある場合にビルド対象を指定します",
-    )
-    sim_env_build_workspace.add_argument(
+    sim_env_build_parser.add_argument(
         "--workspace",
         default=None,
         metavar="NAME",
@@ -906,7 +889,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise
 
     if args.command == "setup":
-        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host, esp32_port=args.esp32_port, workspace_root=args.workspace_root)
+        return run_setup(no_install=args.no_install, ec2_host=args.ec2_host, esp32_port=args.esp32_port)
     if args.command == "code":
         if args.code_command is None:
             subcommand_parsers["code"].print_help()
@@ -972,7 +955,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 section="app",
             )
         if args.sim_command == "build":
-            workspace_root = getattr(args, "workspace", None) or getattr(args, "workspace_root", None)
+            workspace_root = getattr(args, "workspace", None)
             clean = getattr(args, "action", None) == "clean"
             if workspace_root is None:
                 return run_product_sim_build(clean=clean) if clean else run_product_sim_build()
@@ -982,7 +965,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 subcommand_parsers["sim_env"].print_help()
                 return 1
             if args.sim_env_command == "build":
-                workspace_root = getattr(args, "workspace", None) or getattr(args, "workspace_root", None)
+                workspace_root = getattr(args, "workspace", None)
                 build_kwargs = {
                     "provider": getattr(args, "provider", None),
                     "json_output": getattr(args, "json_output", False),

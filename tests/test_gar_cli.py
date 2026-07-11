@@ -1573,10 +1573,10 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_build_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
-            result = main(["sim", "build", "--workspace-root", "/tmp/product"])
+            result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
-        run_build.assert_called_once_with(workspace_root="/tmp/product")
+        run_build.assert_called_once_with(workspace_root="local/GarStreamRx")
 
     def test_sim_build_uses_product_provider_environment(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
@@ -1594,10 +1594,14 @@ class GarCliTest(unittest.TestCase):
 
     def test_sim_build_clean_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
-            result = main(["sim", "build", "clean", "--workspace-root", "/tmp/product"])
+            result = main(["sim", "build", "clean", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
-        run_product_build.assert_called_once_with(workspace_root="/tmp/product", clean=True)
+        run_product_build.assert_called_once_with(workspace_root="local/GarStreamRx", clean=True)
+
+    def test_sim_build_rejects_workspace_root_option(self) -> None:
+        with self.assertRaises(SystemExit):
+            main(["sim", "build", "--workspace-root", "/tmp/product"])
 
     def test_sim_vm_commands_are_available_from_cli(self) -> None:
         cases = [

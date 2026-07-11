@@ -51,7 +51,7 @@ SKIP_CATEGORY = object()
 TARGET_MENU_ENTRY = "__target_board__"
 
 
-def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None, workspace_root: str | None = None) -> int:
+def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port: str | None = None) -> int:
     providers = discover_environment_providers()
     if not providers:
         print("接続環境プロバイダが見つかりません。", file=sys.stderr)
@@ -67,8 +67,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     config = load_config()
     config.setdefault("selected_providers", {})
     active_workspace_root: str | None = None
-    if workspace_root or sys.stdin.isatty():
-        active_workspace_root = configure_workspace_root(config, workspace_root=workspace_root)
+    if sys.stdin.isatty():
+        active_workspace_root = configure_workspace_root(config)
         print()
     if active_workspace_root:
         set_active_workspace_root(active_workspace_root)
@@ -290,28 +290,16 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
         print(f"  {style('更新しました:', GREEN)} {selected_port}")
 
 
-def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str | None:
+def configure_workspace_root(config: dict) -> str | None:
     workspaces = saved_workspaces(config)
     print(style("Product Workspaces:", BOLD, BLUE))
-    if workspace_root:
-        entry = prompt_workspace_entry("local", path_override=workspace_root)
-        if entry is None:
-            return None
-        if workspace_duplicate(entry, workspaces):
-            print(f"  {style('既に登録済みです:', YELLOW)} {entry['name']}")
-        else:
-            workspaces.append(entry)
-            set_saved_workspaces(config, workspaces)
-            save_config(config)
-            print(f"  {style('追加しました:', GREEN)} {entry['name']}")
-        return entry["id"]
-    elif not sys.stdin.isatty():
+    if not sys.stdin.isatty():
         if workspaces:
             print(f"  {style('設定済み', GREEN)}")
             for entry in workspaces:
                 print_workspace_entry(entry, indent="    - ")
         else:
-            print(f"  {style('未設定', YELLOW)} --workspace-root または対話 setup で設定してください。")
+            print(f"  {style('未設定', YELLOW)} 対話的に `gar setup` を実行して登録してください。")
         return workspaces[0]["id"] if len(workspaces) == 1 else None
 
     changed = False

@@ -29,7 +29,8 @@ Example:
     --destination /home/user/Yurufuwa/GarStreamTx
 
 After the script succeeds, implement the application-specific command in
-scripts/product-sim-build.sh, then use `gar setup --workspace-root <checkout>`.
+scripts/product-sim-build.sh, then run `gar setup` and add the checkout from
+the interactive Product Workspaces screen.
 EOF
 }
 
@@ -163,4 +164,5 @@ fi
 
 printf '\nCreated %s at %s.\n' "${product_name}" "${destination}"
 printf 'Next: edit %s/scripts/product-sim-build.sh, then run:\n' "${destination}"
-printf '  gar setup --workspace-root %q\n' "${destination}"
+printf '  gar setup\n'
+printf '  # Product Workspaces で追加し、local path に %q を入力\n' "${destination}"

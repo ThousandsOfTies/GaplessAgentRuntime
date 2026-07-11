@@ -73,7 +73,7 @@ def _workspace_entries(data: dict) -> list[dict]:
 
 
 def _select_workspace_entry(entries: list[dict]) -> dict | None:
-    requested_root = _ACTIVE_WORKSPACE_ROOT or os.environ.get("GAR_WORKSPACE_ROOT")
+    requested_root = _ACTIVE_WORKSPACE_ROOT
     if requested_root:
         exact = next((entry for entry in entries if entry["id"] == requested_root), None)
         if exact is not None:
