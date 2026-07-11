@@ -420,6 +420,12 @@ def workspace_duplicate(candidate: dict, entries: Sequence[dict]) -> bool:
     )
 
 
+def default_workspace_name(connection_type: str, repo_name: str) -> str:
+    """Return the concise, user-facing selector for a workspace."""
+    type_label = {"local": "Local", "codespaces": "Codespaces", "network": "Network"}[connection_type]
+    return f"{type_label}/{repo_name}"
+
+
 def prompt_workspace_entry(
     connection_type: str | None = None,
     *,
@@ -488,7 +494,7 @@ def prompt_workspace_entry(
         branch = safe_input("  branch [main]: ", default_on_eof="main").strip() or "main"
     if not repo_name:
         repo_name = Path(workspace_connection["path"]).name or "workspace"
-    default_name = f"{repo_name} · {branch}"
+    default_name = default_workspace_name(selected_type, repo_name)
     name = safe_input(
         f"  workspace名（--workspace に使用） [{default_name}]: ",
         default_on_eof=default_name,

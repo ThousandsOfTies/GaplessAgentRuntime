@@ -2800,6 +2800,13 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("ws_rx", config["workspace_id"])
         self.assertEqual("GarStreamRx", config["workspace_branch"])
 
+    def test_default_workspace_name_has_no_spaces(self) -> None:
+        from scripts.gar_lib.commands.setup import default_workspace_name
+
+        self.assertEqual("Local/GarStreamTx", default_workspace_name("local", "GarStreamTx"))
+        self.assertEqual("Codespaces/GarStreamTx", default_workspace_name("codespaces", "GarStreamTx"))
+        self.assertEqual("Network/GarStreamTx", default_workspace_name("network", "GarStreamTx"))
+
     def test_load_config_ignores_legacy_top_level_settings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
