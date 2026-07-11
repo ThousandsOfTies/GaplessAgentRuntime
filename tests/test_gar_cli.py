@@ -327,7 +327,7 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0) as prepare_project,
             mock.patch("sys.stdin.isatty", return_value=True),
-            mock.patch("builtins.input", side_effect=["1", "2", "", "", "q"]),
+            mock.patch("builtins.input", side_effect=["", "1", "2", "", "", "q"]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -368,7 +368,7 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("sys.stdin.isatty", return_value=True),
-            mock.patch("builtins.input", side_effect=["q"]),
+            mock.patch("builtins.input", side_effect=["", "q"]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -584,7 +584,7 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=True),
-            mock.patch("builtins.input", side_effect=[""]),
+            mock.patch("builtins.input", side_effect=["", ""]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -635,7 +635,7 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
             mock.patch("sys.stdin.isatty", return_value=True),
-            mock.patch("builtins.input", side_effect=["2", "", "q"]),
+            mock.patch("builtins.input", side_effect=["", "2", "", "q"]),
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):

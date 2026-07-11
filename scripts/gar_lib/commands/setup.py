@@ -61,7 +61,7 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     targets = discover_target_manifests()
     config = load_config()
     config.setdefault("selected_providers", {})
-    if workspace_root or config.get("selected_providers", {}).get("codespace") == "local":
+    if workspace_root or sys.stdin.isatty():
         configure_workspace_root(config, workspace_root=workspace_root)
         print()
     optional_categories = optional_setup_categories(config, targets)
@@ -105,8 +105,6 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
         if result == 0:
             config["selected_providers"][provider.category_id] = provider.provider_id
             save_config(config)
-            if provider.category_id == "codespace" and provider.provider_id == "local":
-                configure_workspace_root(config, workspace_root=None)
             redraw_notice = f"更新しました: {category[1]} = {provider.display_name}"
         else:
             break
