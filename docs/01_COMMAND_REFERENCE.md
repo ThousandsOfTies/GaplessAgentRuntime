@@ -12,7 +12,7 @@
 |---|---|
 | `make init` | `.venv` 作成・`gar` symlink・VSCode extension install |
 | `make start` | venv + bash completion を有効化したサブシェルを開く |
-| `gar setup` | target 選択・gar-tools 確認/取得・依存 target graph と接続設定の保存・依存コマンド確認・既定 host 保存 |
+| `gar setup` | target 選択・gar-tools 確認/取得・依存 target graph と接続設定の保存・依存コマンド確認・既定 host 保存。local product workspace は複数登録でき、対話画面で追加/削除します |
 | `gar hw init` | `gar-tools` の target テンプレートから `hardware/` に CSV を生成 |
 
 ---
@@ -104,6 +104,7 @@ gar sim stop
 | コマンド | 内容 |
 |---|---|
 | `gar sim env build` | 仮想デバイススタブ（CUSE I2C/SPI など）のバイナリをビルド |
+| `gar sim env build --workspace-root PATH` | Wokwi など複数登録した local product workspace のうち PATH をビルド |
 | `gar sim env deploy` | ビルドしたスタブや接続用Webブリッジをホストへ転送・配置 |
 | `gar sim env start` | 仮想環境（systemd サービス群）とポートフォワードを起動 |
 | `gar sim env stop` | 仮想環境（systemd サービス群）を停止 |
@@ -117,6 +118,7 @@ gar sim stop
 | コマンド | 内容 |
 |---|---|
 | `gar sim build` | シミュレーション用のアプリケーション成果物をビルド (※現在は移行中のため、一部ターゲットは Makefile を経由) |
+| `gar sim build --workspace-root PATH` | 複数登録した local product workspace のうち PATH をビルド |
 | `gar sim deploy` | 最新のアプリケーション成果物をシミュレーションホストの実行可能パスへ反映 |
 
 #### インフラ管理 (`gar sim infra`)

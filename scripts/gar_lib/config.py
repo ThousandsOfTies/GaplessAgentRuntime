@@ -96,9 +96,14 @@ def load_config() -> dict:
         esp32_port = esp32["port"]
 
     workspace = data.get("workspace")
-    workspace_root = None
-    if isinstance(workspace, dict) and isinstance(workspace.get("root"), str) and workspace["root"]:
-        workspace_root = workspace["root"]
+    workspace_roots: list[str] = []
+    if isinstance(workspace, dict):
+        configured_roots = workspace.get("roots")
+        if isinstance(configured_roots, list):
+            workspace_roots = [root for root in configured_roots if isinstance(root, str) and root]
+        elif isinstance(workspace.get("root"), str) and workspace["root"]:
+            # Migrate the pre-multi-workspace schema on read.
+            workspace_roots = [workspace["root"]]
 
     return {
         **({"selected_target": selected_target} if selected_target else {}),
@@ -114,7 +119,7 @@ def load_config() -> dict:
         },
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
         **({"esp32": {"port": esp32_port}} if esp32_port else {}),
-        **({"workspace": {"root": workspace_root}} if workspace_root else {}),
+        **({"workspace": {"roots": workspace_roots}} if workspace_roots else {}),
         **(
             {
                 "adb": {
@@ -225,19 +230,33 @@ def set_saved_esp32_serial_port(config: dict, port: str) -> None:
     esp32["port"] = port
 
 
-def saved_workspace_root(config: dict) -> str | None:
+def saved_workspace_roots(config: dict) -> list[str]:
     workspace = config.get("workspace")
-    if isinstance(workspace, dict) and isinstance(workspace.get("root"), str) and workspace["root"]:
-        return workspace["root"]
-    return None
+    if not isinstance(workspace, dict):
+        return []
+    roots = workspace.get("roots")
+    if isinstance(roots, list):
+        return [root for root in roots if isinstance(root, str) and root]
+    root = workspace.get("root")
+    return [root] if isinstance(root, str) and root else []
 
 
-def set_saved_workspace_root(config: dict, root: str) -> None:
+def set_saved_workspace_roots(config: dict, roots: list[str]) -> None:
     workspace = config.setdefault("workspace", {})
     if not isinstance(workspace, dict):
         workspace = {}
         config["workspace"] = workspace
-    workspace["root"] = root
+    workspace.pop("root", None)
+    workspace["roots"] = list(dict.fromkeys(roots))
+
+
+# Compatibility helpers for callers that still need a single workspace.
+def saved_workspace_root(config: dict) -> str | None:
+    return next(iter(saved_workspace_roots(config)), None)
+
+
+def set_saved_workspace_root(config: dict, root: str) -> None:
+    set_saved_workspace_roots(config, [root])
 
 
 def saved_adb_exe(config: dict) -> str | None:

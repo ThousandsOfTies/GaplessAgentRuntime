@@ -331,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument(
         "--workspace-root",
         default=None,
-        help="local development provider が使う製品 workspace path",
+        help="local product workspace を追加します（複数指定は gar setup の対話画面で管理）",
     )
     code_parser = subparsers.add_parser(
         "code",
@@ -475,6 +475,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
     )
     sim_build_parser.add_argument(
+        "--workspace-root",
+        default=None,
+        help="複数の local product workspace がある場合にビルド対象を指定します",
+    )
+    sim_build_parser.add_argument(
         "--json",
         dest="json_output",
         action="store_true",
@@ -537,6 +542,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--provider",
         default=None,
         help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
+    )
+    sim_env_build_parser.add_argument(
+        "--workspace-root",
+        default=None,
+        help="複数の local product workspace がある場合にビルド対象を指定します",
     )
     sim_env_build_parser.add_argument(
         "--json",
@@ -954,6 +964,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sim_command == "build":
             return run_sim_env_build_command(
                 provider=getattr(args, "provider", None),
+                workspace_root=getattr(args, "workspace_root", None),
                 json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "env":
@@ -963,6 +974,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.sim_env_command == "build":
                 return run_sim_env_build_command(
                     provider=getattr(args, "provider", None),
+                    workspace_root=getattr(args, "workspace_root", None),
                     json_output=getattr(args, "json_output", False),
                 )
             if args.sim_env_command == "deploy":

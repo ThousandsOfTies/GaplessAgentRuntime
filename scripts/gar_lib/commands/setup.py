@@ -11,10 +11,10 @@ from scripts.gar_lib.config import (
     load_config,
     save_config,
     saved_esp32_serial_port,
-    saved_workspace_root,
+    saved_workspace_roots,
     set_default_ec2_host,
     set_saved_esp32_serial_port,
-    set_saved_workspace_root,
+    set_saved_workspace_roots,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -277,29 +277,77 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> Non
     if config.get("selected_providers", {}).get("codespace") != "local":
         return
 
-    current_root = saved_workspace_root(config)
-    print(style("Local Product Workspace:", BOLD, BLUE))
+    current_roots = saved_workspace_roots(config)
+    print(style("Local Product Workspaces:", BOLD, BLUE))
     if workspace_root:
         selected_root = Path(workspace_root).expanduser().resolve()
+        if not selected_root.is_dir():
+            print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+            return
+        if str(selected_root) not in current_roots:
+            current_roots.append(str(selected_root))
+            set_saved_workspace_roots(config, current_roots)
+            save_config(config)
+        print(f"  {style('追加しました:', GREEN)} {selected_root}")
+        return
     elif not sys.stdin.isatty():
-        if current_root:
-            print(f"  {style('設定済み', GREEN)} {style(current_root, BOLD)}")
+        if current_roots:
+            print(f"  {style('設定済み', GREEN)}")
+            for root in current_roots:
+                print(f"    - {style(root, BOLD)}")
         else:
             print(f"  {style('未設定', YELLOW)} --workspace-root または対話 setup で設定してください。")
         return
-    else:
-        prompt = f" [{current_root}]" if current_root else " (例: /home/user/Yurufuwa/GarVibeRemote)"
-        answer = safe_input(f"製品 workspace path を入力してください{prompt}: ", default_on_eof=current_root or "").strip()
-        if not answer:
-            return
-        selected_root = Path(answer).expanduser().resolve()
 
-    if not selected_root.is_dir():
-        print(f"  {style('存在しない directory です:', RED)} {selected_root}")
-        return
-    set_saved_workspace_root(config, str(selected_root))
-    save_config(config)
-    print(f"  {style('更新しました:', GREEN)} {selected_root}")
+    changed = False
+    while True:
+        if current_roots:
+            print(f"  {style('設定済み:', GREEN)}")
+            for index, root in enumerate(current_roots, start=1):
+                print(f"    {index}. {style(root, BOLD)}")
+        else:
+            print(f"  {style('未設定', YELLOW)}")
+        action = safe_input(
+            "  workspaceを追加(a)、削除(d)、終了(Enter): ",
+            default_on_eof="",
+        ).strip().lower()
+        if not action:
+            break
+        if action in {"a", "add", "追加"}:
+            answer = safe_input("  追加する製品 workspace path: ", default_on_eof="").strip()
+            if not answer:
+                continue
+            selected_root = Path(answer).expanduser().resolve()
+            if not selected_root.is_dir():
+                print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+                continue
+            selected_root_text = str(selected_root)
+            if selected_root_text not in current_roots:
+                current_roots.append(selected_root_text)
+                changed = True
+                print(f"  {style('追加しました:', GREEN)} {selected_root}")
+            else:
+                print(f"  {style('既に登録済みです:', YELLOW)} {selected_root}")
+            continue
+        if action in {"d", "delete", "削除"}:
+            if not current_roots:
+                print(f"  {style('削除できる workspace がありません。', YELLOW)}")
+                continue
+            answer = safe_input("  削除する番号: ", default_on_eof="").strip()
+            try:
+                index = int(answer) - 1
+                removed = current_roots.pop(index)
+            except (ValueError, IndexError):
+                print(f"  {style('番号が正しくありません。', RED)}")
+                continue
+            changed = True
+            print(f"  {style('削除しました:', GREEN)} {removed}")
+            continue
+        print(f"  {style('a（追加）/ d（削除）/ Enter（終了）を入力してください。', YELLOW)}")
+
+    if changed:
+        set_saved_workspace_roots(config, current_roots)
+        save_config(config)
 
 
 def detect_esp32_serial_port_candidates() -> list[str]:

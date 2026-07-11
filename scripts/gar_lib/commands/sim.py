@@ -18,7 +18,7 @@ from scripts.gar_lib.commands.hw import load_hw_definition
 from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
-    saved_workspace_root,
+    saved_workspace_roots,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -150,6 +150,7 @@ def _get_sim_target(host: str | None, *, provider_override: str | None = None) -
 def run_sim_env_build_command(
     *,
     provider: str | None = None,
+    workspace_root: str | None = None,
     json_output: bool = False,
 ) -> int:
     """``gar sim env build``: resolve the simulation provider and call its
@@ -158,7 +159,7 @@ def run_sim_env_build_command(
     """
     resolved_provider = _get_sim_provider(provider)
     if resolved_provider.provider_id == "wokwi":
-        return run_product_sim_build()
+        return run_product_sim_build(workspace_root=workspace_root)
     target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
     try:
         return target.build(json_output=json_output)
@@ -172,15 +173,24 @@ def run_sim_env_build_command(
         return 1
 
 
-def run_product_sim_build() -> int:
+def run_product_sim_build(*, workspace_root: str | None = None) -> int:
     config = load_config()
     development = config.get("selected_providers", {}).get("codespace")
     if development == "local":
-        workspace_root = saved_workspace_root(config)
-        if not workspace_root:
+        roots = saved_workspace_roots(config)
+        if workspace_root:
+            selected_root = Path(workspace_root).expanduser().resolve()
+        elif len(roots) == 1:
+            selected_root = Path(roots[0])
+        elif not roots:
             print("gar sim build: local product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
             return 1
-        script = Path(workspace_root).expanduser() / "scripts" / "product-sim-build.sh"
+        else:
+            print("gar sim build: workspace が複数登録されています。--workspace-root で選択してください。", file=sys.stderr)
+            for root in roots:
+                print(f"  - {root}", file=sys.stderr)
+            return 1
+        script = selected_root / "scripts" / "product-sim-build.sh"
         if not script.is_file():
             print(f"gar sim build: product build hook が見つかりません: {script}", file=sys.stderr)
             return 1
