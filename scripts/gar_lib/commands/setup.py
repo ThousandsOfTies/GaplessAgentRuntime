@@ -107,6 +107,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
 
         provider = select_provider_for_category(category, config)
         if provider is SKIP_CATEGORY:
+            if category[0] == "simulator" and config["selected_providers"].get("simulator") == "ssh_remote":
+                configure_default_ec2_host(config, ec2_host=ec2_host)
             continue
         if provider is None:
             break
