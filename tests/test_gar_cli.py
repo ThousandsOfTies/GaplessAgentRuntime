@@ -2656,39 +2656,15 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_setup_can_store_default_ec2_host(self) -> None:
-        providers = [DevelopmentProvider]
-        targets = [
-            TargetManifest(
-                id="test-target",
-                display_name="Test Target",
-                description="target",
-                tools_root="targets/test",
-                default_backends={},
-                backend_notes={},
-            ),
-        ]
-        config = {"selected_target": "test-target", "selected_providers": {}}
+        config = {"selected_providers": {"simulator": "ssh_remote"}}
 
-        with (
-            mock.patch("scripts.gar_lib.commands.setup.discover_environment_providers", return_value=providers),
-            mock.patch("scripts.gar_lib.commands.setup.discover_target_manifests", return_value=targets),
-            mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
-            mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
-            mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("builtins.input", side_effect=["", "", ""]),
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_setup(no_install=True, ec2_host="configured-ec2")
+        with mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config:
+            from scripts.gar_lib.commands.setup import configure_default_ec2_host
 
-        self.assertEqual(0, result)
-        save_config.assert_any_call(
-            {
-                "selected_target": "test-target",
-                "selected_providers": {"codespace": "development_test"},
-                "ec2": {"host": "configured-ec2"},
-            }
-        )
+            configure_default_ec2_host(config, ec2_host="configured-ec2")
+
+        self.assertEqual("configured-ec2", config["ec2"]["host"])
+        save_config.assert_called_once_with(config)
 
     def test_setup_can_store_esp32_esptool_port(self) -> None:
         class Esp32EsptoolProvider(TargetAccessProvider):
@@ -2745,7 +2721,7 @@ class GarCliTest(unittest.TestCase):
                 configure_default_ec2_host(config, ec2_host=None)
 
         input_mock.assert_not_called()
-        self.assertIn("SSH runtime host を必要としません", output.getvalue())
+        self.assertEqual("", output.getvalue())
 
     def test_load_config_preserves_selected_providers_and_defaults_ec2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

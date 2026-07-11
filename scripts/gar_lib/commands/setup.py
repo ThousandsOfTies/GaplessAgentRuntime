@@ -114,6 +114,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
         result = ensure_provider_dependencies(provider, no_install=no_install)
         if result == 0:
             config["selected_providers"][provider.category_id] = provider.provider_id
+            if provider.category_id == "simulator" and provider.provider_id == "ssh_remote":
+                configure_default_ec2_host(config, ec2_host=ec2_host)
             save_config(config)
             redraw_notice = f"更新しました: {category[1]} = {provider.display_name}"
         else:
@@ -141,8 +143,6 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
         print()
 
     print_terminal_bridge_status(offer_install=not no_install)
-    print()
-    configure_default_ec2_host(config, ec2_host=ec2_host)
     print()
     configure_esp32_serial_port(config, esp32_port=esp32_port)
     print()
@@ -205,12 +205,7 @@ def print_terminal_bridge_status(*, offer_install: bool) -> None:
 
 def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
     selected_simulation = config.get("selected_providers", {}).get("simulator")
-    if selected_simulation is None and ec2_host is None:
-        return
-
-    if selected_simulation != "ssh_remote" and ec2_host is None:
-        print(style("Simulation Runtime:", BOLD, BLUE))
-        print(f"  {style('選択中の simulation provider は SSH runtime host を必要としません。', GREEN)}")
+    if selected_simulation != "ssh_remote":
         return
 
     current_host = default_ec2_host(config)
