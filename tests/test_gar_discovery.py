@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ from scripts.gar_lib.environments.registry.codespace.github_codespaces import (
 )
 from scripts.gar_lib.environments.registry.codespace.local import LocalEnvironment
 from scripts.gar_lib.environments.registry.simulator.aws_ssm import AwsSsmEnvironment
+from scripts.gar_lib.environments.registry.simulator.mujoco import MujocoEnvironment
 from scripts.gar_lib.environments.registry.simulator.renode_mcu import (
     RenodeMcuEnvironment,
 )
@@ -27,6 +29,7 @@ from scripts.gar_lib.environments.registry.target.adb_usb import AdbUsbEnvironme
 from scripts.gar_lib.environments.registry.target.esp32_esptool import (
     Esp32EsptoolEnvironment,
 )
+from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
 from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 
 
@@ -39,6 +42,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("aws_ssm", provider_ids)
         self.assertIn("ssh_remote", provider_ids)
         self.assertIn("renode_mcu", provider_ids)
+        self.assertIn("mujoco", provider_ids)
         self.assertIn("esp32_qemu_firmware", provider_ids)
         self.assertIn("wokwi", provider_ids)
         self.assertIn("vibe_remote_device", provider_ids)
@@ -63,6 +67,7 @@ class GarDiscoveryTest(unittest.TestCase):
         )
         self.assertEqual("simulator", categories_by_provider["aws_ssm"])
         self.assertEqual("simulator", categories_by_provider["renode_mcu"])
+        self.assertEqual("simulator", categories_by_provider["mujoco"])
         self.assertEqual("simulator", categories_by_provider["esp32_qemu_firmware"])
         self.assertEqual("simulator", categories_by_provider["wokwi"])
         self.assertEqual("simulator", categories_by_provider["vibe_remote_device"])
@@ -91,6 +96,44 @@ class GarDiscoveryTest(unittest.TestCase):
 
     def test_local_development_provider_requires_docker(self) -> None:
         self.assertEqual(("docker",), LocalEnvironment.required_commands)
+
+    def test_mujoco_provider_uses_current_python_package(self) -> None:
+        with mock.patch(
+            "scripts.gar_lib.environments.registry.simulator.mujoco._mujoco_is_importable",
+            return_value=True,
+        ):
+            statuses = MujocoEnvironment.dependency_status()
+
+        self.assertEqual("mujoco-python", statuses[0].name)
+        self.assertTrue(statuses[0].installed)
+
+    def test_mujoco_processor_validates_and_starts_a_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model = root / "robot.xml"
+            workspace = root / "workspace"
+            model.write_text("<mujoco model='test'/>", encoding="utf-8")
+            completed = subprocess.CompletedProcess([], 0, "", "")
+            process = mock.Mock(pid=12345)
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {"GAR_MUJOCO_MODEL": str(model), "GAR_MUJOCO_WORKSPACE": str(workspace)},
+                    clear=False,
+                ),
+                mock.patch("scripts.gar_lib.simulation.mujoco.subprocess.run", return_value=completed),
+                mock.patch("scripts.gar_lib.simulation.mujoco.subprocess.Popen", return_value=process) as popen,
+                mock.patch.object(MujocoSimEnvProcessor, "_bridge_state", return_value={"ok": True}),
+                mock.patch("scripts.gar_lib.simulation.mujoco._is_running", return_value=True),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                provider = MujocoSimEnvProcessor(MujocoEnvironment)
+                self.assertEqual(0, provider.build(json_output=True))
+                self.assertEqual(0, provider.start({}))
+                self.assertEqual(0, provider.status({}, json_output=True))
+
+            self.assertEqual(12345, json.loads((workspace / "state.json").read_text(encoding="utf-8"))["pid"])
+            self.assertTrue(any(part.endswith("mujoco_bridge.py") for part in popen.call_args.args[0]))
 
     def test_vibe_remote_device_uses_node_sh_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

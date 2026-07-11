@@ -83,6 +83,16 @@ def run_step(base_url: str, step: dict[str, Any]) -> None:
         })
         return
 
+    if action == "bridge-command":
+        command = step.get("command")
+        if not isinstance(command, str) or not command:
+            raise ValueError("bridge-command requires a non-empty command")
+        params = step.get("params", {})
+        if not isinstance(params, dict):
+            raise ValueError("bridge-command params must be an object")
+        post(base_url, "/api/command", {"action": command, "params": params})
+        return
+
     if action == "expect":
         state = request_json("GET", f"{base_url}/api/state")
         actual = get_path(state, step["path"])

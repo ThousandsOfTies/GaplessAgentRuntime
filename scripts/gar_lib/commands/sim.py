@@ -24,6 +24,7 @@ from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.simulation.base import SimEnvProcessor
 from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
+from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
 from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
 
@@ -144,6 +145,8 @@ def _get_sim_target(host: str | None, *, provider_override: str | None = None) -
     provider = _get_sim_provider(provider_override)
     if provider.provider_id == "wokwi":
         return WokwiSimEnvProcessor(provider, host)
+    if provider.provider_id == "mujoco":
+        return MujocoSimEnvProcessor(provider, host)
     return LinuxSystemdSimEnvProcessor(provider, host, LinuxSimCommandBuilder())
 
 
@@ -162,6 +165,9 @@ def run_sim_env_build_command(
         if workspace_root is None:
             return run_product_sim_build()
         return run_product_sim_build(workspace_root=workspace_root)
+    if resolved_provider.provider_id == "mujoco":
+        target = _get_sim_target(host=None, provider_override="mujoco")
+        return target.build(json_output=json_output)
     target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
     try:
         return target.build(json_output=json_output)

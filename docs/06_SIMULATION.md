@@ -8,6 +8,19 @@ Gapless Agent Runtime のシミュレーションは、EC2 側の device compati
 
 I2C/SPI を CUSE、GPIO を `gpio-sim` + GPIO chardev v2 で実現するこの構成への移行は完了済みです。このアプローチがなぜ価値を持つかは [../info/01_INDUSTRY_TRENDS.md](../info/01_INDUSTRY_TRENDS.md) にまとめています。
 
+## Bridge は simulation 共通の操作面
+
+GAR において Bridge は、疑似操作パネル、AI agent、CI scenario が simulator を操作・観察するための共通 control plane である。Linux の `bridge.py` はその最初の実装であって、Linux 固有の補助機能ではない。
+
+新しい provider は、次のいずれかで Bridge を実現する。
+
+1. simulator と同じプロセスまたは近傍プロセスに HTTP/JSON Bridge を起動する。
+2. provider 固有 API / CLI を、GAR の JSON command/state 契約へ変換する adapter を実装する。
+
+人間が標準 viewer や provider 独自 UI を使うことはできるが、それは観察・手動デバッグの補助である。AI / CI が再現可能に操作する入口の代わりにはならない。例えば MuJoCo では Bridge が Python SDK を呼び、MuJoCo viewer は Bridge と同じ物理状態を表示する。
+
+現時点で Wokwi scenario は Wokwi CLI 固有の形式を使用する移行中の例外である。これを一般原則と取り違えず、共通 JSON scenario から同じ操作を実行できるように揃える。
+
 ## 全体構成
 
 `sensor_demo` と `bridge.py` は独立したプロセス。`sensor_demo` は標準の `/dev/*` インターフェース（ioctl / read / write）しか使わず、`bridge.py` を直接呼び出さない。
@@ -87,6 +100,70 @@ gar sim env start    # systemd services + port forward 起動
 
 ```bash
 gar sim env diag --json   # プロセス・デバイス・API 状態
+```
+
+---
+
+## MuJoCo / Sim2Real シミュレーション
+
+二足歩行など、関節・接触・摩擦を含むロボット物理は **MuJoCo** provider で扱う。GAR は MuJoCo を置き換えず、モデル検証・実行・ログ・実機実験の往復を共通の操作面に載せる。
+
+`gar setup` で simulation provider に `MuJoCo（ロボット物理）` を選択すると、必要に応じて現在の Python 環境へ `mujoco` package を導入する。標準では動作確認用の振り子モデルを使う。`gar sim env start` は MuJoCo Python SDK を駆動するローカル JSON bridge を起動し、標準 viewer はその bridge と同じ物理状態を表示する。
+
+```bash
+gar sim env build                         # MJCF を読み込めるか検証
+gar sim env start --no-port-forward       # MuJoCo viewer をローカルで起動
+gar sim env status --json
+gar sim env log
+gar sim env stop --no-port-forward
+```
+
+実ロボットではプロダクト側の MJCF/URDF を指定する。
+
+```bash
+export GAR_MUJOCO_MODEL=/path/to/biped.xml
+gar sim env build
+gar sim env start --no-port-forward
+```
+
+単なる viewer ではなく、制御ポリシー・サーボ同定・実機ログ比較を行う場合は、プロダクトリポジトリに runner を置き、`GAR_MUJOCO_RUNNER` で指定する。GAR は `runner --mjcf /path/to/biped.xml --bridge-url http://127.0.0.1:8081` として起動する。この runner に、サーボ遅れ・トルク制限・摩擦・質量などの同定値、学習済み方策、実機トレースの入出力を持たせる。
+
+```bash
+export GAR_MUJOCO_MODEL=/path/to/biped.xml
+export GAR_MUJOCO_RUNNER=/path/to/product/sim/run_mujoco.py
+gar sim env start --no-port-forward
+```
+
+GUI のない CI では viewer を起動せず、headless 対応の runner を使う。MuJoCo provider は Linux の `/dev/*` 互換 runtime を模倣するものではなく、ロボット力学の Sim2Real ループを担当する。
+
+### MuJoCo Bridge の JSON 契約
+
+bridge は疑似操作パネルとシナリオ実行の共通入口であり、MuJoCo SDK の `model` / `data` を直接扱う。標準 bridge は次の API を提供する。プロダクト固有 runner も同じ入口を保ちつつ、`walk-start` や `set-gait` のような意味的な action を追加できる。
+
+```text
+GET  /api/state
+POST /api/command  {"action": "actuator-set", "params": {"actuator": "hip_motor", "value": 0.2}}
+POST /api/command  {"action": "reset", "params": {}}
+POST /api/command  {"action": "step", "params": {"count": 10}}
+```
+
+標準 bridge の `actuator-set` は actuator の制御値をそのまま設定する低レベル操作である。関節角目標、歩容、ゲームパッドなどの入力をどの actuator 制御へ変換するかはプロダクト側 runner の責務にする。人は MuJoCo viewer で物理状態を観察・外乱操作でき、GAR／AI／CI は同じ bridge へ JSON を送る。
+
+既存の `scripts/run_scenario.py` からは `bridge-command` でこの入口を使う。MuJoCo は既定で `http://127.0.0.1:8081` を使うため、`--base-url` で指定する。
+
+```json
+{
+  "name": "hip actuator smoke",
+  "steps": [
+    {"action": "bridge-command", "command": "actuator-set", "params": {"actuator": "hip_motor", "value": 0.2}},
+    {"action": "wait", "seconds": 0.1},
+    {"action": "expect", "path": "actuators.hip_motor", "equals": 0.2}
+  ]
+}
+```
+
+```bash
+python scripts/run_scenario.py scenario.json --base-url http://127.0.0.1:8081
 ```
 
 ---

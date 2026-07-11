@@ -1,0 +1,15 @@
+<mujoco model="gar-pendulum">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <worldbody>
+    <light pos="0 0 2"/>
+    <geom type="plane" size="2 2 0.1" rgba="0.2 0.25 0.3 1"/>
+    <body name="pivot" pos="0 0 1">
+      <joint name="hinge" type="hinge" axis="0 1 0" damping="0.05"/>
+      <geom type="capsule" fromto="0 0 0 0 0 -0.7" size="0.035" rgba="0.9 0.5 0.2 1"/>
+      <geom type="sphere" pos="0 0 -0.7" size="0.08" mass="0.2"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="hip_motor" joint="hinge" gear="0.5"/>
+  </actuator>
+</mujoco>
