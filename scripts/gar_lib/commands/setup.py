@@ -11,6 +11,7 @@ from pathlib import Path
 
 from scripts.gar_lib.config import (
     default_ec2_host,
+    is_valid_runtime_host,
     load_config,
     save_config,
     saved_esp32_serial_port,
@@ -214,6 +215,11 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
 
     current_host = default_ec2_host(config)
 
+    if config.pop("_invalid_ec2_host", False):
+        set_default_ec2_host(config, current_host)
+        save_config(config)
+        print(f"  {style('不正な既定 host を削除しました:', YELLOW)} {current_host}")
+
     if ec2_host:
         set_default_ec2_host(config, ec2_host)
         save_config(config)
@@ -226,12 +232,16 @@ def configure_default_ec2_host(config: dict, *, ec2_host: str | None) -> None:
     if not sys.stdin.isatty():
         return
 
-    answer = safe_input(
-        "gar sim の既定 runtime host を入力してください "
-        f"[{current_host}]: ",
-        default_on_eof=current_host,
-    )
-    selected_host = answer or current_host
+    while True:
+        answer = safe_input(
+            "gar sim の既定 runtime host を入力してください "
+            f"[{current_host}]: ",
+            default_on_eof=current_host,
+        )
+        selected_host = answer or current_host
+        if is_valid_runtime_host(selected_host):
+            break
+        print(f"  {style('host には制御文字や空白を含められません。SSH config の host 名または IP address を入力してください。', RED)}")
     if selected_host != current_host:
         set_default_ec2_host(config, selected_host)
         save_config(config)

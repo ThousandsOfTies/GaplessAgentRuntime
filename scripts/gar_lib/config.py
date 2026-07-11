@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -22,6 +23,11 @@ DEFAULT_EC2_HOST = "vibecode-graviton"
 DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"
 DEFAULT_EC2_REGION = "ap-southeast-2"
 _ACTIVE_WORKSPACE_ROOT: str | None = None
+RUNTIME_HOST_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
+
+
+def is_valid_runtime_host(value: str) -> bool:
+    return bool(RUNTIME_HOST_PATTERN.fullmatch(value))
 
 
 def set_active_workspace_root(root: str | None) -> None:
@@ -148,9 +154,12 @@ def load_config() -> dict:
     ec2_instance_id = None
     ec2_region = None
     ec2_repo_dir = None
+    invalid_ec2_host = False
     if isinstance(ec2, dict):
-        if isinstance(ec2.get("host"), str):
+        if isinstance(ec2.get("host"), str) and is_valid_runtime_host(ec2["host"]):
             ec2_host = ec2["host"]
+        elif isinstance(ec2.get("host"), str):
+            invalid_ec2_host = True
         if isinstance(ec2.get("instance_id"), str):
             ec2_instance_id = ec2["instance_id"]
         if isinstance(ec2.get("region"), str):
@@ -194,6 +203,7 @@ def load_config() -> dict:
             "region": ec2_region or DEFAULT_EC2_REGION,
             **({"repo_dir": ec2_repo_dir} if ec2_repo_dir else {}),
         },
+        **({"_invalid_ec2_host": True} if invalid_ec2_host else {}),
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
         **({"esp32": {"port": esp32_port}} if esp32_port else {}),
         **(
@@ -216,7 +226,8 @@ def save_config(config: dict) -> None:
         active = {
             key: value
             for key, value in config.items()
-            if key
+            if not key.startswith("_")
+            and key
             not in {
                 "workspace_id",
                 "workspace_name",
