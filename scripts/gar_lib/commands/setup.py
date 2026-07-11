@@ -61,6 +61,9 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     targets = discover_target_manifests()
     config = load_config()
     config.setdefault("selected_providers", {})
+    if workspace_root or config.get("selected_providers", {}).get("codespace") == "local":
+        configure_workspace_root(config, workspace_root=workspace_root)
+        print()
     optional_categories = optional_setup_categories(config, targets)
     redraw_notice: str | None = None
     while True:
@@ -102,6 +105,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
         if result == 0:
             config["selected_providers"][provider.category_id] = provider.provider_id
             save_config(config)
+            if provider.category_id == "codespace" and provider.provider_id == "local":
+                configure_workspace_root(config, workspace_root=None)
             redraw_notice = f"更新しました: {category[1]} = {provider.display_name}"
         else:
             break
@@ -132,8 +137,6 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     configure_default_ec2_host(config, ec2_host=ec2_host)
     print()
     configure_esp32_serial_port(config, esp32_port=esp32_port)
-    print()
-    configure_workspace_root(config, workspace_root=workspace_root)
     print()
     print_target_next_steps(config)
     print()
@@ -274,9 +277,6 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
 
 
 def configure_workspace_root(config: dict, *, workspace_root: str | None) -> None:
-    if config.get("selected_providers", {}).get("codespace") != "local":
-        return
-
     current_roots = saved_workspace_roots(config)
     print(style("Local Product Workspaces:", BOLD, BLUE))
     if workspace_root:
@@ -308,7 +308,7 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> Non
         else:
             print(f"  {style('未設定', YELLOW)}")
         action = safe_input(
-            "  workspaceを追加(a)、削除(d)、終了(Enter): ",
+            "  workspaceを追加(a)、削除(d)、修正(e)、終了(Enter): ",
             default_on_eof="",
         ).strip().lower()
         if not action:
@@ -343,7 +343,34 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> Non
             changed = True
             print(f"  {style('削除しました:', GREEN)} {removed}")
             continue
-        print(f"  {style('a（追加）/ d（削除）/ Enter（終了）を入力してください。', YELLOW)}")
+        if action in {"e", "edit", "modify", "修正"}:
+            if not current_roots:
+                print(f"  {style('修正できる workspace がありません。', YELLOW)}")
+                continue
+            answer = safe_input("  修正する番号: ", default_on_eof="").strip()
+            try:
+                index = int(answer) - 1
+                current_roots[index]
+            except (ValueError, IndexError):
+                print(f"  {style('番号が正しくありません。', RED)}")
+                continue
+            answer = safe_input("  新しい製品 workspace path: ", default_on_eof="").strip()
+            if not answer:
+                continue
+            selected_root = Path(answer).expanduser().resolve()
+            if not selected_root.is_dir():
+                print(f"  {style('存在しない directory です:', RED)} {selected_root}")
+                continue
+            selected_root_text = str(selected_root)
+            if selected_root_text in current_roots and current_roots[index] != selected_root_text:
+                print(f"  {style('既に登録済みです:', YELLOW)} {selected_root}")
+                continue
+            replaced = current_roots[index]
+            current_roots[index] = selected_root_text
+            changed = True
+            print(f"  {style('修正しました:', GREEN)} {replaced} -> {selected_root}")
+            continue
+        print(f"  {style('a（追加）/ d（削除）/ e（修正）/ Enter（終了）を入力してください。', YELLOW)}")
 
     if changed:
         set_saved_workspace_roots(config, current_roots)
