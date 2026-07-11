@@ -13,6 +13,7 @@ from scripts.gar_lib.config import (
     saved_esp32_serial_port,
     saved_workspace_roots,
     set_default_ec2_host,
+    set_active_workspace_root,
     set_saved_esp32_serial_port,
     set_saved_workspace_roots,
 )
@@ -61,9 +62,14 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     targets = discover_target_manifests()
     config = load_config()
     config.setdefault("selected_providers", {})
+    active_workspace_root: str | None = None
     if workspace_root or sys.stdin.isatty():
-        configure_workspace_root(config, workspace_root=workspace_root)
+        active_workspace_root = configure_workspace_root(config, workspace_root=workspace_root)
         print()
+    if active_workspace_root:
+        set_active_workspace_root(active_workspace_root)
+        config = load_config()
+        config.setdefault("selected_providers", {})
     optional_categories = optional_setup_categories(config, targets)
     redraw_notice: str | None = None
     while True:
@@ -274,20 +280,20 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
         print(f"  {style('更新しました:', GREEN)} {selected_port}")
 
 
-def configure_workspace_root(config: dict, *, workspace_root: str | None) -> None:
+def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str | None:
     current_roots = saved_workspace_roots(config)
     print(style("Local Product Workspaces:", BOLD, BLUE))
     if workspace_root:
         selected_root = Path(workspace_root).expanduser().resolve()
         if not selected_root.is_dir():
             print(f"  {style('存在しない directory です:', RED)} {selected_root}")
-            return
+            return None
         if str(selected_root) not in current_roots:
             current_roots.append(str(selected_root))
             set_saved_workspace_roots(config, current_roots)
             save_config(config)
         print(f"  {style('追加しました:', GREEN)} {selected_root}")
-        return
+        return str(selected_root)
     elif not sys.stdin.isatty():
         if current_roots:
             print(f"  {style('設定済み', GREEN)}")
@@ -295,7 +301,7 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> Non
                 print(f"    - {style(root, BOLD)}")
         else:
             print(f"  {style('未設定', YELLOW)} --workspace-root または対話 setup で設定してください。")
-        return
+        return current_roots[0] if len(current_roots) == 1 else None
 
     changed = False
     while True:
@@ -373,6 +379,22 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> Non
     if changed:
         set_saved_workspace_roots(config, current_roots)
         save_config(config)
+
+    if not current_roots:
+        return None
+    active_root = config.get("root")
+    if isinstance(active_root, str) and active_root in current_roots:
+        return active_root
+    if len(current_roots) == 1:
+        return current_roots[0]
+    while True:
+        answer = safe_input("  設定する workspace の番号 [1]: ", default_on_eof="1").strip()
+        if not answer:
+            return current_roots[0]
+        try:
+            return current_roots[int(answer) - 1]
+        except (ValueError, IndexError):
+            print(f"  {style('番号が正しくありません。', RED)}")
 
 
 def detect_esp32_serial_port_candidates() -> list[str]:

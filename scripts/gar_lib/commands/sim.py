@@ -19,6 +19,7 @@ from scripts.gar_lib.config import (
     default_ec2_host,
     load_config,
     saved_workspace_roots,
+    set_active_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
@@ -176,6 +177,8 @@ def run_sim_env_build_command(
 
 
 def run_product_sim_build(*, workspace_root: str | None = None) -> int:
+    if workspace_root is not None:
+        set_active_workspace_root(str(Path(workspace_root).expanduser().resolve()))
     config = load_config()
     development = config.get("selected_providers", {}).get("codespace")
     if development == "local":

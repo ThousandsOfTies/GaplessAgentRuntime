@@ -21,6 +21,50 @@ VSCODE_EXT_VERSION = "0.0.1"
 DEFAULT_EC2_HOST = "vibecode-graviton"
 DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"
 DEFAULT_EC2_REGION = "ap-southeast-2"
+_ACTIVE_WORKSPACE_ROOT: str | None = None
+
+
+def set_active_workspace_root(root: str | None) -> None:
+    """Select the workspace whose settings subsequent config calls use."""
+    global _ACTIVE_WORKSPACE_ROOT
+    _ACTIVE_WORKSPACE_ROOT = root
+
+
+def _workspace_entries(data: dict) -> list[dict]:
+    raw_entries = data.get("workspaces")
+    if not isinstance(raw_entries, list):
+        return []
+    entries: list[dict] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        root = raw_entry.get("root")
+        if not isinstance(root, str) or not root:
+            continue
+        entry = dict(raw_entry)
+        entry["root"] = str(Path(root).expanduser().resolve())
+        entries.append(entry)
+    return entries
+
+
+def _select_workspace_entry(entries: list[dict]) -> dict | None:
+    requested_root = _ACTIVE_WORKSPACE_ROOT or os.environ.get("GAR_WORKSPACE_ROOT")
+    if requested_root:
+        resolved = str(Path(requested_root).expanduser().resolve())
+        return next((entry for entry in entries if entry["root"] == resolved), None)
+
+    current = Path.cwd().resolve()
+    matching = [
+        entry
+        for entry in entries
+        if current == Path(entry["root"]).resolve()
+        or current.is_relative_to(Path(entry["root"]).resolve())
+    ]
+    if matching:
+        return max(matching, key=lambda entry: len(entry["root"]))
+    if len(entries) == 1:
+        return entries[0]
+    return None
 
 
 def load_config() -> dict:
@@ -52,6 +96,12 @@ def load_config() -> dict:
             file=sys.stderr,
         )
         return default_config()
+
+    entries = _workspace_entries(data)
+    selected_entry = _select_workspace_entry(entries)
+    if selected_entry is None:
+        return default_config(workspaces=entries)
+    data = selected_entry
 
     selected_providers = data.get("selected_providers")
     if not isinstance(selected_providers, dict):
@@ -95,14 +145,9 @@ def load_config() -> dict:
     if isinstance(esp32, dict) and isinstance(esp32.get("port"), str) and esp32["port"]:
         esp32_port = esp32["port"]
 
-    workspace = data.get("workspace")
-    workspace_roots: list[str] = []
-    if isinstance(workspace, dict):
-        configured_roots = workspace.get("roots")
-        if isinstance(configured_roots, list):
-            workspace_roots = [root for root in configured_roots if isinstance(root, str) and root]
-
     return {
+        "root": data["root"],
+        "workspaces": entries,
         **({"selected_target": selected_target} if selected_target else {}),
         "selected_providers": {
             str(category_id): str(provider_id)
@@ -116,7 +161,6 @@ def load_config() -> dict:
         },
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
         **({"esp32": {"port": esp32_port}} if esp32_port else {}),
-        **({"workspace": {"roots": workspace_roots}} if workspace_roots else {}),
         **(
             {
                 "adb": {
@@ -131,8 +175,20 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
+    entries = _workspace_entries(config)
+    root = config.get("root")
+    if isinstance(root, str) and root and any(entry["root"] == root for entry in entries):
+        active = {
+            key: value
+            for key, value in config.items()
+            if key not in {"root", "workspaces"}
+        }
+        active["root"] = root
+        entries = [entry for entry in entries if entry["root"] != root]
+        entries.append(active)
+    payload_config = {"workspaces": entries}
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(config, ensure_ascii=False, indent=2) + "\n"
+    payload = json.dumps(payload_config, ensure_ascii=False, indent=2) + "\n"
     # Write atomically: write to a sibling temp file, fsync, then os.replace.
     # Avoids leaving CONFIG_PATH empty/half-written on crash or Ctrl-C.
     fd, tmp_name = tempfile.mkstemp(
@@ -158,8 +214,9 @@ def save_config(config: dict) -> None:
         raise
 
 
-def default_config() -> dict:
+def default_config(*, workspaces: list[dict] | None = None) -> dict:
     return {
+        "workspaces": workspaces or [],
         "selected_providers": {},
         "ec2": {
             "host": DEFAULT_EC2_HOST,
@@ -228,21 +285,15 @@ def set_saved_esp32_serial_port(config: dict, port: str) -> None:
 
 
 def saved_workspace_roots(config: dict) -> list[str]:
-    workspace = config.get("workspace")
-    if not isinstance(workspace, dict):
-        return []
-    roots = workspace.get("roots")
-    if isinstance(roots, list):
-        return [root for root in roots if isinstance(root, str) and root]
-    return []
+    return [entry["root"] for entry in _workspace_entries(config)]
 
 
 def set_saved_workspace_roots(config: dict, roots: list[str]) -> None:
-    workspace = config.setdefault("workspace", {})
-    if not isinstance(workspace, dict):
-        workspace = {}
-        config["workspace"] = workspace
-    workspace["roots"] = list(dict.fromkeys(roots))
+    old_entries = {entry["root"]: entry for entry in _workspace_entries(config)}
+    config["workspaces"] = [
+        old_entries.get(root, {"root": root})
+        for root in dict.fromkeys(roots)
+    ]
 
 
 def saved_adb_exe(config: dict) -> str | None:

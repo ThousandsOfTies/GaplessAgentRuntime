@@ -15,6 +15,29 @@
 | `gar setup` | target 選択・gar-tools 確認/取得・依存 target graph と接続設定の保存・依存コマンド確認・既定 host 保存。local product workspace は複数登録でき、対話画面で追加/削除します |
 | `gar hw init` | `gar-tools` の target テンプレートから `hardware/` に CSV を生成 |
 
+### Workspace ごとの設定
+
+`GaplessAgentRuntime/.gar/config.json` は `workspaces` 配列を正本とします。
+target、provider、EC2 接続先は各 workspace 要素に保存され、別アプリの設定と混ざりません。
+
+```json
+{
+  "workspaces": [
+    {
+      "root": "/home/user/Yurufuwa/GarStreamRx",
+      "selected_providers": {"codespace": "local", "simulator": "ssh_remote"},
+      "selected_target": "linux-device",
+      "ec2": {"host": "vibecode-graviton"}
+    }
+  ]
+}
+```
+
+複数 workspace がある場合、product workspace 内で `gar` を実行するとその path の
+設定が選ばれます。GAR root から Wokwi build を実行する場合は、
+`gar sim build --workspace-root PATH` を指定してください。`GAR_WORKSPACE_ROOT=PATH`
+環境変数でも対象を固定できます。
+
 ---
 
 ## 1. ビルド環境 管理

@@ -2753,7 +2753,16 @@ class GarCliTest(unittest.TestCase):
             config_path = Path(tmp) / ".gar" / "config.json"
             config_path.parent.mkdir()
             config_path.write_text(
-                json.dumps({"selected_providers": {"codespace": "wsl"}}),
+                json.dumps(
+                    {
+                        "workspaces": [
+                            {
+                                "root": str(Path(tmp) / "product"),
+                                "selected_providers": {"codespace": "wsl"},
+                            }
+                        ]
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -2860,13 +2869,20 @@ class GarCliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
+            workspace_root = str(Path(tmp) / "product")
 
             with mock.patch("scripts.gar_lib.config.CONFIG_PATH", config_path):
-                save_config({"selected_providers": {"target": "ssh_scp"}})
+                save_config(
+                    {
+                        "root": workspace_root,
+                        "workspaces": [{"root": workspace_root}],
+                        "selected_providers": {"target": "ssh_scp"},
+                    }
+                )
 
             self.assertTrue(config_path.is_file())
             data = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual({"target": "ssh_scp"}, data["selected_providers"])
+            self.assertEqual({"target": "ssh_scp"}, data["workspaces"][0]["selected_providers"])
 
             leftovers = [
                 path
