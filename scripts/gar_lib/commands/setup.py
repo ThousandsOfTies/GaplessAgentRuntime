@@ -316,7 +316,7 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str
         else:
             print(f"  {style('未設定', YELLOW)}")
         action = safe_input(
-            "  workspaceを追加(a)、削除(d)、修正(e)、終了(Enter): ",
+            "  workspaceを追加(a)、削除(d)、修正(e)、次へ(Enter): ",
             default_on_eof="",
         ).strip().lower()
         if not action:
@@ -368,7 +368,7 @@ def configure_workspace_root(config: dict, *, workspace_root: str | None) -> str
             changed = True
             print(f"  {style('修正しました:', GREEN)} {entry['name']}")
             continue
-        print(f"  {style('a（追加）/ d（削除）/ e（修正）/ Enter（終了）を入力してください。', YELLOW)}")
+        print(f"  {style('a（追加）/ d（削除）/ e（修正）/ Enter（次へ）を入力してください。', YELLOW)}")
 
     if changed:
         set_saved_workspaces(config, workspaces)
