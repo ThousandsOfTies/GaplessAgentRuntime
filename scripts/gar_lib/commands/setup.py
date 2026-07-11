@@ -12,8 +12,8 @@ from scripts.gar_lib.config import (
     save_config,
     saved_esp32_serial_port,
     saved_workspace_roots,
-    set_default_ec2_host,
     set_active_workspace_root,
+    set_default_ec2_host,
     set_saved_esp32_serial_port,
     set_saved_workspace_roots,
 )
