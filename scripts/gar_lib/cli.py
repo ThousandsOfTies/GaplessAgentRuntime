@@ -83,6 +83,7 @@ from scripts.gar_lib.commands.shim import run_shim_command  # noqa: F401
 from scripts.gar_lib.commands.sim import (  # noqa: F401
     deploy_sim_artifacts,
     run_gpio_sim_check,
+    run_product_sim_build,
     run_sim_command,
     run_sim_deploy_command,
     run_sim_diag_json,
@@ -467,23 +468,12 @@ def build_parser() -> argparse.ArgumentParser:
     sim_subparsers = sim_parser.add_subparsers(dest="sim_command", metavar="command")
     sim_build_parser = sim_subparsers.add_parser(
         "build",
-        help="選択中の simulator 向けの firmware / runtime をビルドします",
-    )
-    sim_build_parser.add_argument(
-        "--provider",
-        default=None,
-        help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
+        help="選択した product workspace の simulation build hook を実行します",
     )
     sim_build_parser.add_argument(
         "--workspace-root",
         default=None,
         help="複数の local product workspace がある場合にビルド対象を指定します",
-    )
-    sim_build_parser.add_argument(
-        "--json",
-        dest="json_output",
-        action="store_true",
-        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
     )
     for sim_vm_command_name, ec2_command_name in SIM_VM_COMMAND_MAP.items():
         help_text = {
@@ -963,15 +953,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.sim_command == "build":
             workspace_root = getattr(args, "workspace_root", None)
-            build_kwargs = {
-                "provider": getattr(args, "provider", None),
-                "json_output": getattr(args, "json_output", False),
-            }
-            if workspace_root is not None:
-                build_kwargs["workspace_root"] = workspace_root
-            return run_sim_env_build_command(
-                **build_kwargs,
-            )
+            if workspace_root is None:
+                return run_product_sim_build()
+            return run_product_sim_build(workspace_root=workspace_root)
         if args.sim_command == "env":
             if args.sim_env_command is None:
                 subcommand_parsers["sim_env"].print_help()

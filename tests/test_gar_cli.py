@@ -1572,17 +1572,14 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_env_build_command", return_value=0) as run_build:
-            result = main(["sim", "build", "--provider", "wokwi", "--json"])
+        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
+            result = main(["sim", "build", "--workspace-root", "/tmp/product"])
 
         self.assertEqual(0, result)
-        run_build.assert_called_once_with(provider="wokwi", json_output=True)
+        run_build.assert_called_once_with(workspace_root="/tmp/product")
 
     def test_sim_build_uses_product_provider_environment(self) -> None:
-        with (
-            mock.patch.dict("os.environ", {"GAR_SIM_PROVIDER": "wokwi"}),
-            mock.patch("scripts.gar_lib.commands.sim.run_product_sim_build", return_value=0) as run_product_build,
-        ):
+        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
             result = main(["sim", "build"])
 
         self.assertEqual(0, result)
