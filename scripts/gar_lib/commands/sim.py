@@ -159,6 +159,8 @@ def run_sim_env_build_command(
     """
     resolved_provider = _get_sim_provider(provider)
     if resolved_provider.provider_id == "wokwi":
+        if workspace_root is None:
+            return run_product_sim_build()
         return run_product_sim_build(workspace_root=workspace_root)
     target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
     try:

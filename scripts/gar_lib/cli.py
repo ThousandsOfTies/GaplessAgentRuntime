@@ -962,20 +962,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 section="app",
             )
         if args.sim_command == "build":
+            workspace_root = getattr(args, "workspace_root", None)
+            build_kwargs = {
+                "provider": getattr(args, "provider", None),
+                "json_output": getattr(args, "json_output", False),
+            }
+            if workspace_root is not None:
+                build_kwargs["workspace_root"] = workspace_root
             return run_sim_env_build_command(
-                provider=getattr(args, "provider", None),
-                workspace_root=getattr(args, "workspace_root", None),
-                json_output=getattr(args, "json_output", False),
+                **build_kwargs,
             )
         if args.sim_command == "env":
             if args.sim_env_command is None:
                 subcommand_parsers["sim_env"].print_help()
                 return 1
             if args.sim_env_command == "build":
+                workspace_root = getattr(args, "workspace_root", None)
+                build_kwargs = {
+                    "provider": getattr(args, "provider", None),
+                    "json_output": getattr(args, "json_output", False),
+                }
+                if workspace_root is not None:
+                    build_kwargs["workspace_root"] = workspace_root
                 return run_sim_env_build_command(
-                    provider=getattr(args, "provider", None),
-                    workspace_root=getattr(args, "workspace_root", None),
-                    json_output=getattr(args, "json_output", False),
+                    **build_kwargs,
                 )
             if args.sim_env_command == "deploy":
                 return run_sim_deploy_command(
