@@ -34,6 +34,14 @@ class GarAccessChannelsTest(unittest.TestCase):
         self.assertEqual("ssh", raised.exception.channel)
         self.assertEqual("sim-host", raised.exception.endpoint)
 
+    def test_ssh_channel_classifies_host_key_failure(self) -> None:
+        completed = subprocess.CompletedProcess([], 255, "", "Host key verification failed.")
+        with mock.patch("scripts.gar_lib.access.ssh.subprocess.run", return_value=completed):
+            with self.assertRaises(AccessConnectionError) as raised:
+                SshCommandChannel("sim-host").run("true")
+
+        self.assertEqual("host_key_verification", raised.exception.reason)
+
     def test_scp_file_channel_builds_push_and_pull_commands(self) -> None:
         completed = subprocess.CompletedProcess([], 0, "", "")
         channel = ScpFileChannel("sim-host", config_path=Path("/tmp/ssh-config"))

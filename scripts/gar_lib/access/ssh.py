@@ -17,7 +17,22 @@ SSH_CONNECTION_OPTIONS = (
     "ServerAliveInterval=15",
     "-o",
     "ServerAliveCountMax=3",
+    "-o",
+    "StrictHostKeyChecking=accept-new",
 )
+
+
+def _connection_reason(stderr: str) -> str:
+    lowered = stderr.lower()
+    if "host key verification failed" in lowered:
+        return "host_key_verification"
+    if "permission denied" in lowered:
+        return "ssh_authentication"
+    if "connection refused" in lowered:
+        return "connection_refused"
+    if "timed out" in lowered or "operation timed out" in lowered:
+        return "timeout"
+    return "connection_or_authentication"
 
 
 class SshCommandChannel:
@@ -32,7 +47,7 @@ class SshCommandChannel:
             raise AccessConnectionError(
                 channel="ssh",
                 endpoint=self.host,
-                reason="connection_or_authentication",
+                reason=_connection_reason(completed.stderr),
                 returncode=completed.returncode,
             )
         return CommandResult(argv, completed.returncode, completed.stdout, completed.stderr)
@@ -56,7 +71,7 @@ class ScpFileChannel:
             raise AccessConnectionError(
                 channel="scp",
                 endpoint=self.host,
-                reason="connection_or_authentication",
+                reason=_connection_reason(completed.stderr),
                 returncode=completed.returncode,
             )
         return TransferResult(argv, completed.returncode, completed.stdout, completed.stderr)

@@ -25,6 +25,24 @@ class AccessRecoveryPlanner:
         retry_command: str,
     ) -> RecoveryAction:
         if error.channel in {"ssh", "scp"}:
+            if error.reason == "host_key_verification":
+                return RecoveryAction(
+                    title="GAR: SSH host keyの確認",
+                    terminal_command=None,
+                    instructions=(
+                        "SSH host keyを確認し、古いknown_hostsエントリがあれば削除してください。",
+                        f"確認後に再実行: {retry_command}",
+                    ),
+                )
+            if error.reason == "ssh_authentication":
+                return RecoveryAction(
+                    title="GAR: SSH鍵の確認",
+                    terminal_command=None,
+                    instructions=(
+                        "SSH configのUserとIdentityFile、および秘密鍵の権限を確認してください。",
+                        f"確認後に再実行: {retry_command}",
+                    ),
+                )
             region = workspace.ec2.get("region")
             if not isinstance(region, str) or not region:
                 return RecoveryAction(
