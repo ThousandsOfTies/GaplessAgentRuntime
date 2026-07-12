@@ -20,8 +20,8 @@ VSCODE_EXT_NAME = "gar-terminal-bridge"
 VSCODE_EXT_VERSION = "0.0.3"
 
 DEFAULT_EC2_HOST = "vibecode-graviton"
-DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"
-DEFAULT_EC2_REGION = "ap-southeast-2"
+DEFAULT_EC2_INSTANCE_ID: str | None = None
+DEFAULT_EC2_REGION: str | None = None
 _ACTIVE_WORKSPACE_ROOT: str | None = None
 RUNTIME_HOST_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
 
@@ -205,8 +205,8 @@ def load_config() -> dict:
         },
         "ec2": {
             "host": ec2_host or DEFAULT_EC2_HOST,
-            "instance_id": ec2_instance_id or DEFAULT_EC2_INSTANCE_ID,
-            "region": ec2_region or DEFAULT_EC2_REGION,
+            **({"instance_id": ec2_instance_id} if ec2_instance_id else {}),
+            **({"region": ec2_region} if ec2_region else {}),
             **({"repo_dir": ec2_repo_dir} if ec2_repo_dir else {}),
             **({"identity_file": ec2_identity_file} if ec2_identity_file else {}),
         },
@@ -287,8 +287,6 @@ def default_config(*, workspaces: list[dict] | None = None) -> dict:
         "selected_providers": {},
         "ec2": {
             "host": DEFAULT_EC2_HOST,
-            "instance_id": DEFAULT_EC2_INSTANCE_ID,
-            "region": DEFAULT_EC2_REGION,
         },
     }
 
@@ -300,14 +298,14 @@ def default_ec2_host(config: dict) -> str:
     return DEFAULT_EC2_HOST
 
 
-def default_ec2_instance_id(config: dict) -> str:
+def default_ec2_instance_id(config: dict) -> str | None:
     ec2 = config.get("ec2")
     if isinstance(ec2, dict) and isinstance(ec2.get("instance_id"), str) and ec2["instance_id"]:
         return ec2["instance_id"]
     return DEFAULT_EC2_INSTANCE_ID
 
 
-def default_ec2_region(config: dict) -> str:
+def default_ec2_region(config: dict) -> str | None:
     ec2 = config.get("ec2")
     if isinstance(ec2, dict) and isinstance(ec2.get("region"), str) and ec2["region"]:
         return ec2["region"]

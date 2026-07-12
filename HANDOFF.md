@@ -32,13 +32,12 @@
 ### 3. `config.py` のハードコードされたデフォルト値
 
 ```python
-DEFAULT_EC2_HOST = "vibecode-graviton"
-DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"
-DEFAULT_EC2_REGION = "ap-southeast-2"
+DEFAULT_EC2_HOST = "vibecode-graviton"  # SSH config alias only
+DEFAULT_EC2_INSTANCE_ID = None
+DEFAULT_EC2_REGION = None
 ```
 
-- **問題**: EC2 instance ID がソースコードに直書きされている。これは個人の AWS アカウント固有の値であり、リポジトリを他の開発者がクローンしたときに意味をなさない。他の人が `gar setup` を経ずに `gar sim status` を叩くと、他人の instance に対して AWS API を叩くことになる。
-- **提案**: デフォルト値は `None` にして、未設定時は「`gar setup` を実行してください」で止める。`gar setup` を経た後のみ config.json に保存される設計に合わせる。
+- **対応済み**: instance ID / region は `None` を既定とし、workspace の `.gar/config.json` に保存された値だけを使う。未設定時は `gar setup` を案内して停止する。
 
 ### 4. テストファイルの巨大化
 

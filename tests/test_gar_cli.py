@@ -928,6 +928,23 @@ class GarCliTest(unittest.TestCase):
             self.assertIn("HostName 203.0.113.5", contents)
             self.assertIn("HostName 198.51.100.1", contents)
 
+    def test_update_ssh_config_hostname_adds_missing_hostname(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config"
+            config_path.write_text(
+                "Host vibecode-graviton\n"
+                "    User ubuntu\n"
+                "    IdentityFile ~/.ssh/vibecode-graviton.pem\n",
+                encoding="utf-8",
+            )
+
+            updated = update_ssh_config_hostname(
+                "vibecode-graviton", "203.0.113.5", path=config_path
+            )
+
+            self.assertTrue(updated)
+            self.assertIn("    HostName 203.0.113.5\n", config_path.read_text(encoding="utf-8"))
+
     def test_usb_list_parses_usbipd_output(self) -> None:
         output = (
             "Connected:\n"
@@ -2975,6 +2992,8 @@ class GarCliTest(unittest.TestCase):
 
         self.assertNotIn("selected_target", config)
         self.assertEqual({}, config["selected_providers"])
+        self.assertNotIn("instance_id", config["ec2"])
+        self.assertNotIn("region", config["ec2"])
 
     def test_save_config_is_atomic_and_leaves_no_temp_file(self) -> None:
         from scripts.gar_lib.cli import save_config

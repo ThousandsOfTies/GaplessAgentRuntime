@@ -85,10 +85,7 @@ def ec2_public_ip(instance_id: str, region: str) -> str | None:
 
 
 def update_ssh_config_hostname(host: str, ip: str, *, path: Path = SSH_CONFIG_PATH) -> bool:
-    """``~/.ssh/config`` の ``Host <host>`` ブロック内 ``HostName`` 行を ip に更新する。
-
-    対象 Host ブロックが見つかった場合のみ書き換え、成否を返す。
-    """
+    """``~/.ssh/config`` の ``Host <host>`` に現在の Public IP を設定する。"""
     if not path.exists():
         print(f"{COMMAND_LABEL}: {path} が見つかりません。SSH config の更新をスキップします。", file=sys.stderr)
         return False
@@ -97,27 +94,34 @@ def update_ssh_config_hostname(host: str, ip: str, *, path: Path = SSH_CONFIG_PA
     host_pattern = re.compile(r"^\s*Host\s+(.+?)\s*$", re.IGNORECASE)
     hostname_pattern = re.compile(r"^(\s*)HostName\s+\S+\s*$", re.IGNORECASE)
 
-    in_target = False
-    updated = False
+    target_start: int | None = None
+    target_end = len(lines)
     for index, line in enumerate(lines):
         host_match = host_pattern.match(line)
-        if host_match:
-            aliases = host_match.group(1).split()
-            in_target = host in aliases
+        if not host_match:
             continue
-        if in_target and hostname_pattern.match(line):
-            indent = hostname_pattern.match(line).group(1) or "    "
-            lines[index] = f"{indent}HostName {ip}"
-            updated = True
-            in_target = False
+        if target_start is not None:
+            target_end = index
+            break
+        if host in host_match.group(1).split():
+            target_start = index
 
-    if not updated:
+    if target_start is None:
         print(
-            f"{COMMAND_LABEL}: SSH config に 'Host {host}' の HostName 行が見つかりませんでした。",
+            f"{COMMAND_LABEL}: SSH config に 'Host {host}' が見つかりませんでした。",
             file=sys.stderr,
         )
         return False
 
+    for index in range(target_start + 1, target_end):
+        hostname_match = hostname_pattern.match(lines[index])
+        if hostname_match:
+            indent = hostname_match.group(1) or "    "
+            lines[index] = f"{indent}HostName {ip}"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return True
+
+    lines.insert(target_start + 1, f"    HostName {ip}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return True
 
@@ -168,6 +172,13 @@ def run_ec2_command(
     resolved_host = host or default_ec2_host(config)
     resolved_instance_id = instance_id or default_ec2_instance_id(config)
     resolved_region = region or default_ec2_region(config)
+    if not resolved_instance_id or not resolved_region:
+        print(
+            f"{COMMAND_LABEL}: instance ID または region が未設定です。"
+            "`gar setup` で workspace を設定してください。",
+            file=sys.stderr,
+        )
+        return 1
 
     if command == "status":
         state = ec2_instance_state(resolved_instance_id, resolved_region)

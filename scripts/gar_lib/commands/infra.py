@@ -124,6 +124,9 @@ def run_sim_infra_command(
 
     config = load_config()
     resolved_region = region or default_ec2_region(config)
+    if not resolved_region:
+        print("gar sim infra: region が未設定です。--region を指定してください。", file=sys.stderr)
+        return 1
     env = _terraform_env(resolved_region, key_name)
 
     if not _terraform_init(env):

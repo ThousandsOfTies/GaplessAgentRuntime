@@ -13,7 +13,6 @@ provider "aws" {
 
 variable "aws_region" {
   description = "AWS region"
-  default     = "ap-southeast-2"
 }
 
 variable "instance_type" {
@@ -27,8 +26,6 @@ variable "key_name" {
 
 variable "ami_id" {
   description = "Ubuntu ARM64 AMI ID (Ubuntu 24.04 LTS, arm64)"
-  # ap-southeast-2: Ubuntu 24.04 LTS arm64 — 更新時は `aws ec2 describe-images` で最新を確認
-  default = "ami-0f5d1713c9af4fe30"
 }
 
 # ──────────────────────────────────────────────
