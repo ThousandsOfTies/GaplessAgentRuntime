@@ -280,10 +280,13 @@ def run_sim_host_command(
     update_ssh: bool = True,
     pull: bool = False,
     json_output: bool = False,
+    workspace: str | None = None,
 ) -> int:
     """``gar sim start/stop/status``: resolve the simulation provider and call
     its ``host_command()``.
     """
+    if workspace is not None:
+        set_active_workspace_root(workspace)
     provider = _get_sim_provider()
     try:
         return provider.host_command(

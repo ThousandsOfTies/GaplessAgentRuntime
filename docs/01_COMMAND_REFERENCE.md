@@ -136,6 +136,7 @@ gar sim stop
 | `gar sim start [--pull]` | シミュレーションホストを起動し、SSH接続設定を更新（`--pull` で最新の `gar-tools` 等を git pull） |
 | `gar sim stop` | シミュレーションホストを停止（インスタンスは削除されず、課金が抑えられます） |
 | `gar sim status` | ホストの現在の実行状態を表示 |
+| `gar sim <start/stop/status> --workspace NAME` | 指定 workspace に保存された EC2 設定を使う |
 
 #### 仮想デバイス環境管理 (`gar sim env`)
 | コマンド | 内容 |

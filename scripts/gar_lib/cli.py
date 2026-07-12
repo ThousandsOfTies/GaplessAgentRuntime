@@ -502,6 +502,12 @@ def build_parser() -> argparse.ArgumentParser:
             default=None,
             help="AWS region。省略時は保存済み設定",
         )
+        sim_vm_command_parser.add_argument(
+            "--workspace",
+            default=None,
+            metavar="NAME",
+            help="gar setup に表示される workspace名の EC2 設定を使います",
+        )
         if sim_vm_command_name == "status":
             sim_vm_command_parser.add_argument(
                 "--json",
@@ -951,14 +957,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             subcommand_parsers["sim"].print_help()
             return 1
         if args.sim_command in SIM_VM_COMMAND_MAP:
+            host_kwargs = {
+                "host": args.host,
+                "instance_id": args.instance_id,
+                "region": args.region,
+                "update_ssh": not getattr(args, "no_update_ssh", False),
+                "pull": getattr(args, "pull", False),
+                "json_output": getattr(args, "json_output", False),
+            }
+            workspace = getattr(args, "workspace", None)
+            if workspace is not None:
+                host_kwargs["workspace"] = workspace
             return run_sim_host_command(
                 SIM_VM_COMMAND_MAP[args.sim_command],
-                host=args.host,
-                instance_id=args.instance_id,
-                region=args.region,
-                update_ssh=not getattr(args, "no_update_ssh", False),
-                pull=getattr(args, "pull", False),
-                json_output=getattr(args, "json_output", False),
+                **host_kwargs,
             )
         if args.sim_command == "deploy":
             deploy_kwargs = {

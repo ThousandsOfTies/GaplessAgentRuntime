@@ -1652,6 +1652,22 @@ class GarCliTest(unittest.TestCase):
                 self.assertEqual(ec2_command, run_ec2.call_args.args[0])
                 self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
 
+    def test_sim_status_accepts_workspace_name(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
+            result = main(["sim", "status", "--workspace", "Local/GarStreamTx"])
+
+        self.assertEqual(0, result)
+        run_host.assert_called_once_with(
+            "status",
+            host=None,
+            instance_id=None,
+            region=None,
+            update_ssh=True,
+            pull=False,
+            json_output=False,
+            workspace="Local/GarStreamTx",
+        )
+
     def test_sim_infra_setup_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_infra_command", return_value=0) as run_infra:
             result = main(["sim", "infra", "setup", "--region", "ap-test-1", "--key-name", "gar-key"])
