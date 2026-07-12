@@ -35,9 +35,10 @@ def install_vscode_terminal_bridge() -> int:
         / f"{VSCODE_EXT_NAME}-{VSCODE_EXT_VERSION}"
     )
     try:
-        if dest.exists():
-            shutil.rmtree(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
+        for existing in dest.parent.glob(f"{VSCODE_EXT_NAME}-*"):
+            if existing.is_dir():
+                shutil.rmtree(existing)
         shutil.copytree(src, dest)
     except OSError:
         return 1

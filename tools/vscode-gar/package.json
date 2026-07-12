@@ -2,7 +2,7 @@
   "name": "gar-terminal-bridge",
   "displayName": "Gapless Agent Runtime Terminal Bridge",
   "description": "Runs Gapless Agent Runtime terminal requests in a visible VSCode integrated terminal.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "gar",
   "engines": {
     "vscode": "^1.93.0"

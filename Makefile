@@ -4,7 +4,7 @@ UID ?= 04:AB:CD:EF:01:23
 APP_REPO ?= ../embedded-poc-app
 SCENARIO ?= $(APP_REPO)/scenarios/sensor_demo_rfid.json
 VSCODE_EXT_NAME = gar-terminal-bridge
-VSCODE_EXT_VERSION = 0.0.2
+VSCODE_EXT_VERSION = 0.0.3
 VSCODE_EXT_SRC = tools/vscode-gar
 VSCODE_EXT_DEST ?= $(HOME)/.vscode-server/extensions/$(VSCODE_EXT_NAME)-$(VSCODE_EXT_VERSION)
 MCP_SERVER = $(CURDIR)/tools/gar-mcp/server.py
@@ -36,7 +36,7 @@ init:
 	chmod +x scripts/gar
 	ln -sf $(CURDIR)/scripts/gar .venv/bin/gar
 	mkdir -p $(dir $(VSCODE_EXT_DEST))
-	rm -rf $(VSCODE_EXT_DEST)
+	rm -rf $(HOME)/.vscode-server/extensions/$(VSCODE_EXT_NAME)-*
 	cp -R $(VSCODE_EXT_SRC) $(VSCODE_EXT_DEST)
 	@echo "Installed Gapless Agent Runtime VSCode extension to $(VSCODE_EXT_DEST)"
 	mkdir -p .gar

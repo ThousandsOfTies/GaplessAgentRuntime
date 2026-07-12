@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / ".gar" / "config.json"
 
 VSCODE_EXT_NAME = "gar-terminal-bridge"
-VSCODE_EXT_VERSION = "0.0.2"
+VSCODE_EXT_VERSION = "0.0.3"
 
 DEFAULT_EC2_HOST = "vibecode-graviton"
 DEFAULT_EC2_INSTANCE_ID = "i-031e0e5f5f1325ddc"

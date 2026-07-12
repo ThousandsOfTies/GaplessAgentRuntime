@@ -6,7 +6,7 @@ const REQUEST_GLOB = "**/.gar/terminal-requests/*.json";
 // VS Code extensions (notably the Python extension) may enqueue environment
 // activation immediately after a terminal is created.  Do not send an
 // interactive command until that initialization has reached the prompt.
-const NEW_TERMINAL_READY_DELAY_MS = 1500;
+const NEW_TERMINAL_READY_DELAY_MS = 5000;
 const terminals = new Map();
 const processedRequests = new Set();
 
