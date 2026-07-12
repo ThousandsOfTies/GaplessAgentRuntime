@@ -2794,6 +2794,7 @@ class GarCliTest(unittest.TestCase):
                                 "connection": {"type": "local", "path": str(Path(tmp) / "product")},
                                 "branch": "main",
                                 "selected_providers": {"codespace": "wsl"},
+                                "ec2": {"identity_file": "~/.ssh/test.pem"},
                             }
                         ]
                     }
@@ -2806,6 +2807,7 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual("wsl", config["selected_providers"]["codespace"])
         self.assertEqual("vibecode-graviton", config["ec2"]["host"])
+        self.assertEqual("~/.ssh/test.pem", config["ec2"]["identity_file"])
 
     def test_load_config_selects_workspace_by_setup_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

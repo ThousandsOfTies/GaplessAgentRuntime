@@ -157,6 +157,7 @@ def load_config() -> dict:
     ec2_instance_id = None
     ec2_region = None
     ec2_repo_dir = None
+    ec2_identity_file = None
     invalid_ec2_host = False
     if isinstance(ec2, dict):
         if isinstance(ec2.get("host"), str) and is_valid_runtime_host(ec2["host"]):
@@ -169,6 +170,8 @@ def load_config() -> dict:
             ec2_region = ec2["region"]
         if isinstance(ec2.get("repo_dir"), str):
             ec2_repo_dir = ec2["repo_dir"]
+        if isinstance(ec2.get("identity_file"), str) and ec2["identity_file"]:
+            ec2_identity_file = ec2["identity_file"]
 
     usb = data.get("usb")
     usb_busid = None
@@ -205,6 +208,7 @@ def load_config() -> dict:
             "instance_id": ec2_instance_id or DEFAULT_EC2_INSTANCE_ID,
             "region": ec2_region or DEFAULT_EC2_REGION,
             **({"repo_dir": ec2_repo_dir} if ec2_repo_dir else {}),
+            **({"identity_file": ec2_identity_file} if ec2_identity_file else {}),
         },
         **({"_invalid_ec2_host": True} if invalid_ec2_host else {}),
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),

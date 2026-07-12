@@ -33,7 +33,10 @@ target、provider、EC2 接続先は各 workspace 要素に保存され、別ア
       "branch": "main",
       "selected_providers": {"codespace": "local", "simulator": "ssh_remote"},
       "selected_target": "linux-device",
-      "ec2": {"host": "vibecode-graviton"}
+      "ec2": {
+        "host": "vibecode-graviton",
+        "identity_file": "~/.ssh/vibecode-graviton.pem"
+      }
     }
   ]
 }
