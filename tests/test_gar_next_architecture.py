@@ -105,6 +105,7 @@ class GarNextArchitectureTest(unittest.TestCase):
             workspaces=workspaces,
             build_environments=build_environments,
             artifacts=mock.Mock(),
+            simulation_environments=mock.Mock(),
         )
 
         result = dispatch(SIM_BUILD, workspace_selector="Local/Product", services=services)

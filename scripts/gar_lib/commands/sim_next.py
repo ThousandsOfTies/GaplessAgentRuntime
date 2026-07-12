@@ -7,8 +7,15 @@ from dataclasses import dataclass
 from scripts.gar_lib.artifacts.store import ArtifactStore
 from scripts.gar_lib.build.resolver import BuildEnvironmentResolver
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
-from scripts.gar_lib.core.command import SIM_BUILD, GarCommand
+from scripts.gar_lib.core.command import (
+    SIM_BUILD,
+    SIM_DEPLOY,
+    SIM_RUNTIME_BUILD,
+    SIM_RUNTIME_DEPLOY,
+    GarCommand,
+)
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.simulation.environment import SimulationEnvironmentResolver
 from scripts.gar_lib.workspaces.registry import WorkspaceRegistry
 
 
@@ -17,6 +24,7 @@ class SimCommandServices:
     workspaces: WorkspaceRegistry
     build_environments: BuildEnvironmentResolver
     artifacts: ArtifactStore
+    simulation_environments: SimulationEnvironmentResolver
 
 
 def dispatch(
@@ -30,5 +38,19 @@ def dispatch(
     if command == SIM_BUILD:
         build_environment = services.build_environments.for_workspace(workspace)
         return build_environment.build(ArtifactKind.SIM_APP, workspace)
+
+    if command == SIM_RUNTIME_BUILD:
+        build_environment = services.build_environments.for_workspace(workspace)
+        return build_environment.build(ArtifactKind.SIM_RUNTIME, workspace)
+
+    if command == SIM_DEPLOY:
+        artifact = services.artifacts.latest(ArtifactKind.SIM_APP, workspace)
+        services.simulation_environments.for_workspace(workspace).deploy(artifact)
+        return artifact
+
+    if command == SIM_RUNTIME_DEPLOY:
+        artifact = services.artifacts.latest(ArtifactKind.SIM_RUNTIME, workspace)
+        services.simulation_environments.for_workspace(workspace).deploy(artifact)
+        return artifact
 
     raise GarDomainError(f"新しい sim command 経路ではまだ未対応です: {command}")

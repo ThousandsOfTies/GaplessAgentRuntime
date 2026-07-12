@@ -13,8 +13,9 @@ from typing import NoReturn
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.resolver import ConfigBuildEnvironmentResolver
 from scripts.gar_lib.commands.sim_next import SimCommandServices, dispatch
-from scripts.gar_lib.core.command import SIM_BUILD
+from scripts.gar_lib.core.command import SIM_BUILD, SIM_DEPLOY, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.simulation.resolver import ConfigSimulationEnvironmentResolver
 from scripts.gar_lib.workspaces.registry import ConfigWorkspaceRegistry
 
 
@@ -25,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     groups = parser.add_subparsers(dest="group", required=True)
     sim = groups.add_parser("sim")
-    sim.add_argument("action", choices=("build",))
+    sim.add_argument("parts", nargs="+", metavar="{build|deploy|env}")
     sim.add_argument("--workspace")
     return parser
 
@@ -37,12 +38,22 @@ def main(argv: list[str] | None = None) -> int:
         workspaces=ConfigWorkspaceRegistry(),
         build_environments=ConfigBuildEnvironmentResolver(artifacts),
         artifacts=artifacts,
+        simulation_environments=ConfigSimulationEnvironmentResolver(),
     )
 
     try:
-        if args.group == "sim" and args.action == "build":
+        command = None
+        if args.parts == ["build"]:
+            command = SIM_BUILD
+        elif args.parts == ["deploy"]:
+            command = SIM_DEPLOY
+        elif args.parts == ["env", "build"]:
+            command = SIM_RUNTIME_BUILD
+        elif args.parts == ["env", "deploy"]:
+            command = SIM_RUNTIME_DEPLOY
+        if args.group == "sim" and command is not None:
             artifact = dispatch(
-                SIM_BUILD,
+                command,
                 workspace_selector=args.workspace,
                 services=services,
             )
