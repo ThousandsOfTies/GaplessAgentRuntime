@@ -13,8 +13,11 @@ from typing import NoReturn
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.resolver import ConfigBuildEnvironmentResolver
 from scripts.gar_lib.commands.sim_next import SimCommandServices, dispatch
+from scripts.gar_lib.commands.terminal import run_terminal_request
 from scripts.gar_lib.core.command import SIM_BUILD, SIM_DEPLOY, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
-from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
+from scripts.gar_lib.recovery.access import AccessRecoveryPlanner
+from scripts.gar_lib.recovery.terminal import TerminalBridgeRecoveryExecutor
 from scripts.gar_lib.simulation.resolver import ConfigSimulationEnvironmentResolver
 from scripts.gar_lib.workspaces.registry import ConfigWorkspaceRegistry
 
@@ -59,6 +62,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"Artifact: {artifact.bundle_path}")
             return 0
+    except AccessConnectionError as exc:
+        workspace = services.workspaces.get(args.workspace)
+        retry = "gar " + " ".join((args.group, *args.parts))
+        if args.workspace:
+            retry += f" --workspace {args.workspace}"
+        action = AccessRecoveryPlanner().plan(exc, workspace=workspace, retry_command=retry)
+        TerminalBridgeRecoveryExecutor(run_terminal_request).execute(action)
+        print(f"gar-temp: {exc}", file=sys.stderr)
+        for instruction in action.instructions:
+            print(f"  {instruction}", file=sys.stderr)
+        return 1
     except GarDomainError as exc:
         print(f"gar-temp: {exc}", file=sys.stderr)
         return 1
