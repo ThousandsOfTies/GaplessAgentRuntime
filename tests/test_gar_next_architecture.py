@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
+from scripts.gar_lib.build.codespaces import CodespacesBuildEnvironment
 from scripts.gar_lib.build.local import LocalBuildEnvironment
-from scripts.gar_lib.build.resolver import ConfigBuildEnvironmentResolver
 from scripts.gar_lib.commands.sim_next import SimCommandServices, dispatch
 from scripts.gar_lib.core.artifact import ArtifactKind
 from scripts.gar_lib.core.command import SIM_BUILD
@@ -114,14 +114,38 @@ class GarNextArchitectureTest(unittest.TestCase):
         build_environments.for_workspace.assert_called_once_with(workspace)
         build_environment.build.assert_called_once_with(ArtifactKind.SIM_APP, workspace)
 
-    def test_build_resolver_rejects_unimplemented_codespaces_environment(self) -> None:
+    def test_codespaces_build_runs_hook_and_materializes_artifact(self) -> None:
         workspace = Workspace(
             id="ws_test",
             name="Codespaces/Product",
             branch="Product",
-            connection={"type": "codespaces", "path": "/workspaces/product"},
+            connection={
+                "type": "codespaces",
+                "path": "/workspaces/product",
+                "codespace": "product-space",
+            },
             selected_environments={"codespace": "github_codespaces"},
         )
+        artifact = mock.Mock()
+        artifacts = mock.Mock(spec=LocalArtifactStore)
+        artifacts.latest.return_value = artifact
+        completed = mock.Mock(returncode=0)
 
-        with self.assertRaises(GarDomainError):
-            ConfigBuildEnvironmentResolver(mock.Mock()).for_workspace(workspace)
+        with mock.patch("scripts.gar_lib.build.codespaces.subprocess.run", return_value=completed) as run:
+            result = CodespacesBuildEnvironment(artifacts).build(ArtifactKind.SIM_APP, workspace)
+
+        self.assertIs(artifact, result)
+        run.assert_called_once_with(
+            [
+                "gh",
+                "codespace",
+                "ssh",
+                "-c",
+                "product-space",
+                "--",
+                "cd /workspaces/product && scripts/product-sim-build.sh",
+            ],
+            check=False,
+        )
+        artifacts.sync_from_codespaces.assert_called_once_with(workspace)
+        artifacts.latest.assert_called_once_with(ArtifactKind.SIM_APP, workspace)

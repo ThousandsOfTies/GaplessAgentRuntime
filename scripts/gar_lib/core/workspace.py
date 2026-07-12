@@ -32,3 +32,19 @@ class Workspace:
         if not isinstance(value, str) or not value:
             raise GarDomainError(f"workspace の local path が未設定です: {self.name}")
         return Path(value).expanduser().resolve()
+
+    @property
+    def remote_root(self) -> str:
+        value = self.connection.get("path")
+        if not isinstance(value, str) or not value:
+            raise GarDomainError(f"workspace の remote path が未設定です: {self.name}")
+        return value.rstrip("/")
+
+    @property
+    def codespace_name(self) -> str:
+        if self.connection_type != "codespaces":
+            raise GarDomainError(f"workspace は Codespaces 接続ではありません: {self.name}")
+        value = self.connection.get("codespace")
+        if not isinstance(value, str) or not value:
+            raise GarDomainError(f"workspace の Codespaces 名が未設定です: {self.name}")
+        return value

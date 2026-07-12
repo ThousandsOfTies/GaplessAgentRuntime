@@ -21,9 +21,8 @@ class ProductBuildSpecResolver:
     }
 
     def for_artifact(self, kind: ArtifactKind, workspace: Workspace) -> BuildSpec:
+        del workspace
         script = self._SCRIPTS.get(kind)
         if script is None:
             raise GarDomainError(f"この artifact 種別の product build は未対応です: {kind.value}")
-        if not (workspace.local_root / script).is_file():
-            raise GarDomainError(f"product build hook が見つかりません: {workspace.local_root / script}")
         return BuildSpec(script=script)
