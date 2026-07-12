@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from scripts.gar_lib.environments.base import DevEnvironment
 
+SSH_CONNECTION_OPTIONS = (
+    "-o", "ConnectTimeout=10",
+    "-o", "ConnectionAttempts=1",
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=3",
+)
+
 
 class SshRemoteEnvironment(DevEnvironment):
     provider_id = "ssh_remote"
@@ -21,7 +28,7 @@ class SshRemoteEnvironment(DevEnvironment):
         import subprocess
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
-        cmd = ["ssh", "-F", config_arg, target, command]
+        cmd = ["ssh", "-F", config_arg, *SSH_CONNECTION_OPTIONS, target, command]
         return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
 
     @classmethod
@@ -29,7 +36,7 @@ class SshRemoteEnvironment(DevEnvironment):
         import subprocess
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
-        cmd = ["scp", "-F", config_arg, "-r", str(src), f"{target}:{dest}"]
+        cmd = ["scp", "-F", config_arg, *SSH_CONNECTION_OPTIONS, "-r", str(src), f"{target}:{dest}"]
         return subprocess.run(cmd, check=False).returncode
 
     @classmethod
@@ -37,7 +44,7 @@ class SshRemoteEnvironment(DevEnvironment):
         import subprocess
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
-        cmd = ["scp", "-F", config_arg, "-r", f"{target}:{src}", str(dest)]
+        cmd = ["scp", "-F", config_arg, *SSH_CONNECTION_OPTIONS, "-r", f"{target}:{src}", str(dest)]
         return subprocess.run(cmd, check=False).returncode
 
     @classmethod
