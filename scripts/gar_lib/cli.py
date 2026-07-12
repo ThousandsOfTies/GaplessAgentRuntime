@@ -97,6 +97,7 @@ from scripts.gar_lib.commands.sim import (  # noqa: F401
     stop_sim_port_forward,
     write_sim_terminal_profile,
 )
+from scripts.gar_lib.commands.sim_entry import run_next_sim_command
 from scripts.gar_lib.commands.target import (  # noqa: F401
     adb_device_available,
     deploy_target_artifacts,
@@ -128,6 +129,7 @@ from scripts.gar_lib.config import (  # noqa: F401
     save_config,
     set_default_ec2_host,
 )
+from scripts.gar_lib.core.command import SIM_BUILD, SIM_DEPLOY, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
 from scripts.gar_lib.environments.discovery import (  # noqa: F401
     discover_environment_providers,
 )
@@ -973,6 +975,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 **host_kwargs,
             )
         if args.sim_command == "deploy":
+            workspace = getattr(args, "workspace", None)
+            if getattr(args, "host", None) is None and getattr(args, "artifacts_dir", None) is None:
+                retry = "gar sim deploy" + (f" --workspace {workspace}" if workspace else "")
+                return run_next_sim_command(
+                    SIM_DEPLOY,
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                )
             deploy_kwargs = {
                 "host": getattr(args, "host", None),
                 "section": "app",
@@ -984,6 +994,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sim_command == "build":
             workspace_root = getattr(args, "workspace", None)
             clean = getattr(args, "action", None) == "clean"
+            if not clean:
+                retry = "gar sim build" + (f" --workspace {workspace_root}" if workspace_root else "")
+                return run_next_sim_command(
+                    SIM_BUILD,
+                    workspace_selector=workspace_root,
+                    retry_command=retry,
+                )
             if workspace_root is None:
                 return run_product_sim_build(clean=clean) if clean else run_product_sim_build()
             return run_product_sim_build(workspace_root=workspace_root, clean=clean) if clean else run_product_sim_build(workspace_root=workspace_root)
@@ -993,6 +1010,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
             if args.sim_env_command == "build":
                 workspace_root = getattr(args, "workspace", None)
+                if getattr(args, "provider", None) is None and not getattr(args, "json_output", False):
+                    retry = "gar sim env build" + (f" --workspace {workspace_root}" if workspace_root else "")
+                    return run_next_sim_command(
+                        SIM_RUNTIME_BUILD,
+                        workspace_selector=workspace_root,
+                        retry_command=retry,
+                    )
                 build_kwargs = {
                     "provider": getattr(args, "provider", None),
                     "json_output": getattr(args, "json_output", False),
@@ -1003,8 +1027,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     **build_kwargs,
                 )
             if args.sim_env_command == "deploy":
-                deploy_kwargs = {"host": args.host, "section": "sim_env"}
                 workspace = getattr(args, "workspace", None)
+                if args.host is None and args.artifacts_dir is None:
+                    retry = "gar sim env deploy" + (f" --workspace {workspace}" if workspace else "")
+                    return run_next_sim_command(
+                        SIM_RUNTIME_DEPLOY,
+                        workspace_selector=workspace,
+                        retry_command=retry,
+                    )
+                deploy_kwargs = {"host": args.host, "section": "sim_env"}
                 if workspace is not None:
                     deploy_kwargs["workspace"] = workspace
                 return run_sim_deploy_command(args.artifacts_dir, **deploy_kwargs)

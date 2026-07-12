@@ -44,6 +44,7 @@ from scripts.gar_lib.cli import (
     update_ssh_config_hostname,
 )
 from scripts.gar_lib.commands.sim import run_sim_panel
+from scripts.gar_lib.core.command import SIM_BUILD, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulator.ssh_remote import SshRemoteEnvironment
 from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
@@ -1668,37 +1669,59 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_env_deploy_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_deploy_command", return_value=0) as run_deploy:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_deploy:
             result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_deploy.assert_called_once_with(
-            None,
-            host=None,
-            section="sim_env",
-            workspace="Local/GarStreamTx",
+            SIM_RUNTIME_DEPLOY,
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim env deploy --workspace Local/GarStreamTx",
         )
 
     def test_sim_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
-        run_build.assert_called_once_with(workspace_root="local/GarStreamRx")
+        run_build.assert_called_once_with(
+            SIM_BUILD,
+            workspace_selector="local/GarStreamRx",
+            retry_command="gar sim build --workspace local/GarStreamRx",
+        )
 
     def test_sim_build_uses_product_provider_environment(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_product_build:
             result = main(["sim", "build"])
 
         self.assertEqual(0, result)
-        run_product_build.assert_called_once_with()
+        run_product_build.assert_called_once_with(
+            SIM_BUILD,
+            workspace_selector=None,
+            retry_command="gar sim build",
+        )
 
     def test_sim_build_accepts_setup_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
-        run_build.assert_called_once_with(workspace_root="local/GarStreamRx")
+        run_build.assert_called_once_with(
+            SIM_BUILD,
+            workspace_selector="local/GarStreamRx",
+            retry_command="gar sim build --workspace local/GarStreamRx",
+        )
+
+    def test_sim_env_build_uses_next_command_path(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
+            result = main(["sim", "env", "build", "--workspace", "Local/GarStreamTx"])
+
+        self.assertEqual(0, result)
+        run_build.assert_called_once_with(
+            SIM_RUNTIME_BUILD,
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim env build --workspace Local/GarStreamTx",
+        )
 
     def test_sim_build_clean_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
