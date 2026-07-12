@@ -3,6 +3,10 @@ const path = require("path");
 const vscode = require("vscode");
 
 const REQUEST_GLOB = "**/.gar/terminal-requests/*.json";
+// VS Code extensions (notably the Python extension) may enqueue environment
+// activation immediately after a terminal is created.  Do not send an
+// interactive command until that initialization has reached the prompt.
+const NEW_TERMINAL_READY_DELAY_MS = 1500;
 const terminals = new Map();
 const processedRequests = new Set();
 
@@ -59,12 +63,14 @@ function processRequest(uri) {
     return;
   }
 
-  const terminal = runInTerminal({
+  runInTerminal({
     title: request.title || "Gapless Agent Runtime",
     cwd: request.cwd || workspaceFolder()?.fsPath,
     command: request.command,
+    onStarted: (terminal) => {
+      writeStatus(uri, request, "started", `Sent to VSCode terminal: ${terminal.name}`);
+    },
   });
-  writeStatus(uri, request, "started", `Sent to VSCode terminal: ${terminal.name}`);
   markRequest(uri, "started");
 }
 
@@ -79,12 +85,22 @@ function runInTerminal(request) {
   }
 
   terminal.show(false);
-  // Only emit `cd` when reusing an existing terminal; new terminals already
-  // start in `request.cwd` from createTerminal({ cwd }).
-  if (!createdNew && request.cwd) {
-    terminal.sendText(`cd ${shellQuote(request.cwd)}`);
+  const sendCommand = () => {
+    // Only emit `cd` when reusing an existing terminal; new terminals already
+    // start in `request.cwd` from createTerminal({ cwd }). Keep cd and command
+    // in one shell line so they cannot interleave with each other.
+    const command = !createdNew && request.cwd
+      ? `cd ${shellQuote(request.cwd)} && ${request.command}`
+      : request.command;
+    terminal.sendText(command);
+    request.onStarted?.(terminal);
+  };
+
+  if (createdNew) {
+    setTimeout(sendCommand, NEW_TERMINAL_READY_DELAY_MS);
+  } else {
+    sendCommand();
   }
-  terminal.sendText(request.command);
   return terminal;
 }
 
