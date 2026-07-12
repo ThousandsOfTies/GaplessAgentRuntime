@@ -6,6 +6,7 @@ from scripts.gar_lib.access.ssh import ScpFileChannel, SshCommandChannel
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.environment import DeployableSimulationEnvironment
+from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder
 from scripts.gar_lib.simulation.linux_systemd import LinuxSystemdSimulationEnvironment
 
 
@@ -19,5 +20,6 @@ class ConfigSimulationEnvironmentResolver:
             return LinuxSystemdSimulationEnvironment(
                 command_channel=SshCommandChannel(host),
                 file_channel=ScpFileChannel(host),
+                command_builder=LinuxSimCommandBuilder(),
             )
         raise GarDomainError(f"simulation environmentはまだ未対応です: {environment_id or '(未設定)'}")

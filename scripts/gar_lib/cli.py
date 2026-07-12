@@ -97,7 +97,7 @@ from scripts.gar_lib.commands.sim import (  # noqa: F401
     stop_sim_port_forward,
     write_sim_terminal_profile,
 )
-from scripts.gar_lib.commands.sim_entry import run_next_sim_command
+from scripts.gar_lib.commands.sim_entry import run_next_sim_command, run_next_sim_lifecycle
 from scripts.gar_lib.commands.target import (  # noqa: F401
     adb_device_available,
     deploy_target_artifacts,
@@ -629,6 +629,12 @@ def build_parser() -> argparse.ArgumentParser:
             default=None,
             help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
         )
+        command_parser.add_argument(
+            "--workspace",
+            default=None,
+            metavar="NAME",
+            help="gar setupに表示されるworkspace名のsimulation設定を使います",
+        )
         if command_name == "start":
             command_parser.add_argument("--settings", default=None, help="VS Code settings.json path")
             command_parser.add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
@@ -1047,6 +1053,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.gpio_command,
                     host=getattr(args, "host", None),
                     json_output=getattr(args, "json_output", False),
+                )
+            if args.sim_env_command in {"start", "stop", "status", "log"} and args.host is None:
+                workspace = getattr(args, "workspace", None)
+                retry = f"gar sim env {args.sim_env_command}" + (
+                    f" --workspace {workspace}" if workspace else ""
+                )
+                return run_next_sim_lifecycle(
+                    args.sim_env_command,
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                    settings=getattr(args, "settings", None),
+                    profile_name=getattr(args, "profile_name", None),
+                    manage_port_forward=(
+                        not getattr(args, "no_port_forward", False)
+                        if args.sim_env_command == "start"
+                        else not getattr(args, "keep_port_forward", False)
+                    ),
                 )
             return run_sim_command(
                 args.sim_env_command,

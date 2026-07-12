@@ -39,8 +39,9 @@ class GarLinuxSystemdEnvironmentTest(unittest.TestCase):
             commands.run.return_value = CommandResult(("channel",), 0)
             files = mock.Mock()
             files.push.return_value = TransferResult(("channel",), 0)
+            builder = mock.Mock()
 
-            LinuxSystemdSimulationEnvironment(commands, files).deploy(artifact)
+            LinuxSystemdSimulationEnvironment(commands, files, builder).deploy(artifact)
 
         files.push.assert_called_once()
         install = commands.run.call_args.args[0]
@@ -58,3 +59,16 @@ class GarLinuxSystemdEnvironmentTest(unittest.TestCase):
 
         self.assertIn("sudo cp", command)
         self.assertIn("/usr/local/sbin/cuse_i2c", command)
+
+    def test_lifecycle_uses_command_builder_and_injected_channel(self) -> None:
+        commands = mock.Mock()
+        commands.run.return_value = CommandResult(("channel",), 0, "running\n", "")
+        builder = mock.Mock()
+        builder.build_sim_start.return_value = "systemctl start gar-sim.target"
+        environment = LinuxSystemdSimulationEnvironment(commands, mock.Mock(), builder)
+
+        result = environment.start({"gpio": []})
+
+        self.assertEqual(0, result)
+        builder.build_sim_start.assert_called_once_with({"gpio": []})
+        commands.run.assert_called_once_with("systemctl start gar-sim.target")

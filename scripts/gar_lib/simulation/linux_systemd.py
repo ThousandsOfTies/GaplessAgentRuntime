@@ -9,6 +9,7 @@ from scripts.gar_lib.access.base import CommandChannel, FileChannel
 from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifact_src
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.simulation.base import SimCommandBuilder
 
 
 class LinuxSystemdSimulationEnvironment:
@@ -22,9 +23,15 @@ class LinuxSystemdSimulationEnvironment:
         "~/web-bridge": "/usr/local/lib/gar/web-bridge",
     }
 
-    def __init__(self, command_channel: CommandChannel, file_channel: FileChannel):
+    def __init__(
+        self,
+        command_channel: CommandChannel,
+        file_channel: FileChannel,
+        command_builder: SimCommandBuilder,
+    ):
         self.command_channel = command_channel
         self.file_channel = file_channel
+        self.command_builder = command_builder
 
     def deploy(self, artifact: Artifact) -> None:
         section = self._SECTIONS.get(artifact.kind)
@@ -54,6 +61,29 @@ class LinuxSystemdSimulationEnvironment:
             installed = self.command_channel.run(command)
             if installed.returncode != 0:
                 raise GarDomainError(f"artifact配置に失敗しました (exit {installed.returncode})")
+
+    def start(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        return self._run(self.command_builder.build_sim_start(hardware))
+
+    def stop(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        return self._run(self.command_builder.build_sim_stop(hardware))
+
+    def status(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        return self._run(self.command_builder.build_sim_status(hardware))
+
+    def diag(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        return self._run(self.command_builder.build_sim_diag_json(hardware))
+
+    def log(self) -> int:
+        return self._run(self.command_builder.build_sim_log())
+
+    def _run(self, command: str) -> int:
+        result = self.command_channel.run(command)
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        if result.stderr:
+            print(result.stderr, end="" if result.stderr.endswith("\n") else "\n")
+        return result.returncode
 
     def _destination(self, destination: str) -> str:
         mapped = self._DESTINATIONS.get(destination)

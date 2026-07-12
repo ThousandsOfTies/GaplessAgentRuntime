@@ -2800,19 +2800,18 @@ class GarCliTest(unittest.TestCase):
             json_output=False,
         )
 
-    def test_sim_cli_omits_host_by_default(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "env", "start"])
+    def test_sim_cli_uses_workspace_lifecycle_by_default(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_lifecycle", return_value=0) as run_sim:
+            result = main(["sim", "env", "start", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
             "start",
-            host=None,
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim env start --workspace Local/GarStreamTx",
             settings=None,
             profile_name=None,
-            port_forward=True,
-            stop_port_forward=True,
-            json_output=False,
+            manage_port_forward=True,
         )
 
     def test_sim_status_is_available_from_cli(self) -> None:

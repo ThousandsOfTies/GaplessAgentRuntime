@@ -41,7 +41,16 @@ class SshCommandChannel:
         self.config_path = config_path or Path.home() / ".ssh" / "config"
 
     def run(self, command: str) -> CommandResult:
-        argv = ("ssh", "-F", str(self.config_path), *SSH_CONNECTION_OPTIONS, self.host, command)
+        argv = (
+            "ssh",
+            "-F",
+            str(self.config_path),
+            *SSH_CONNECTION_OPTIONS,
+            "-o",
+            f"HostKeyAlias={self.host}",
+            self.host,
+            command,
+        )
         completed = subprocess.run(argv, check=False, capture_output=True, text=True)
         if completed.returncode == 255:
             raise AccessConnectionError(
@@ -65,7 +74,15 @@ class ScpFileChannel:
         return self._run(("-r", f"{self.host}:{source}", str(destination)))
 
     def _run(self, arguments: tuple[str, ...]) -> TransferResult:
-        argv = ("scp", "-F", str(self.config_path), *SSH_CONNECTION_OPTIONS, *arguments)
+        argv = (
+            "scp",
+            "-F",
+            str(self.config_path),
+            *SSH_CONNECTION_OPTIONS,
+            "-o",
+            f"HostKeyAlias={self.host}",
+            *arguments,
+        )
         completed = subprocess.run(argv, check=False, capture_output=True, text=True)
         if completed.returncode == 255:
             raise AccessConnectionError(
