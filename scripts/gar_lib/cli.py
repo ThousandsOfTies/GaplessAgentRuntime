@@ -561,6 +561,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
     )
+    sim_deploy_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="NAME",
+        help="gar setup に表示される workspace名の artifact bundle を配置します",
+    )
     sim_env_gpio_parser = sim_env_subparsers.add_parser(
         "gpio",
         help="GPIO dummy runtime を個別に生成・配置・確認します",
@@ -598,6 +604,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--artifacts-dir",
         default=None,
         help="Codespace から WSL hub へコピー済みの成果物 root",
+    )
+    sim_app_deploy_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="NAME",
+        help="gar setup に表示される workspace名の artifact bundle を配置します",
     )
     for command_name in ("start", "stop", "status", "diag", "log", "gpio-sim-check"):
         command_parser = sim_env_subparsers.add_parser(
@@ -949,11 +961,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "deploy":
-            return run_sim_deploy_command(
-                getattr(args, "artifacts_dir", None),
-                host=getattr(args, "host", None),
-                section="app",
-            )
+            deploy_kwargs = {
+                "host": getattr(args, "host", None),
+                "section": "app",
+            }
+            workspace = getattr(args, "workspace", None)
+            if workspace is not None:
+                deploy_kwargs["workspace"] = workspace
+            return run_sim_deploy_command(getattr(args, "artifacts_dir", None), **deploy_kwargs)
         if args.sim_command == "build":
             workspace_root = getattr(args, "workspace", None)
             clean = getattr(args, "action", None) == "clean"
@@ -976,11 +991,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     **build_kwargs,
                 )
             if args.sim_env_command == "deploy":
-                return run_sim_deploy_command(
-                    args.artifacts_dir,
-                    host=args.host,
-                    section="sim_env",
-                )
+                deploy_kwargs = {"host": args.host, "section": "sim_env"}
+                workspace = getattr(args, "workspace", None)
+                if workspace is not None:
+                    deploy_kwargs["workspace"] = workspace
+                return run_sim_deploy_command(args.artifacts_dir, **deploy_kwargs)
             if args.sim_env_command == "gpio":
                 if args.gpio_command is None:
                     subcommand_parsers["sim_env"].print_help()

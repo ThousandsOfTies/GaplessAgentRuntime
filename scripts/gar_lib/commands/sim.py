@@ -52,11 +52,26 @@ def _get_sim_provider(provider_override: str | None = None) -> type[DevEnvironme
     raise RuntimeError("No simulation provider found")
 
 
-def run_sim_deploy_command(artifacts_dir: str | None, *, host: str | None, section: str = "app") -> int:
+def run_sim_deploy_command(
+    artifacts_dir: str | None,
+    *,
+    host: str | None,
+    section: str = "app",
+    workspace: str | None = None,
+) -> int:
     """``gar sim deploy`` / ``gar sim env deploy``: resolve the artifact bundle
     root and push its ``deploy.<section>`` files to the simulation host.
     """
-    root = Path(artifacts_dir).expanduser().resolve() if artifacts_dir else default_artifacts_dir().resolve()
+    if workspace is not None:
+        set_active_workspace_root(workspace)
+    config = load_config()
+    connection = config.get("workspace_connection")
+    if artifacts_dir:
+        root = Path(artifacts_dir).expanduser().resolve()
+    elif isinstance(connection, dict) and connection.get("type") == "local":
+        root = Path(connection["path"]).expanduser().resolve() / "artifacts" / "from-codespace"
+    else:
+        root = default_artifacts_dir().resolve()
     return deploy_sim_artifacts(root, host=host, section=section)
 
 

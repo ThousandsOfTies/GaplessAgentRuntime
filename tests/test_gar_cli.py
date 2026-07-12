@@ -1571,6 +1571,18 @@ class GarCliTest(unittest.TestCase):
             section="sim_env",
         )
 
+    def test_sim_env_deploy_accepts_workspace_name(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_deploy_command", return_value=0) as run_deploy:
+            result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamTx"])
+
+        self.assertEqual(0, result)
+        run_deploy.assert_called_once_with(
+            None,
+            host=None,
+            section="sim_env",
+            workspace="Local/GarStreamTx",
+        )
+
     def test_sim_build_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])

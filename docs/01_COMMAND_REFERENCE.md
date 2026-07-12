@@ -143,6 +143,7 @@ gar sim stop
 | `gar sim env build` | 仮想デバイススタブ（CUSE I2C/SPI など）のバイナリをビルド |
 | `gar sim env build --workspace NAME` | Wokwi など複数登録した workspace のうち、登録名でビルド対象を指定 |
 | `gar sim env deploy` | ビルドしたスタブや接続用Webブリッジをホストへ転送・配置 |
+| `gar sim env deploy --workspace NAME` | 指定 workspace の `deploy.sim_env` artifact bundle を転送・配置 |
 | `gar sim env start` | 仮想環境（systemd サービス群）とポートフォワードを起動 |
 | `gar sim env stop` | 仮想環境（systemd サービス群）を停止 |
 | `gar sim env status [--json]` | 各サービスの状態やポートフォワードの接続状態を表示 |
@@ -158,6 +159,7 @@ gar sim stop
 | `gar sim build --workspace NAME` | `gar setup` 一覧の workspace名でビルド対象を指定 |
 | `gar sim build clean [--workspace NAME]` | 選択した product workspace の simulation build artifact を削除 |
 | `gar sim deploy` | 最新のアプリケーション成果物をシミュレーションホストの実行可能パスへ反映 |
+| `gar sim deploy --workspace NAME` | 指定 workspace の `deploy.app` artifact bundle を反映 |
 
 #### インフラ管理 (`gar sim infra`)
 | コマンド | 内容 |
