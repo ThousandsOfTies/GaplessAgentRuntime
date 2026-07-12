@@ -160,6 +160,8 @@ def run_sim_env_build_command(
     ``build()``. ``provider`` lets a caller narrow the resolution beyond the
     ``gar setup`` saved config (``selected_providers.simulation``).
     """
+    if workspace_root is not None:
+        set_active_workspace_root(workspace_root)
     resolved_provider = _get_sim_provider(provider)
     if resolved_provider.provider_id == "wokwi":
         if workspace_root is None:
@@ -168,6 +170,8 @@ def run_sim_env_build_command(
     if resolved_provider.provider_id == "mujoco":
         target = _get_sim_target(host=None, provider_override="mujoco")
         return target.build(json_output=json_output)
+    if resolved_provider.provider_id == "ssh_remote":
+        return run_product_sim_env_build(workspace_root=workspace_root)
     target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
     try:
         return target.build(json_output=json_output)
@@ -181,8 +185,14 @@ def run_sim_env_build_command(
         return 1
 
 
-def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = False) -> int:
-    """Run the selected product's simulation build hook or clean its output."""
+def _run_product_sim_hook(
+    script_name: str,
+    *,
+    command_label: str,
+    workspace_root: str | None = None,
+    clean: bool = False,
+) -> int:
+    """Run a product-local simulation hook in the selected workspace."""
     if workspace_root is not None:
         # A selector may be either a local path, a GAR-generated workspace ID,
         # or the user-facing workspace name shown by `gar setup`.
@@ -191,15 +201,15 @@ def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = Fa
     development = config.get("selected_providers", {}).get("codespace")
     connection = config.get("workspace_connection")
     if not isinstance(connection, dict):
-        print("gar sim build: product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+        print(f"{command_label}: product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
         return 1
     if development == "local":
         if connection.get("type") != "local":
-            print("gar sim build: local provider には local workspace を選択してください。", file=sys.stderr)
+            print(f"{command_label}: local provider には local workspace を選択してください。", file=sys.stderr)
             return 1
-        script = Path(connection["path"]) / "scripts" / "product-sim-build.sh"
+        script = Path(connection["path"]) / "scripts" / script_name
         if not script.is_file():
-            print(f"gar sim build: product build hook が見つかりません: {script}", file=sys.stderr)
+            print(f"{command_label}: product hook が見つかりません: {script}", file=sys.stderr)
             return 1
         command = [str(script)]
         if clean:
@@ -208,23 +218,42 @@ def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = Fa
 
     if development == "github_codespaces":
         if connection.get("type") != "codespaces":
-            print("gar sim build: Codespaces provider には Codespaces workspace を選択してください。", file=sys.stderr)
+            print(f"{command_label}: Codespaces provider には Codespaces workspace を選択してください。", file=sys.stderr)
             return 1
         codespace = connection.get("codespace")
         workspace_root = connection.get("path")
         if not isinstance(codespace, str) or not isinstance(workspace_root, str):
-            print("gar sim build: Codespaces workspace 設定が不完全です。`gar setup` を実行してください。", file=sys.stderr)
+            print(f"{command_label}: Codespaces workspace 設定が不完全です。`gar setup` を実行してください。", file=sys.stderr)
             return 1
         hook_args = " clean" if clean else ""
-        command = f"cd {shlex.quote(workspace_root)} && scripts/product-sim-build.sh{hook_args}"
+        command = f"cd {shlex.quote(workspace_root)} && scripts/{script_name}{hook_args}"
         return subprocess.run(["gh", "codespace", "ssh", "-c", codespace, "--", command], check=False).returncode
 
     if connection.get("type") == "network":
-        print("gar sim build: network workspace は build 実行先にできません。Codespaces workspace を選択してください。", file=sys.stderr)
+        print(f"{command_label}: network workspace は build 実行先にできません。Codespaces workspace を選択してください。", file=sys.stderr)
         return 1
 
-    print("gar sim build: development provider が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+    print(f"{command_label}: development provider が未設定です。`gar setup` を実行してください。", file=sys.stderr)
     return 1
+
+
+def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = False) -> int:
+    """Run the selected product's application simulation build hook."""
+    return _run_product_sim_hook(
+        "product-sim-build.sh",
+        command_label="gar sim build",
+        workspace_root=workspace_root,
+        clean=clean,
+    )
+
+
+def run_product_sim_env_build(*, workspace_root: str | None = None) -> int:
+    """Run the selected product's virtual-device runtime build hook."""
+    return _run_product_sim_hook(
+        "product-sim-env-build.sh",
+        command_label="gar sim env build",
+        workspace_root=workspace_root,
+    )
 
 
 def run_sim_host_command(

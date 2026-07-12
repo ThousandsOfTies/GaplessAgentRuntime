@@ -1599,6 +1599,19 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         run_product_build.assert_called_once_with(workspace_root="local/GarStreamRx", clean=True)
 
+    def test_sim_env_build_uses_product_hook_for_ssh_remote(self) -> None:
+        from scripts.gar_lib.commands.sim import run_sim_env_build_command
+
+        with (
+            mock.patch("scripts.gar_lib.config._ACTIVE_WORKSPACE_ROOT", None),
+            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
+            mock.patch("scripts.gar_lib.commands.sim.run_product_sim_env_build", return_value=0) as run_build,
+        ):
+            result = run_sim_env_build_command(workspace_root="Local/GarStreamTx")
+
+        self.assertEqual(0, result)
+        run_build.assert_called_once_with(workspace_root="Local/GarStreamTx")
+
     def test_sim_build_rejects_workspace_root_option(self) -> None:
         with self.assertRaises(SystemExit):
             main(["sim", "build", "--workspace-root", "/tmp/product"])
