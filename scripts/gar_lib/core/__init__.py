@@ -8,12 +8,13 @@ from scripts.gar_lib.core.command import (
     SIM_RUNTIME_DEPLOY,
     GarCommand,
 )
-from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 
 __all__ = [
     "Artifact",
     "ArtifactKind",
+    "AccessConnectionError",
     "GarCommand",
     "GarDomainError",
     "SIM_BUILD",
