@@ -1422,7 +1422,8 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("scp", file_copy[0])
         self.assertIn("configured-ec2:/tmp/gar-deploy-", file_copy[-1])
         self.assertEqual(["ssh", "-F"], file_install[:2])
-        self.assertEqual("configured-ec2", file_install[3])
+        self.assertIn("configured-ec2", file_install)
+        self.assertIn("ConnectTimeout=10", file_install)
         self.assertIn('"${HOME}"/', file_install[-1])
         self.assertIn("chmod '0755'", file_install[-1])
 
