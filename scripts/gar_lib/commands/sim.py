@@ -15,15 +15,14 @@ from scripts.gar_lib.artifacts.manifest import (
     resolve_artifact_src,
 )
 from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.commands.terminal import run_terminal_request
 from scripts.gar_lib.config import (
     default_ec2_host,
-    default_ec2_region,
     load_config,
     set_active_workspace_root,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
+from scripts.gar_lib.environments.ssh_recovery import ssh_connection_recovery_context
 from scripts.gar_lib.simulation.base import SimEnvProcessor
 from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
 from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
@@ -74,7 +73,9 @@ def run_sim_deploy_command(
         root = Path(connection["path"]).expanduser().resolve() / "artifacts" / "from-codespace"
     else:
         root = default_artifacts_dir().resolve()
-    return deploy_sim_artifacts(root, host=host, section=section, workspace=workspace)
+    command_label = "gar sim env deploy" if section == "sim_env" else "gar sim deploy"
+    with ssh_connection_recovery_context(command_label, workspace=workspace):
+        return deploy_sim_artifacts(root, host=host, section=section)
 
 
 def deploy_sim_artifacts(
@@ -82,7 +83,6 @@ def deploy_sim_artifacts(
     *,
     host: str | None,
     section: str = "app",
-    workspace: str | None = None,
 ) -> int:
     resolved_host = host or default_ec2_host(load_config())
     loaded = load_deploy_files(root, section)
@@ -102,12 +102,6 @@ def deploy_sim_artifacts(
 
         result = provider.push_file(resolved_host, source, staging_path)
         if result != 0:
-            _print_ssh_deploy_recovery(
-                provider,
-                host=resolved_host,
-                section=section,
-                workspace=workspace,
-            )
             return result
 
         mode = entry.get("mode")
@@ -122,70 +116,6 @@ def deploy_sim_artifacts(
             return proc.returncode
 
     return 0
-
-
-def _print_ssh_deploy_recovery(
-    provider: type[DevEnvironment],
-    *,
-    host: str,
-    section: str,
-    workspace: str | None,
-) -> None:
-    """Guide SSH deployment failures to a visible terminal for AWS login.
-
-    SSH/scp itself is deliberately non-interactive, so a connection timeout can
-    return promptly.  Cloud browser/device-code authentication must instead be
-    performed in the user's VS Code terminal through Terminal Bridge.
-    """
-    if provider.provider_id != "ssh_remote":
-        return
-
-    command_label = "gar sim env deploy" if section == "sim_env" else "gar sim deploy"
-    config = load_config()
-    region = default_ec2_region(config)
-    restart_command = "gar sim start"
-    retry_command = command_label
-    if workspace:
-        quoted_workspace = shlex.quote(workspace)
-        restart_command += f" --workspace {quoted_workspace}"
-        retry_command += f" --workspace {quoted_workspace}"
-
-    print(
-        f"{command_label}: {host} への SSH/scp 接続に失敗しました。",
-        file=sys.stderr,
-    )
-    print(
-        "  接続待ちは ConnectTimeout により中断しました。EC2 の停止、AWS 認証切れ、"
-        "または起動後の Public IP 未更新が考えられます。",
-        file=sys.stderr,
-    )
-
-    if not region:
-        print(
-            "  AWS region が未設定です。`gar setup` で SSH Remote の EC2 region を設定してから再実行してください。",
-            file=sys.stderr,
-        )
-        return
-
-    request_result = run_terminal_request(
-        command_parts=["aws", "login", "--remote", "--region", region],
-        title="GAR: AWS ログイン（シミュレーション接続を復旧）",
-        cwd=None,
-    )
-    if request_result == 0:
-        print(
-            "  VS Code Terminal Bridge に AWS ログインを送信しました。表示された URL をブラウザで開き、"
-            "認証コードはその terminal に入力してください。",
-            file=sys.stderr,
-        )
-    else:
-        print(
-            "  VS Code Terminal Bridge の要求作成に失敗しました。通常の VS Code terminal で次を実行してください。",
-            file=sys.stderr,
-        )
-        print(f"    aws login --remote --region {region}", file=sys.stderr)
-    print(f"  認証後: {restart_command}", file=sys.stderr)
-    print(f"  起動完了後に再実行: {retry_command}", file=sys.stderr)
 
 
 def sim_dest_path(manifest_dest: str) -> str:

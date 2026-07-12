@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.ssh_recovery import handle_ssh_connection_failure
 
 SSH_CONNECTION_OPTIONS = (
     "-o", "ConnectTimeout=10",
@@ -29,7 +30,9 @@ class SshRemoteEnvironment(DevEnvironment):
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
         cmd = ["ssh", "-F", config_arg, *SSH_CONNECTION_OPTIONS, target, command]
-        return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
+        result = subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
+        handle_ssh_connection_failure(target, result.returncode)
+        return result
 
     @classmethod
     def push_file(cls, target: str, src, dest) -> int:
@@ -37,7 +40,9 @@ class SshRemoteEnvironment(DevEnvironment):
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
         cmd = ["scp", "-F", config_arg, *SSH_CONNECTION_OPTIONS, "-r", str(src), f"{target}:{dest}"]
-        return subprocess.run(cmd, check=False).returncode
+        result = subprocess.run(cmd, check=False)
+        handle_ssh_connection_failure(target, result.returncode)
+        return result.returncode
 
     @classmethod
     def pull_file(cls, target: str, src, dest) -> int:
@@ -45,7 +50,9 @@ class SshRemoteEnvironment(DevEnvironment):
         from pathlib import Path
         config_arg = str(Path.home() / ".ssh" / "config")
         cmd = ["scp", "-F", config_arg, *SSH_CONNECTION_OPTIONS, "-r", f"{target}:{src}", str(dest)]
-        return subprocess.run(cmd, check=False).returncode
+        result = subprocess.run(cmd, check=False)
+        handle_ssh_connection_failure(target, result.returncode)
+        return result.returncode
 
     @classmethod
     def start_port_forward(cls, target: str) -> int:

@@ -98,7 +98,7 @@ gar sim env start    # systemd services + port forward 起動
 
 ### SSH/scp 接続エラーからの復旧
 
-`gar sim env deploy` / `gar sim deploy` が SSH/scp 接続エラーで終了した場合、GAR は無限に待機・再試行しません。AWS 認証が必要になり得るため、VS Code Terminal Bridge を通じて、見える terminal に次のログイン要求を送ります。
+AWS EC2 用の SSH Remote provider を使う `gar sim env deploy` / `gar sim deploy`、および将来の EC2 上の build などが SSH/scp 接続エラーで終了した場合、GAR は無限に待機・再試行しません。接続処理を持つ provider 共通の復旧処理が、VS Code Terminal Bridge を通じて、見える terminal に次のログイン要求を送ります。
 
 ```bash
 aws login --remote --region <設定済みの region>

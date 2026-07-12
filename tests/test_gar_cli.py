@@ -1466,16 +1466,19 @@ class GarCliTest(unittest.TestCase):
                 "selected_providers": {"simulator": "ssh_remote"},
                 "ec2": {"host": "vibecode-graviton", "region": "ap-northeast-1"},
             }
-            provider = mock.Mock(provider_id="ssh_remote")
-            provider.push_file.return_value = 255
+            completed = mock.Mock(returncode=255)
             stderr = io.StringIO()
 
             with (
                 mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
                 mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-                mock.patch("scripts.gar_lib.commands.sim.get_provider", return_value=provider),
+                mock.patch("scripts.gar_lib.commands.sim.get_provider", return_value=SshRemoteEnvironment),
                 mock.patch("scripts.gar_lib.commands.sim.set_active_workspace_root"),
-                mock.patch("scripts.gar_lib.commands.sim.run_terminal_request", return_value=0) as terminal_request,
+                mock.patch("scripts.gar_lib.environments.ssh_recovery.load_config", return_value=config),
+                mock.patch(
+                    "scripts.gar_lib.environments.ssh_recovery.run_terminal_request", return_value=0
+                ) as terminal_request,
+                mock.patch("subprocess.run", return_value=completed),
                 contextlib.redirect_stderr(stderr),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
@@ -1489,13 +1492,35 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(255, result)
         terminal_request.assert_called_once_with(
             command_parts=["aws", "login", "--remote", "--region", "ap-northeast-1"],
-            title="GAR: AWS ログイン（シミュレーション接続を復旧）",
+            title="GAR: AWS ログイン（SSH 接続を復旧）",
             cwd=None,
         )
         message = stderr.getvalue()
         self.assertIn("VS Code Terminal Bridge", message)
         self.assertIn("gar sim start --workspace Local/GarStreamTx", message)
         self.assertIn("gar sim env deploy --workspace Local/GarStreamTx", message)
+
+    def test_ssh_remote_connection_failure_requests_terminal_bridge_without_sim_deploy(self) -> None:
+        config = {"ec2": {"region": "ap-northeast-1"}}
+        completed = mock.Mock(returncode=255)
+        stderr = io.StringIO()
+        with (
+            mock.patch("scripts.gar_lib.environments.ssh_recovery.load_config", return_value=config),
+            mock.patch(
+                "scripts.gar_lib.environments.ssh_recovery.run_terminal_request", return_value=0
+            ) as terminal_request,
+            mock.patch("subprocess.run", return_value=completed),
+            contextlib.redirect_stderr(stderr),
+        ):
+            result = SshRemoteEnvironment.run_remote("ec2-builder", "make")
+
+        self.assertEqual(255, result.returncode)
+        terminal_request.assert_called_once_with(
+            command_parts=["aws", "login", "--remote", "--region", "ap-northeast-1"],
+            title="GAR: AWS ログイン（SSH 接続を復旧）",
+            cwd=None,
+        )
+        self.assertIn("失敗した gar コマンドを再実行", stderr.getvalue())
 
     def test_deploy_target_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
