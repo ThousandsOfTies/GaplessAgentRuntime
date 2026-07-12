@@ -96,6 +96,16 @@ gar sim deploy       # target app を転送
 gar sim env start    # systemd services + port forward 起動
 ```
 
+### SSH/scp 接続エラーからの復旧
+
+`gar sim env deploy` / `gar sim deploy` が SSH/scp 接続エラーで終了した場合、GAR は無限に待機・再試行しません。AWS 認証が必要になり得るため、VS Code Terminal Bridge を通じて、見える terminal に次のログイン要求を送ります。
+
+```bash
+aws login --remote --region <設定済みの region>
+```
+
+表示された URL はブラウザで開き、認証コードは **その terminal にのみ**入力します。チャットや AI に貼り付けません。認証後、エラー表示に出た `gar sim start --workspace ...` で EC2 を起動して Public IP を更新し、同じ deploy コマンドを再実行します。
+
 ### 確認
 
 ```bash

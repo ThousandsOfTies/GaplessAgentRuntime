@@ -1444,6 +1444,59 @@ class GarCliTest(unittest.TestCase):
         self.assertIn('"${HOME}"/', file_install[-1])
         self.assertIn("chmod '0755'", file_install[-1])
 
+    def test_sim_env_deploy_ssh_failure_requests_terminal_bridge_login(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "files").mkdir()
+            (root / "files" / "cuse_i2c").write_text("", encoding="utf-8")
+            (root / "artifact.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sim-env",
+                        "deploy": {
+                            "sim_env": {
+                                "files": [{"src": "files/cuse_i2c", "dest": "~/cuse_i2c"}]
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = {
+                "selected_providers": {"simulator": "ssh_remote"},
+                "ec2": {"host": "vibecode-graviton", "region": "ap-northeast-1"},
+            }
+            provider = mock.Mock(provider_id="ssh_remote")
+            provider.push_file.return_value = 255
+            stderr = io.StringIO()
+
+            with (
+                mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
+                mock.patch("scripts.gar_lib.commands.sim.get_provider", return_value=provider),
+                mock.patch("scripts.gar_lib.commands.sim.set_active_workspace_root"),
+                mock.patch("scripts.gar_lib.commands.sim.run_terminal_request", return_value=0) as terminal_request,
+                contextlib.redirect_stderr(stderr),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = run_sim_deploy_command(
+                    str(root),
+                    host=None,
+                    section="sim_env",
+                    workspace="Local/GarStreamTx",
+                )
+
+        self.assertEqual(255, result)
+        terminal_request.assert_called_once_with(
+            command_parts=["aws", "login", "--remote", "--region", "ap-northeast-1"],
+            title="GAR: AWS ログイン（シミュレーション接続を復旧）",
+            cwd=None,
+        )
+        message = stderr.getvalue()
+        self.assertIn("VS Code Terminal Bridge", message)
+        self.assertIn("gar sim start --workspace Local/GarStreamTx", message)
+        self.assertIn("gar sim env deploy --workspace Local/GarStreamTx", message)
+
     def test_deploy_target_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
