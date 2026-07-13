@@ -45,7 +45,6 @@ from scripts.gar_lib.artifacts.manifest import (  # noqa: F401
 # Re-exports — keep public surface stable for callers and tests.
 from scripts.gar_lib.commands.code import (  # noqa: F401
     boot_code_codespace,
-    codespace_list_rows,
     codespace_terminal_script,
     detect_codespace_workspace,
     first_ssh_host,
@@ -53,7 +52,6 @@ from scripts.gar_lib.commands.code import (  # noqa: F401
     mount_codespace_code,
     remote_path_exists,
     run_code_command,
-    select_codespace_from_list,
     shutdown_code_codespace,
     start_code_codespace,
     status_code_codespace,

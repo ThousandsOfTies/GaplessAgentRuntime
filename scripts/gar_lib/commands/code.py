@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.gar_lib.access.codespaces import codespace_list_rows, select_codespace_from_list
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.vscode.profile_manage import (
@@ -466,27 +467,6 @@ def load_codespace_state(state_file: Path) -> dict[str, str]:
         if key and parsed:
             state[key] = parsed[0]
     return state
-
-
-def select_codespace_from_list(output: str) -> str | None:
-    rows = codespace_list_rows(output)
-    if len(rows) == 1:
-        return rows[0][0]
-
-    for fields in rows:
-        if len(fields) >= 5 and fields[4] == "Available" and fields[0]:
-            return fields[0]
-    return None
-
-
-def codespace_list_rows(output: str) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for line in output.splitlines():
-        fields = line.split("\t")
-        if not fields or not fields[0] or fields[0] == "NAME":
-            continue
-        rows.append(fields)
-    return rows
 
 
 def default_codespaces_mount_dir() -> Path:

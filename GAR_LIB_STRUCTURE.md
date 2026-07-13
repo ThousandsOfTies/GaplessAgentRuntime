@@ -70,11 +70,11 @@ commands/sim.py
 - `WokwiSimulationEnvironment` と `MujocoSimulationEnvironment` は同じinterfaceで解決される。個別のruntime artifactを必要としないenvironmentでは `gar sim env build/deploy` は何も要求しない。
 - AWS認証やSSH接続に失敗した場合の利用者誘導は、environmentではなく `commands/sim.py` の共通recovery経路がTerminal Bridgeへ渡す。
 
-## まだ確認できる責務の混在
+## 責務の依存方向
 
-アクセス手段とコマンド実行を分離する観点で、次の依存関係は整理対象です。
-
-1. `artifacts/manifest.py` がCodespaces選択のため `commands/code` をimportしており、成果物層からcommand層への逆向き依存がある。
+Codespaces一覧の解析は `access/codespaces.py` に置き、`commands/code.py` と
+`artifacts/manifest.py` の両方から利用する。これにより、現在の標準sim/target経路では
+`artifacts`・`simulation`・`target` から `commands` への逆向きimportはない。
 
 ## 分離後の目標
 

@@ -21,7 +21,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.gar_lib.commands.code import select_codespace_from_list
+from scripts.gar_lib.access.codespaces import select_codespace_from_list
 from scripts.gar_lib.config import PROJECT_ROOT, load_config
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.discovery import discover_environment_providers

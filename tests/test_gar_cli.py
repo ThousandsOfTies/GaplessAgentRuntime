@@ -31,7 +31,6 @@ from scripts.gar_lib.cli import (
     run_target_deploy_command,
     run_terminal_request,
     run_usb_command,
-    select_codespace_from_list,
     shutdown_code_codespace,
     start_code_codespace,
     stop_code_codespace,
@@ -2072,22 +2071,6 @@ class GarCliTest(unittest.TestCase):
             self.assertEqual(1, result)
             self.assertIn("timed out after 3s", stderr.getvalue())
             self.assertFalse((home / ".ssh" / "codespaces").exists())
-
-    def test_code_start_can_select_single_listed_codespace(self) -> None:
-        output = "single-codespace\towner/repo\tmain\tStopped\tShutdown\t1h\n"
-
-        self.assertEqual("single-codespace", select_codespace_from_list(output))
-
-    def test_code_start_selects_first_available_when_multiple_codespaces_exist(self) -> None:
-        output = "\n".join(
-            [
-                "stopped-codespace\towner/repo\tmain\tStopped\tShutdown\t1h",
-                "available-codespace\towner/repo\tmain\tRunning\tAvailable\t2h",
-                "other-codespace\towner/repo\tmain\tRunning\tAvailable\t3h",
-            ]
-        )
-
-        self.assertEqual("available-codespace", select_codespace_from_list(output))
 
     def test_code_start_without_codespace_uses_single_listed_codespace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
