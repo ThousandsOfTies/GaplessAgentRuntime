@@ -1771,19 +1771,54 @@ class GarCliTest(unittest.TestCase):
                 self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
 
     def test_sim_status_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
             result = main(["sim", "status", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_host.assert_called_once_with(
             "status",
-            host=None,
-            instance_id=None,
-            region=None,
-            update_ssh=True,
-            pull=False,
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim status --workspace Local/GarStreamTx",
+            update_address=True,
+            update_repository=False,
             json_output=False,
-            workspace="Local/GarStreamTx",
+        )
+
+    def test_sim_start_workspace_uses_host_controller_options(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
+            result = main(
+                [
+                    "sim",
+                    "start",
+                    "--workspace",
+                    "Local/GarStreamTx",
+                    "--no-update-ssh",
+                    "--pull",
+                ]
+            )
+
+        self.assertEqual(0, result)
+        run_host.assert_called_once_with(
+            "start",
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim start --workspace Local/GarStreamTx",
+            update_address=False,
+            update_repository=True,
+            json_output=False,
+        )
+
+    def test_sim_stop_workspace_uses_host_controller(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
+            result = main(["sim", "stop", "--workspace", "Local/GarStreamTx"])
+
+        self.assertEqual(0, result)
+        run_host.assert_called_once_with(
+            "stop",
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim stop --workspace Local/GarStreamTx",
+            update_address=True,
+            update_repository=False,
+            json_output=False,
         )
 
     def test_sim_infra_setup_is_available_from_cli(self) -> None:

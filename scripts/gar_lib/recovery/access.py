@@ -24,6 +24,19 @@ class AccessRecoveryPlanner:
         workspace: Workspace,
         retry_command: str,
     ) -> RecoveryAction:
+        if error.channel == "aws":
+            region = workspace.ec2.get("region")
+            if not isinstance(region, str) or not region:
+                region = error.endpoint
+            return RecoveryAction(
+                title="GAR: AWSログイン（simulation host操作を復旧）",
+                terminal_command=("aws", "login", "--remote", "--region", region),
+                instructions=(
+                    "表示されたURLをブラウザで開き、認証コードはそのterminalに入力してください。",
+                    f"認証後に再実行: {retry_command}",
+                ),
+            )
+
         if error.channel in {"ssh", "scp"}:
             if error.reason == "host_key_verification":
                 return RecoveryAction(

@@ -52,6 +52,26 @@ class GarAccessRecoveryTest(unittest.TestCase):
         self.assertIsNone(action.terminal_command)
         self.assertTrue(any("gar usb attach" in instruction for instruction in action.instructions))
 
+    def test_aws_authentication_failure_requests_visible_login(self) -> None:
+        error = AccessConnectionError(
+            channel="aws",
+            endpoint="ap-northeast-1",
+            reason="authentication",
+            returncode=255,
+        )
+
+        action = AccessRecoveryPlanner().plan(
+            error,
+            workspace=self.workspace,
+            retry_command="gar sim start --workspace Local/Product",
+        )
+
+        self.assertEqual(
+            ("aws", "login", "--remote", "--region", "ap-northeast-1"),
+            action.terminal_command,
+        )
+        self.assertTrue(any("gar sim start" in instruction for instruction in action.instructions))
+
     def test_terminal_executor_receives_planned_command_by_injection(self) -> None:
         requester = mock.Mock(return_value=0)
         action = RecoveryAction(

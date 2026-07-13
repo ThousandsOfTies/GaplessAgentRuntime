@@ -100,6 +100,7 @@ from scripts.gar_lib.commands.sim import (  # noqa: F401
 from scripts.gar_lib.commands.sim_entry import (
     run_next_sim_command,
     run_next_sim_diagnostic,
+    run_next_sim_host_command,
     run_next_sim_lifecycle,
 )
 from scripts.gar_lib.commands.target import (  # noqa: F401
@@ -969,6 +970,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             subcommand_parsers["sim"].print_help()
             return 1
         if args.sim_command in SIM_VM_COMMAND_MAP:
+            workspace = getattr(args, "workspace", None)
+            has_legacy_override = any(
+                value is not None for value in (args.host, args.instance_id, args.region)
+            )
+            if not has_legacy_override:
+                retry = f"gar sim {args.sim_command}" + (
+                    f" --workspace {workspace}" if workspace else ""
+                )
+                return run_next_sim_host_command(
+                    SIM_VM_COMMAND_MAP[args.sim_command],
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                    update_address=not getattr(args, "no_update_ssh", False),
+                    update_repository=getattr(args, "pull", False),
+                    json_output=getattr(args, "json_output", False),
+                )
             host_kwargs = {
                 "host": args.host,
                 "instance_id": args.instance_id,
@@ -977,7 +994,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "pull": getattr(args, "pull", False),
                 "json_output": getattr(args, "json_output", False),
             }
-            workspace = getattr(args, "workspace", None)
             if workspace is not None:
                 host_kwargs["workspace"] = workspace
             return run_sim_host_command(
