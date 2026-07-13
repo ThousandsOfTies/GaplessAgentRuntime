@@ -1,7 +1,7 @@
 # `scripts/gar_lib` 構成と責務
 
 この文書は、2026-07-13時点の `scripts/gar_lib` の実ファイルと参照関係を確認してまとめたものです。
-理想だけではなく、現在接続されている経路、補助経路、未接続のsetup選択肢も区別して記載します。
+理想だけではなく、現在接続されている経路、補助経路、error-only stubとして接続されたsetup選択肢も区別して記載します。
 
 ## 用語
 
@@ -65,11 +65,15 @@ scripts/gar_lib/
 │
 ├─ simulation/                 simulation domainと具体environment
 │  ├─ environment.py           SimulationEnvironment / Resolver protocol
-│  ├─ resolver.py              ssh_remote / wokwi / mujocoのruntime組立て
+│  ├─ resolver.py              全setup IDから具体SimulationEnvironmentを組立て
 │  ├─ linux_systemd.py         Linux/systemd runtimeとartifact配置
 │  ├─ linux.py                 Linux runtime command builderとGPIO計画
 │  ├─ wokwi.py                 Wokwi runtime・project配置・process管理
 │  ├─ mujoco.py                MuJoCo runtimeとHTTP bridge hardware control
+│  ├─ pending.py               未実装操作を明示的なdomain errorにする共通stub
+│  ├─ renode.py                Renode runtimeのerror-only具体environment
+│  ├─ esp32_qemu.py            ESP32 QEMUのerror-only具体environment
+│  ├─ aws_ssm.py               AWS SSMのerror-only具体environment
 │  ├─ diagnostic.py            構造化diagnostic結果
 │  ├─ parse.py                 Linux diagnostic / GPIO出力parser
 │  ├─ control.py               hardware control protocolとLinux bridge実装
@@ -107,7 +111,7 @@ scripts/gar_lib/
 │     │  ├─ mujoco.py          MuJoCo Python packageの依存確認・導入
 │     │  ├─ renode_mcu.py      Renode / renode-testの導入
 │     │  ├─ esp32_qemu.py      Espressif QEMUの依存情報
-│     │  └─ aws_ssm.py         AWS CLI / SSM pluginの導入（runtime非対応）
+│     │  └─ aws_ssm.py         AWS CLI / SSM pluginの導入（runtimeはstub）
 │     └─ target/
 │        ├─ adb_usb.py         Linux ADBの依存確認・導入
 │        ├─ adb_win.py         Windows ADBの検出・設定
@@ -213,9 +217,9 @@ sim host start:
 | `ssh_remote` | 対応 | 対応 | 対応 | Linux/systemd runtime。EC2の場合もこのIDを使う |
 | `wokwi` | 対応 | 対応 | 未対応 | runtimeとartifact配置は実装済み。GPIO/panel resolverはない |
 | `mujoco` | 対応 | 対応 | 対応 | local processとHTTP bridgeを使用 |
-| `renode_mcu` | 対応 | 未接続 | 未接続 | 現在は導入と依存確認のみ |
-| `esp32_qemu_firmware` | 依存情報のみ | 未接続 | 未接続 | runtime resolver未実装 |
-| `aws_ssm` | 対応 | 未接続 | 未接続 | setup画面でも非推奨・runtime非対応と表示 |
+| `renode_mcu` | 対応 | stub接続 | 未接続 | 具体environmentを生成し、runtime操作時は明示的な未実装エラー |
+| `esp32_qemu_firmware` | 依存情報のみ | stub接続 | 未接続 | 具体environmentを生成し、runtime操作時は明示的な未実装エラー |
+| `aws_ssm` | 対応 | stub接続 | 未接続 | AWS channelまで組み立てるが、runtime操作は明示的な未実装エラー |
 
 `SimulationHostController`は現在AWS EC2だけです。これは`SimulationEnvironment`とは別軸で、
 workspaceの `ec2.host / instance_id / region` から生成されます。
@@ -265,9 +269,10 @@ workspaceの `ec2.host / instance_id / region` から生成されます。
 
 ### 優先度: 高
 
-1. **setup選択肢とruntime resolverの対応が一致していない**
-   - `renode_mcu`、`esp32_qemu_firmware`、`aws_ssm`は選択・保存できるが、`ConfigSimulationEnvironmentResolver`では生成できない。
-   - setup項目に `runtime_supported` のような明示的capabilityを持たせるか、runtime実装まで選択不能にする必要がある。
+1. **setup選択肢ごとのruntime成熟度を機械的に判定できない**
+   - `renode_mcu`、`esp32_qemu_firmware`、`aws_ssm`も`ConfigSimulationEnvironmentResolver`から固有のerror-only componentとして生成できるようになった。
+   - ただしsetup metadataから「実装済み」「stub接続」「非対応」を判定できず、現在は説明文と実装クラスに分散している。
+   - setup項目に `runtime_maturity` のような明示的capabilityを持たせ、表示とresolverの対応を検証できるようにする余地がある。
 
 2. **workspaceの接続種別とBuildEnvironment選択が独立しており、矛盾を作れる**
    - `connection.type`は `local / codespaces / network`、build側の設定は `selected_providers.codespace`の `local / github_codespaces`。
@@ -355,5 +360,6 @@ external systems
 ```
 
 `environments/registry`はこのruntime依存列とは別に、setup時の選択肢と依存導入だけを
-提供します。setup IDとruntime resolverの対応は、今後明示的な登録表またはcapabilityで
-検証できるようにするのが次の整理点です。
+提供します。全setup IDはruntime resolverから具体environmentへ接続されましたが、実装済みか
+error-only stubかという成熟度は、今後明示的な登録表またはcapabilityで検証できるようにするのが
+次の整理点です。

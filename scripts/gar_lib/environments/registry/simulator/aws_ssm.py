@@ -12,7 +12,10 @@ from scripts.gar_lib.environments.install import print_user_terminal_handoff, su
 class AwsSsmEnvironment(EnvironmentSetupOption):
     provider_id = "aws_ssm"
     display_name = "AWS SSM (非推奨)"
-    description = "現時点では Gapless Agent Runtime runtime 操作には未対応です。simulation は SSH Remote を使ってください"
+    description = (
+        "runtime componentは接続済みですが、各操作は現在stubです。"
+        "simulationにはSSH Remoteを使ってください"
+    )
     display_order = 20
     required_commands = ("aws", "session-manager-plugin")
 

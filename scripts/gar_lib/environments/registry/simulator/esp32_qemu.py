@@ -15,7 +15,7 @@ class Esp32QemuFirmwareEnvironment(EnvironmentSetupOption):
     display_name = "ESP32 QEMU Firmware"
     description = (
         "bootloader/partition/firmware artifact を flash image にまとめ、"
-        "Espressif QEMU で ESP32 firmware を起動します"
+        "Espressif QEMU で ESP32 firmware を起動します（runtime操作は現在stub）"
     )
     display_order = 15
     required_commands = ("qemu-system-xtensa",)

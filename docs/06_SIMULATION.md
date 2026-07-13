@@ -352,9 +352,10 @@ GAR が作成する launcher は既定で
 `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` を設定する。`libicu` を入れて通常の
 globalization mode で動かしたい場合は、実行前に環境変数を明示的に上書きする。
 
-現時点の Renode provider は install / 検証入口であり、`gar sim env start` などの
-runtime 統合は未配線。Linux runtime で CUSE/gpio-sim を動かす既存経路には
-`SSH Remote` provider を使う。
+現時点の Renode setup provider は install / 検証入口までを担当する。runtime側は
+`RenodeSimulationEnvironment`としてresolverへ接続済みだが、`.resc`生成やペリフェラル
+model起動は未実装のため、`gar sim env start`などは固有componentから明示的な未実装エラーを返す。
+Linux runtimeでCUSE/gpio-simを動かす既存経路には`SSH Remote` providerを使う。
 
 確認例:
 

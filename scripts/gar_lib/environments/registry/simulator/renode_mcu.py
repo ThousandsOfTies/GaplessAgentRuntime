@@ -7,10 +7,10 @@ Cortex-M / RISC-V などの MCU ファームウェアを未改変のまま仮想
 これにより、現行 PoC の「同一バイナリを sim と実機で動かす」価値を、
 Linux SBC だけでなく MCU / ベアメタル領域へ拡張できる。
 
-本ファイルが担うのは第一弾として「setup で選択 → Renode を導入 → 検証」まで。
-`gar sim env` ランタイムを Renode 上で回す統合（.resc 生成・ペリフェラル
-モデルの起動など）は今後の作業で、現時点ではランタイム系メソッドは
-未配線であることを明示するスタブにしている（既存の ssh_remote を使うこと）。
+本ファイルが担うのは「setup で選択 → Renode を導入 → 検証」まで。
+runtime componentは`simulation/renode.py`にありresolverへ接続済みだが、
+`.resc`生成・ペリフェラルモデルの起動などは今後の作業である。現時点の
+runtime componentは各操作で明示的な未実装エラーを返す。
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class RenodeMcuEnvironment(EnvironmentSetupOption):
     display_name = "Renode (MCU/ベアメタル)"
     description = (
         "Cortex-M / RISC-V などの MCU ファームを命令セットエミュレータで仮想実行します"
-        "（未改変バイナリを sim と実機で共有。ランタイム統合は今後対応）"
+        "（未改変バイナリを sim と実機で共有。runtime操作は現在stub）"
     )
     display_order = 10
     required_commands = ("renode", "renode-test")
