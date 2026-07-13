@@ -3,16 +3,9 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import shlex
-import sys
 import textwrap
 from urllib.parse import quote
-
-from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.simulation.base import SimCommandBuilder, SimEnvProcessor
-from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 
 # Linux constants
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
@@ -143,8 +136,8 @@ def _hardware_csv_install_commands(hw_definition: dict[str, list[dict[str, str]]
         commands.append(_sudo_write_file_command(f"{GAR_HARDWARE_DIR}/{name}.csv", content, mode="0644"))
     return commands
 
-def gpio_sim_plan(hw_definition: dict[str, list[dict[str, str]]] | None = None) -> dict:
-    hw = hw_definition or load_hw_definition()
+def gpio_sim_plan(hw_definition: dict[str, list[dict[str, str]]]) -> dict[str, object]:
+    hw = hw_definition
     rows = _gpio_rows(hw)
     max_line = max([int(row["line"]) for row in rows], default=53)
     lines = []
@@ -170,11 +163,11 @@ def gpio_sim_plan(hw_definition: dict[str, list[dict[str, str]]] | None = None) 
     }
 
 
-class LinuxSimCommandBuilder(SimCommandBuilder):
+class LinuxSystemdCommandBuilder:
     """Generates shell commands for Linux/systemd target."""
 
-    def build_gpio_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_gpio_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         gpio_start_script = "#!/bin/sh\n" + self.build_gpio_sim_setup(hw) + "\n"
         gpio_stop_script = "#!/bin/sh\n" + self.build_gpio_sim_teardown(hw) + "\n"
         gpio_unit = textwrap.dedent(
@@ -206,8 +199,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
         ]
         return "; ".join(commands)
 
-    def build_sim_diag_json(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_sim_diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         devices = _diag_devices(hw) or list(SIM_DIAG_DEVICES)
         return (
             'echo "@@PROC@@"; '
@@ -219,9 +212,9 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             "curl -s http://127.0.0.1:8080/api/state || true"
         )
 
-    def build_gpio_sim_setup(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    def build_gpio_sim_setup(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
         from pathlib import Path
-        hw = hw_definition or load_hw_definition()
+        hw = hw_definition
         rows = _gpio_rows(hw)
         gpiochip_path = _gpiochip_path(hw)
         gpiochip_name = Path(gpiochip_path).name
@@ -302,8 +295,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             """
         ).strip()
 
-    def build_gpio_sim_teardown(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_gpio_sim_teardown(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         gpiochip_path = _gpiochip_path(hw)
         return textwrap.dedent(
             f"""
@@ -333,8 +326,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             """
         ).strip()
 
-    def build_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_systemd_install(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         services = _runtime_services(hw)
 
         bridge_start_script = textwrap.dedent(
@@ -475,8 +468,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
         ]
         return "; ".join(commands)
 
-    def build_systemd_start(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_systemd_start(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         services = " ".join(shlex.quote(service) for service in _runtime_services(hw))
         return (
             self.build_systemd_install(hw)
@@ -490,8 +483,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             + 'pgrep -af "bridge.py|cuse_i2c|cuse_spi"'
         )
 
-    def build_systemd_stop(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_systemd_stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         services = " ".join(shlex.quote(service) for service in reversed(_runtime_services(hw)))
         return (
             f"sudo systemctl stop gar-sim.target {services} >/dev/null 2>&1 || true; "
@@ -501,14 +494,14 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             'echo "Simulation device runtime stopped."'
         )
 
-    def build_sim_start(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    def build_sim_start(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
         return self.build_systemd_start(hw_definition)
 
-    def build_sim_stop(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
+    def build_sim_stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
         return self.build_systemd_stop(hw_definition)
 
-    def build_sim_status(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_sim_status(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         return (
             'echo "--- processes ---"; '
             'pgrep -af "bridge.py|cuse_i2c|cuse_spi" || true; '
@@ -530,8 +523,8 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             "tail -n 80 /tmp/bridge.log /tmp/cuse.log /tmp/cuse_spi.log 2>/dev/null || true"
         )
 
-    def build_gpio_runtime_status(self, hw_definition: dict[str, list[dict[str, str]]] | None = None) -> str:
-        hw = hw_definition or load_hw_definition()
+    def build_gpio_runtime_status(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        hw = hw_definition
         gpiochip_path = _gpiochip_path(hw)
         return (
             'echo "@@SERVICE@@"; '
@@ -552,6 +545,9 @@ class LinuxSimCommandBuilder(SimCommandBuilder):
             'echo "@@GPIOCHIPS@@"; '
             "ls -1 /dev/gpiochip* 2>/dev/null || true"
         )
+
+    def build_gpio_sim_check(self) -> str:
+        return SIM_GPIO_SIM_CHECK_COMMAND
 
     def build_panel(self, action: str, params: dict) -> str:
         base = PANEL_BASE_URL
@@ -592,114 +588,3 @@ def _button_line(params: dict) -> int:
     if key in aliases:
         return aliases[key]
     raise ValueError(f"unknown button: {value}")
-
-
-class LinuxSystemdSimEnvProcessor(SimEnvProcessor):
-    def __init__(self, dev_env: DevEnvironment, host: str, builder: SimCommandBuilder):
-        self.dev_env = dev_env
-        self.host = host
-        self.builder = builder
-
-    def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        cmd = self.builder.build_sim_start(hw_definition)
-        return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-
-    def stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        cmd = self.builder.build_sim_stop(hw_definition)
-        return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-
-    def status(self, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        if json_output:
-            return self.panel("state", params={}, json_output=True)
-        cmd = self.builder.build_sim_status(hw_definition)
-        return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-
-    def log(self) -> int:
-        cmd = self.builder.build_sim_log()
-        return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-
-    def diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        cmd = self.builder.build_sim_diag_json(hw_definition)
-        result = self.dev_env.run_remote(self.host, cmd, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            payload = {
-                "processes": [], "devices": {}, "api": None, "ok": False,
-                "error": f"ssh exited {result.returncode}", "stderr": result.stderr.strip()
-            }
-        else:
-            payload = parse_sim_diag(result.stdout)
-            payload["host"] = self.host
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0 if payload.get("ok") else 1
-
-    def gpio_sim_check(self, json_output: bool = False) -> int:
-        cmd = SIM_GPIO_SIM_CHECK_COMMAND
-        result = self.dev_env.run_remote(self.host, cmd, capture_output=json_output, text=True, check=False)
-        if not json_output:
-            return result.returncode
-        if result.returncode != 0:
-            payload = {"kernel": None, "module_available": False, "ok": False, "error": f"ssh exited {result.returncode}", "stderr": result.stderr.strip()}
-        else:
-            payload = parse_gpio_sim_check(result.stdout)
-            payload["host"] = self.host
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0 if payload.get("ok") else 1
-
-    def gpio_command(self, command: str, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        if command == "install":
-            cmd = self.builder.build_gpio_systemd_install(hw_definition)
-            return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-        if command == "start":
-            cmd = self.builder.build_gpio_systemd_install(hw_definition) + "; sudo systemctl restart gar-gpio-sim.service; sudo systemctl --no-pager --full status gar-gpio-sim.service"
-            return self.dev_env.run_remote(self.host, cmd, check=False).returncode
-        if command == "stop":
-            return self.dev_env.run_remote(self.host, "sudo systemctl stop gar-gpio-sim.service", check=False).returncode
-        if command == "status":
-            cmd = self.builder.build_gpio_runtime_status(hw_definition)
-            result = self.dev_env.run_remote(self.host, cmd, check=False, capture_output=json_output, text=True)
-            if not json_output:
-                return result.returncode
-            if result.returncode != 0:
-                payload = {"ok": False, "error": f"ssh exited {result.returncode}", "stderr": result.stderr.strip()}
-            else:
-                payload = parse_gpio_runtime_status(result.stdout)
-                payload["host"] = self.host
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return result.returncode if result.returncode != 0 else (0 if payload["ok"] else 1)
-
-        if command == "plan":
-            payload = gpio_sim_plan(hw_definition)
-            if json_output:
-                print(json.dumps(payload, ensure_ascii=False, indent=2))
-            else:
-                print(f"Driver:  {payload['driver']}")
-                print(f"Device:  {payload['target_device']}")
-                print(f"Lines:   {payload['num_lines']}")
-                print(f"Service: {payload['service']}")
-                for line in payload["lines"]:
-                    print(
-                        f"  GPIO{line['line']}: {line['label']} "
-                        f"{line['direction']} {line['role']} {line['sim_control']}".rstrip()
-                    )
-            return 0
-
-        print(f"unknown sim env gpio command: {command}", file=sys.stderr)
-        return 1
-
-    def panel(self, action: str, params: dict, json_output: bool = False) -> int:
-        cmd = self.builder.build_panel(action, params)
-        if action == "state":
-            result = self.dev_env.run_remote(self.host, cmd, check=False, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(result.stderr.strip(), file=sys.stderr)
-                return result.returncode
-            raw = result.stdout.strip()
-            if json_output:
-                print(raw)
-            else:
-                try:
-                    print(json.dumps(json.loads(raw), ensure_ascii=False, indent=2))
-                except json.JSONDecodeError:
-                    print(raw)
-            return 0
-        return self.dev_env.run_remote(self.host, cmd, check=False).returncode

@@ -29,3 +29,16 @@ class LocalBuildEnvironment:
         if result.returncode != 0:
             raise GarDomainError(f"{kind.value} build が失敗しました (exit {result.returncode})")
         return self.artifacts.latest(kind, workspace)
+
+    def clean(self, kind: ArtifactKind, workspace: Workspace) -> None:
+        spec = self.specs.for_artifact(kind, workspace)
+        script = workspace.local_root / spec.script
+        if not script.is_file():
+            raise GarDomainError(f"product build hook が見つかりません: {script}")
+        result = subprocess.run(
+            [str(script), "clean"],
+            cwd=workspace.local_root,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise GarDomainError(f"{kind.value} clean が失敗しました (exit {result.returncode})")

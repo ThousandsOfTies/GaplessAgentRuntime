@@ -11,8 +11,9 @@ from scripts.gar_lib.config import PROJECT_ROOT
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.environment import SimulationEnvironment
-from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder
+from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder
 from scripts.gar_lib.simulation.linux_systemd import LinuxSystemdSimulationEnvironment
+from scripts.gar_lib.simulation.mujoco import MujocoSimulationEnvironment
 from scripts.gar_lib.simulation.wokwi import WokwiSimulationEnvironment
 
 
@@ -26,7 +27,7 @@ class ConfigSimulationEnvironmentResolver:
             return LinuxSystemdSimulationEnvironment(
                 command_channel=SshCommandChannel(host),
                 file_channel=ScpFileChannel(host),
-                command_builder=LinuxSimCommandBuilder(),
+                command_builder=LinuxSystemdCommandBuilder(),
                 runtime_host=host,
             )
         if environment_id == "wokwi":
@@ -38,4 +39,6 @@ class ConfigSimulationEnvironmentResolver:
             else:
                 project_dir = PROJECT_ROOT / ".gar" / "wokwi" / workspace.id
             return WokwiSimulationEnvironment(project_dir, LocalProcessChannel())
+        if environment_id == "mujoco":
+            return MujocoSimulationEnvironment(process_channel=LocalProcessChannel())
         raise GarDomainError(f"simulation environmentはまだ未対応です: {environment_id or '(未設定)'}")

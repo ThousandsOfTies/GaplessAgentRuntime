@@ -123,7 +123,7 @@ gar sim env diag --json   # プロセス・デバイス・API 状態
 ```bash
 gar sim env build                         # MJCF を読み込めるか検証
 gar sim env start --no-port-forward       # MuJoCo viewer をローカルで起動
-gar sim env status --json
+gar sim env diag --json
 gar sim env log
 gar sim env stop --no-port-forward
 ```

@@ -26,11 +26,7 @@ from scripts.gar_lib.cli import (
     run_ec2_command,
     run_esp32_build_command,
     run_esp32_flash_command,
-    run_gpio_sim_check,
     run_setup,
-    run_sim_command,
-    run_sim_deploy_command,
-    run_sim_gpio_command,
     run_sim_infra_command,
     run_target_deploy_command,
     run_terminal_request,
@@ -41,9 +37,9 @@ from scripts.gar_lib.cli import (
     stop_code_codespace,
     update_ssh_config_hostname,
 )
-from scripts.gar_lib.commands.sim import run_sim_panel
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
+    SIM_CLEAN,
     SIM_RUNTIME_BUILD,
     SIM_RUNTIME_DEPLOY,
     TARGET_BUILD,
@@ -53,7 +49,7 @@ from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulator.ssh_remote import SshRemoteEnvironment
 from scripts.gar_lib.environments.registry.target.esp32_esptool import Esp32EsptoolEnvironment
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
-from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, gpio_sim_plan
+from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 
 
@@ -734,23 +730,6 @@ class GarCliTest(unittest.TestCase):
             self.assertEqual("echo hello", request["command"])
             self.assertEqual(str(tmp_path), request["cwd"])
 
-    def test_sim_status_uses_configured_ec2_host_when_host_is_omitted(self) -> None:
-        config = {
-            "selected_providers": {},
-            "ec2": {"host": "configured-ec2"},
-        }
-
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
-            mock.patch("scripts.gar_lib.commands.sim.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.gar_lib.commands.sim.show_sim_state", return_value=0) as state,
-        ):
-            result = run_sim_command("status")
-
-        self.assertEqual(0, result)
-        status.assert_called_once_with("configured-ec2")
-        state.assert_called_once_with("configured-ec2")
-
     def test_ec2_status_uses_configured_instance_and_region(self) -> None:
         config = {
             "selected_providers": {},
@@ -1093,112 +1072,6 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("usbipd bind --busid 4-2", err_buffer.getvalue())
         self.assertIn("gar usb attach --busid 4-2", err_buffer.getvalue())
 
-    def test_sim_start_only_starts_device_runtime(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            run.return_value.returncode = 0
-
-            result = run_sim_command("start", host="ec2-test", port_forward=False)
-
-        self.assertEqual(0, result)
-        remote_command = run.call_args.args[1]
-        self.assertIn("bridge.py", remote_command)
-        self.assertIn("cuse_i2c", remote_command)
-        self.assertIn("gar-sim.target", remote_command)
-        self.assertIn("systemctl start", remote_command)
-        self.assertIn("/etc/gar/hardware", remote_command)
-        self.assertIn("/usr/local/sbin/cuse_i2c", remote_command)
-        self.assertIn("/usr/local/sbin/cuse_spi", remote_command)
-        self.assertIn("/usr/local/lib/gar/web-bridge/bridge.py", remote_command)
-        self.assertIn("/run/gar", remote_command)
-        self.assertIn("GAR_HW_SIM_SOCK=/run/gar/hw_sim.sock", remote_command)
-        self.assertNotIn("sensor_demo", remote_command)
-        self.assertNotIn("LD_PRELOAD", remote_command)
-
-    def test_sim_start_prepares_gpio_sim_as_gpiochip0(self) -> None:
-        hw_definition = {
-            "gpio": [
-                {
-                    "name": "button_a",
-                    "chip": "/dev/gpiochip0",
-                    "line": "17",
-                    "direction": "input",
-                    "role": "button",
-                    "sim_control": "pull",
-                },
-                {
-                    "name": "status_led",
-                    "chip": "/dev/gpiochip0",
-                    "line": "18",
-                    "direction": "output",
-                    "role": "led",
-                    "sim_control": "value",
-                },
-            ],
-        }
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value=hw_definition),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            run.return_value.returncode = 0
-
-            result = run_sim_command("start", host="ec2-test", port_forward=False)
-
-        self.assertEqual(0, result)
-        remote_command = run.call_args.args[1]
-        self.assertIn("modprobe gpio-sim", remote_command)
-        self.assertIn("mount --bind", remote_command)
-        self.assertIn("/dev/gpiochip0", remote_command)
-        self.assertIn("BTN_GPIO17", remote_command)
-        self.assertIn("LED_GPIO18", remote_command)
-
-    def test_sim_start_uses_hardware_csv_for_runtime_devices(self) -> None:
-        hw_definition = {
-            "gpio": [
-                {
-                    "name": "test_button",
-                    "chip": "/dev/gpiochip2",
-                    "line": "5",
-                    "direction": "input",
-                    "role": "button",
-                    "sim_control": "pull",
-                },
-                {
-                    "name": "test_led",
-                    "chip": "/dev/gpiochip2",
-                    "line": "6",
-                    "direction": "output",
-                    "role": "led",
-                    "sim_control": "value",
-                },
-            ],
-            "i2c": [{"dev": "/dev/i2c-2"}],
-            "spi": [{"dev": "/dev/spidev1.0"}],
-        }
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value=hw_definition),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            run.return_value.returncode = 0
-
-            result = run_sim_command("start", host="ec2-test", port_forward=False)
-
-        self.assertEqual(0, result)
-        remote_command = run.call_args.args[1]
-        self.assertIn("/dev/gpiochip2", remote_command)
-        self.assertIn("BTN_GPIO5", remote_command)
-        self.assertIn("LED_GPIO6", remote_command)
-        self.assertIn("--devname=%i", remote_command)
-        self.assertIn("gar-cuse-i2c@i2c-2.service", remote_command)
-        self.assertIn("gar-cuse-spi@spidev1.0.service", remote_command)
-
     def test_sim_gpio_plan_builds_gpio_sim_contract(self) -> None:
         hw_definition = {
             "gpio": [
@@ -1228,222 +1101,6 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(54, plan["num_lines"])
         self.assertEqual("BTN_GPIO5", plan["lines"][0]["label"])
         self.assertEqual("LED_GPIO6", plan["lines"][1]["label"])
-
-    def test_sim_gpio_start_installs_and_restarts_gpio_service(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            run.return_value.returncode = 0
-
-            result = run_sim_gpio_command("start", host="ec2-test")
-
-        self.assertEqual(0, result)
-        remote_command = run.call_args.args[1]
-        self.assertIn("modprobe gpio-sim", remote_command)
-        self.assertIn("/usr/local/sbin/gar-gpio-sim-start", remote_command)
-        self.assertIn("/etc/systemd/system/gar-gpio-sim.service", remote_command)
-        self.assertIn("systemctl restart gar-gpio-sim.service", remote_command)
-        self.assertNotIn("gar-bridge.service", remote_command)
-        self.assertNotIn("cuse_i2c", remote_command)
-
-    def test_sim_stop_tears_down_gpio_sim(self) -> None:
-        with mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run:
-            with mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment):
-                run.return_value.returncode = 0
-
-                result = run_sim_command("stop", host="ec2-test", stop_port_forward=False)
-
-        self.assertEqual(0, result)
-        remote_command = run.call_args.args[1]
-        self.assertIn("systemctl stop gar-sim.target", remote_command)
-        self.assertIn("gar-gpio-sim.service", remote_command)
-        self.assertIn("sudo pkill -x cuse_i2c", remote_command)
-        self.assertIn("pkill -f '[/]web-bridge/bridge.py'", remote_command)
-
-    def test_sim_start_writes_terminal_profile(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            settings = home / "settings.json"
-
-            with (
-                mock.patch("scripts.gar_lib.commands.sim.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-                mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-            ):
-                run.return_value.returncode = 0
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    result = run_sim_command(
-                        "start",
-                        host="ec2-test",
-                        settings=str(settings),
-                        port_forward=False,
-                    )
-
-            self.assertEqual(0, result)
-            terminal = home / ".local" / "bin" / "gar-sim-terminal"
-            self.assertIn("ssh -F", terminal.read_text(encoding="utf-8"))
-            self.assertIn("ec2-test", terminal.read_text(encoding="utf-8"))
-            profile = json.loads(settings.read_text(encoding="utf-8"))
-            self.assertEqual(
-                {"path": str(terminal)},
-                profile["terminal.integrated.profiles.linux"]["EC2 Simulation"],
-            )
-
-    def test_sim_start_starts_port_forward(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote") as run,
-            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib.commands.sim.start_sim_port_forward", return_value=0) as forward,
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            run.return_value.returncode = 0
-
-            result = run_sim_command("start", host="ec2-test")
-
-        self.assertEqual(0, result)
-        forward.assert_called_once_with("ec2-test")
-
-    def test_sim_status_checks_port_forward(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.status_sim_port_forward", return_value=0) as status,
-            mock.patch("scripts.gar_lib.commands.sim.show_sim_state", return_value=0) as state,
-        ):
-            result = run_sim_command("status", host="ec2-test")
-
-        self.assertEqual(0, result)
-        status.assert_called_once_with("ec2-test")
-        state.assert_called_once_with("ec2-test")
-
-    def test_sim_status_json_returns_bridge_state(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-            mock.patch("scripts.gar_lib.simulation.linux.LinuxSystemdSimEnvProcessor.panel", return_value=0) as panel,
-        ):
-            result = run_sim_command("status", host="ec2-test", json_output=True)
-
-        self.assertEqual(0, result)
-        panel.assert_called_once_with("state", params={}, json_output=True)
-
-    def test_deploy_sim_copies_artifacts_to_configured_ec2_host(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "files" / "bin").mkdir(parents=True)
-            (root / "files" / "bin" / "sensor_demo").write_text("", encoding="utf-8")
-            (root / "files" / "cuse_i2c").write_text("", encoding="utf-8")
-            (root / "files" / "web-bridge").mkdir(parents=True)
-            (root / "files" / "web-bridge" / "bridge.py").write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "sensor-demo",
-                        "deploy": {
-                            "app": {
-                                "files": [
-                                    {
-                                        "src": "files/bin/sensor_demo",
-                                        "dest": "~/sensor_demo",
-                                        "mode": "0755",
-                                    },
-                                ]
-                            },
-                            "sim_env": {
-                                "files": [
-                                    {
-                                        "src": "files/cuse_i2c",
-                                        "dest": "~/cuse_i2c",
-                                        "mode": "0755",
-                                    },
-                                    {
-                                        "src": "files/web-bridge",
-                                        "dest": "~/web-bridge",
-                                    },
-                                ]
-                            },
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            config = {"selected_providers": {}, "ec2": {"host": "configured-ec2"}}
-            with (
-                mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-                mock.patch("subprocess.run") as run,
-            ):
-                run.return_value.returncode = 0
-
-                result = run_sim_deploy_command(str(root), host=None)
-
-        self.assertEqual(0, result)
-        self.assertEqual(2, run.call_count)
-        file_copy = run.call_args_list[0].args[0]
-        file_install = run.call_args_list[1].args[0]
-        self.assertEqual("scp", file_copy[0])
-        self.assertIn("configured-ec2:/tmp/gar-deploy-", file_copy[-1])
-        self.assertEqual(["ssh", "-F"], file_install[:2])
-        self.assertIn("configured-ec2", file_install)
-        self.assertIn("ConnectTimeout=10", file_install)
-        self.assertIn('"${HOME}"/', file_install[-1])
-        self.assertIn("chmod '0755'", file_install[-1])
-
-    def test_sim_env_deploy_ssh_failure_requests_terminal_bridge_login(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "files").mkdir()
-            (root / "files" / "cuse_i2c").write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "sim-env",
-                        "deploy": {
-                            "sim_env": {
-                                "files": [{"src": "files/cuse_i2c", "dest": "~/cuse_i2c"}]
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            config = {
-                "selected_providers": {"simulator": "ssh_remote"},
-                "ec2": {"host": "vibecode-graviton", "region": "ap-northeast-1"},
-            }
-            completed = mock.Mock(returncode=255)
-            stderr = io.StringIO()
-
-            with (
-                mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-                mock.patch("scripts.gar_lib.commands.sim.get_provider", return_value=SshRemoteEnvironment),
-                mock.patch("scripts.gar_lib.commands.sim.set_active_workspace_root"),
-                mock.patch("scripts.gar_lib.environments.ssh_recovery.load_config", return_value=config),
-                mock.patch(
-                    "scripts.gar_lib.environments.ssh_recovery.run_terminal_request", return_value=0
-                ) as terminal_request,
-                mock.patch("subprocess.run", return_value=completed),
-                contextlib.redirect_stderr(stderr),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
-                result = run_sim_deploy_command(
-                    str(root),
-                    host=None,
-                    section="sim_env",
-                    workspace="Local/GarStreamTx",
-                )
-
-        self.assertEqual(255, result)
-        terminal_request.assert_called_once_with(
-            command_parts=["aws", "login", "--remote", "--region", "ap-northeast-1"],
-            title="GAR: AWS ログイン（SSH 接続を復旧）",
-            cwd=None,
-        )
-        message = stderr.getvalue()
-        self.assertIn("VS Code Terminal Bridge", message)
-        self.assertIn("gar sim start --workspace Local/GarStreamTx", message)
-        self.assertIn("gar sim env deploy --workspace Local/GarStreamTx", message)
 
     def test_ssh_remote_connection_failure_requests_terminal_bridge_without_sim_deploy(self) -> None:
         config = {"ec2": {"region": "ap-northeast-1"}}
@@ -1590,30 +1247,8 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(["adb", "devices"], run.call_args_list[1].args[0])
         self.assertEqual(["adb", "-s", "raspi", "push"], run.call_args_list[2].args[0][:4])
 
-    def test_sim_deploy_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_deploy_command", return_value=0) as run_deploy:
-            result = main(["sim", "deploy", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_deploy.assert_called_once_with(
-            None,
-            host="ec2-test",
-            section="app",
-        )
-
-    def test_sim_env_deploy_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_deploy_command", return_value=0) as run_deploy:
-            result = main(["sim", "env", "deploy", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_deploy.assert_called_once_with(
-            None,
-            host="ec2-test",
-            section="sim_env",
-        )
-
     def test_sim_env_deploy_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_deploy:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_deploy:
             result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -1624,7 +1259,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
@@ -1635,7 +1270,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_uses_product_provider_environment(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_product_build:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_product_build:
             result = main(["sim", "build"])
 
         self.assertEqual(0, result)
@@ -1646,7 +1281,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_accepts_setup_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
@@ -1656,8 +1291,8 @@ class GarCliTest(unittest.TestCase):
             retry_command="gar sim build --workspace local/GarStreamRx",
         )
 
-    def test_sim_env_build_uses_next_command_path(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_command", return_value=0) as run_build:
+    def test_sim_env_build_uses_environment_command_path(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
             result = main(["sim", "env", "build", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -1668,54 +1303,22 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_clean_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_product_sim_build", return_value=0) as run_product_build:
+        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
             result = main(["sim", "build", "clean", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
-        run_product_build.assert_called_once_with(workspace_root="local/GarStreamRx", clean=True)
-
-    def test_sim_env_build_uses_product_hook_for_ssh_remote(self) -> None:
-        from scripts.gar_lib.commands.sim import run_sim_env_build_command
-
-        with (
-            mock.patch("scripts.gar_lib.config._ACTIVE_WORKSPACE_ROOT", None),
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-            mock.patch("scripts.gar_lib.commands.sim.run_product_sim_env_build", return_value=0) as run_build,
-        ):
-            result = run_sim_env_build_command(workspace_root="Local/GarStreamTx")
-
-        self.assertEqual(0, result)
-        run_build.assert_called_once_with(workspace_root="Local/GarStreamTx")
+        run_sim.assert_called_once_with(
+            SIM_CLEAN,
+            workspace_selector="local/GarStreamRx",
+            retry_command="gar sim build clean --workspace local/GarStreamRx",
+        )
 
     def test_sim_build_rejects_workspace_root_option(self) -> None:
         with self.assertRaises(SystemExit):
             main(["sim", "build", "--workspace-root", "/tmp/product"])
 
-    def test_sim_vm_commands_are_available_from_cli(self) -> None:
-        cases = [
-            (["sim", "start", "--host", "ec2-test", "--instance-id", "i-test", "--region", "ap-test-1"], "start"),
-            (["sim", "stop", "--host", "ec2-test"], "stop"),
-            (["sim", "status", "--host", "ec2-test"], "status"),
-        ]
-
-        for argv, ec2_command in cases:
-            with self.subTest(argv=argv):
-                with (
-                    mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-                    mock.patch(
-                        "scripts.gar_lib.environments.registry.simulator.aws_ec2.run_ec2_command",
-                        return_value=0,
-                    ) as run_ec2,
-                ):
-                    result = main(argv)
-
-                self.assertEqual(0, result)
-                run_ec2.assert_called_once()
-                self.assertEqual(ec2_command, run_ec2.call_args.args[0])
-                self.assertEqual("ec2-test", run_ec2.call_args.kwargs["host"])
-
     def test_sim_status_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
             result = main(["sim", "status", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -1729,7 +1332,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_start_workspace_uses_host_controller_options(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
             result = main(
                 [
                     "sim",
@@ -1752,7 +1355,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_stop_workspace_uses_host_controller(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
             result = main(["sim", "stop", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -2750,35 +2353,8 @@ class GarCliTest(unittest.TestCase):
                 [call.args[0] for call in run.call_args_list],
             )
 
-    def test_sim_start_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(
-                [
-                    "sim",
-                    "env",
-                    "start",
-                    "--host",
-                    "ec2-test",
-                    "--settings",
-                    "settings.json",
-                    "--profile-name",
-                    "Simulation",
-                ]
-            )
-
-        self.assertEqual(0, result)
-        run_sim.assert_called_once_with(
-            "start",
-            host="ec2-test",
-            settings="settings.json",
-            profile_name="Simulation",
-            port_forward=True,
-            stop_port_forward=True,
-            json_output=False,
-        )
-
     def test_sim_cli_uses_workspace_lifecycle_by_default(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_sim_lifecycle", return_value=0) as run_sim:
+        with mock.patch("scripts.gar_lib.cli.run_sim_lifecycle", return_value=0) as run_sim:
             result = main(["sim", "env", "start", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -2789,21 +2365,6 @@ class GarCliTest(unittest.TestCase):
             settings=None,
             profile_name=None,
             manage_port_forward=True,
-        )
-
-    def test_sim_status_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "env", "status", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_sim.assert_called_once_with(
-            "status",
-            host="ec2-test",
-            settings=None,
-            profile_name=None,
-            port_forward=True,
-            stop_port_forward=True,
-            json_output=False,
         )
 
     def test_setup_can_store_default_ec2_host(self) -> None:
@@ -3120,44 +2681,6 @@ class GarCliTest(unittest.TestCase):
         )
         self.assertTrue((PROJECT_ROOT / "scripts" / "gar_lib").is_dir())
 
-    def test_deploy_rejects_invalid_mode_in_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "files").mkdir()
-            (root / "files" / "x").write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "bad-mode",
-                        "deploy": {
-                            "app": {
-                                "files": [
-                                    {
-                                        "src": "files/x",
-                                        "dest": "~/x",
-                                        "mode": "rwx",  # invalid: not octal
-                                    }
-                                ]
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            config = {"selected_providers": {}, "ec2": {"host": "h"}}
-            with (
-                mock.patch("scripts.gar_lib.commands.sim.load_config", return_value=config),
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-                mock.patch("subprocess.run") as run,
-                contextlib.redirect_stderr(io.StringIO()),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
-                result = run_sim_deploy_command(str(root), host=None)
-
-            self.assertNotEqual(0, result)
-            run.assert_not_called()
-
     def test_terminal_gc_removes_old_processed_requests(self) -> None:
         from scripts.gar_lib.cli import run_terminal_gc
 
@@ -3282,150 +2805,35 @@ class GarCliTest(unittest.TestCase):
         )
         self.assertTrue(payload["ok"])
 
-    def test_gpio_sim_check_json_outputs_machine_readable_payload(self) -> None:
-        completed = mock.Mock(
-            returncode=0,
-            stdout=(
-                "@@KERNEL@@\n"
-                "6.8.0-test\n"
-                "@@MODINFO@@\n"
-                "0\n"
-                "modinfo: ERROR: Module gpio-sim not found.\n"
-                "@@CONFIG@@\n"
-                "CONFIG_GPIO_SIM=(not found)\n"
-                "@@CONFIGFS@@\n"
-                "1\n"
-                "@@DEV@@\n"
-            ),
-            stderr="",
-        )
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_gpio_sim_check("ec2-test", json_output=True)
-
-        self.assertEqual(1, result)
-        self.assertIn("gpio-sim", run.call_args.args[1])
-        payload = json.loads(output.getvalue())
-        self.assertEqual("ec2-test", payload["host"])
-        self.assertEqual("6.8.0-test", payload["kernel"])
-        self.assertFalse(payload["module_available"])
-        self.assertFalse(payload["ok"])
-
-    def test_sim_gpio_status_json_outputs_machine_readable_payload(self) -> None:
-        completed = mock.Mock(
-            returncode=0,
-            stdout=(
-                "@@SERVICE@@\n"
-                "active\n"
-                "@@DEVICE@@\n"
-                "/dev/gpiochip0 1\n"
-                "@@MOUNT@@\n"
-                "0\n"
-                "@@CONFIGFS@@\n"
-                "1\n"
-                "1\n"
-                "gpiochip0\n"
-                "@@GPIOCHIPS@@\n"
-                "/dev/gpiochip0\n"
-            ),
-            stderr="",
-        )
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-            mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=SshRemoteEnvironment),
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_sim_gpio_command("status", host="ec2-test", json_output=True)
-
-        self.assertEqual(0, result)
-        self.assertIn("@@SERVICE@@", run.call_args.args[1])
-        payload = json.loads(output.getvalue())
-        self.assertEqual("ec2-test", payload["host"])
-        self.assertTrue(payload["ok"])
-        self.assertEqual("gpiochip0", payload["configfs"]["chip_name"])
-
-    def test_sim_diag_json_outputs_machine_readable_payload(self) -> None:
-        completed = mock.Mock(
-            returncode=0,
-            stdout=(
-                "@@PROC@@\n"
-                "1234 bridge.py\n"
-                "@@DEV@@\n"
-                "/dev/i2c-1 1\n"
-                "/dev/gpiochip0 0\n"
-                "/dev/spidev0.0 0\n"
-                "@@API@@\n"
-                '{"led18": 1}\n'
-            ),
-            stderr="",
-        )
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"selected_providers": {}, "ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_sim_command("diag", json_output=True)
-
-        self.assertEqual(0, result)
-        self.assertIn("@@PROC@@", run.call_args.args[1])
-        payload = json.loads(output.getvalue())
-        self.assertEqual("ec2-test", payload["host"])
-        self.assertTrue(payload["ok"])
-        self.assertEqual({"led18": 1}, payload["api"])
-
-    def test_gpio_sim_check_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "env", "gpio-sim-check", "--json", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_sim.assert_called_once_with(
-            "gpio-sim-check",
-            host="ec2-test",
-            settings=None,
-            profile_name=None,
-            port_forward=True,
-            stop_port_forward=True,
-            json_output=True,
-        )
-
     def test_sim_env_gpio_start_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
-            result = main(["sim", "env", "gpio", "start", "--host", "ec2-test"])
+        with mock.patch("scripts.gar_lib.cli.run_sim_hardware_command", return_value=0) as run_gpio:
+            result = main(
+                ["sim", "env", "gpio", "start", "--workspace", "Network/Product"]
+            )
 
         self.assertEqual(0, result)
-        run_gpio.assert_called_once_with("start", host="ec2-test", json_output=False)
+        run_gpio.assert_called_once_with(
+            "start",
+            workspace_selector="Network/Product",
+            retry_command="gar sim env gpio start --workspace Network/Product",
+            json_output=False,
+        )
 
     def test_sim_env_gpio_plan_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_gpio_command", return_value=0) as run_gpio:
+        with mock.patch("scripts.gar_lib.cli.run_sim_hardware_command", return_value=0) as run_gpio:
             result = main(["sim", "env", "gpio", "plan", "--json"])
 
         self.assertEqual(0, result)
-        run_gpio.assert_called_once_with("plan", host=None, json_output=True)
-
-    def test_sim_diag_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "env", "diag", "--json", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_sim.assert_called_once_with(
-            "diag",
-            host="ec2-test",
-            settings=None,
-            profile_name=None,
-            port_forward=True,
-            stop_port_forward=True,
+        run_gpio.assert_called_once_with(
+            "plan",
+            workspace_selector=None,
+            retry_command="gar sim env gpio plan",
             json_output=True,
         )
 
     def test_sim_diag_json_without_explicit_host_uses_workspace_environment(self) -> None:
         with (
-            mock.patch("scripts.gar_lib.cli.run_next_sim_diagnostic", return_value=0) as run_diag,
+            mock.patch("scripts.gar_lib.cli.run_sim_diagnostic", return_value=0) as run_diag,
             mock.patch("scripts.gar_lib.cli.run_sim_command") as legacy_run,
         ):
             result = main(
@@ -3436,57 +2844,33 @@ class GarCliTest(unittest.TestCase):
         run_diag.assert_called_once_with(
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim env diag --json --workspace Local/GarStreamTx",
+            json_output=True,
         )
         legacy_run.assert_not_called()
 
 
 class SimPanelTests(unittest.TestCase):
     def test_build_panel_command_button_press(self) -> None:
-        command = LinuxSimCommandBuilder().build_panel("button-press", {"button": "17", "duration_ms": 150})
+        command = LinuxSystemdCommandBuilder().build_panel("button-press", {"button": "17", "duration_ms": 150})
         self.assertIn("/api/button/press?line=17&duration_ms=150", command)
         self.assertIn("-X POST", command)
 
     def test_build_panel_command_button_press_accepts_name(self) -> None:
-        command = LinuxSimCommandBuilder().build_panel("button-press", {"button": "A", "duration_ms": 150})
+        command = LinuxSystemdCommandBuilder().build_panel("button-press", {"button": "A", "duration_ms": 150})
         self.assertIn("/api/button/press?line=17&duration_ms=150", command)
 
     def test_build_panel_command_rfid_tap_encodes_uid(self) -> None:
-        command = LinuxSimCommandBuilder().build_panel("rfid-tap", {"uid": "04:AB:CD:EF:01:23"})
+        command = LinuxSystemdCommandBuilder().build_panel("rfid-tap", {"uid": "04:AB:CD:EF:01:23"})
         self.assertIn("/api/rfid/tap?uid=04:AB:CD:EF:01:23", command)
 
     def test_build_panel_command_state_is_get(self) -> None:
-        command = LinuxSimCommandBuilder().build_panel("state", {})
+        command = LinuxSystemdCommandBuilder().build_panel("state", {})
         self.assertIn("/api/state", command)
         self.assertNotIn("-X POST", command)
 
     def test_build_panel_command_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):
-            LinuxSimCommandBuilder().build_panel("explode", {})
-
-    def test_run_sim_panel_sshes_with_curl(self) -> None:
-        completed = mock.Mock(returncode=0)
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed) as run,
-        ):
-            result = run_sim_panel("button-press", host="ec2-test", button="17", duration_ms=150)
-
-        self.assertEqual(0, result)
-        self.assertEqual("ec2-test", run.call_args.args[0])
-        self.assertIn("/api/button/press?line=17&duration_ms=150", run.call_args.args[1])
-
-    def test_run_sim_panel_state_pretty_prints_json(self) -> None:
-        completed = mock.Mock(returncode=0, stdout='{"led18": 1}', stderr="")
-        with (
-            mock.patch("scripts.gar_lib.commands.sim.load_config", return_value={"ec2": {"host": "ec2-test"}}),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.ssh_remote.SshRemoteEnvironment.run_remote", return_value=completed),
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_sim_panel("state", host="ec2-test")
-
-        self.assertEqual(0, result)
-        self.assertEqual({"led18": 1}, json.loads(output.getvalue()))
+            LinuxSystemdCommandBuilder().build_panel("explode", {})
 
     def test_sim_ui_is_not_a_public_cli_command(self) -> None:
         stderr = io.StringIO()
@@ -3496,21 +2880,6 @@ class SimPanelTests(unittest.TestCase):
 
         self.assertEqual(2, exc.exception.code)
         self.assertIn("invalid choice: 'ui'", stderr.getvalue())
-
-    def test_sim_env_status_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
-            result = main(["sim", "env", "status", "--json", "--host", "ec2-test"])
-
-        self.assertEqual(0, result)
-        run_sim.assert_called_once_with(
-            "status",
-            host="ec2-test",
-            settings=None,
-            profile_name=None,
-            port_forward=True,
-            stop_port_forward=True,
-            json_output=True,
-        )
 
     def test_hw_init_copies_gar_tools_csv_templates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

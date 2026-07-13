@@ -28,3 +28,16 @@ class CodespacesBuildEnvironment:
             raise GarDomainError(f"{kind.value} Codespaces build が失敗しました (exit {result.returncode})")
         self.artifacts.sync_from_codespaces(workspace)
         return self.artifacts.latest(kind, workspace)
+
+    def clean(self, kind: ArtifactKind, workspace: Workspace) -> None:
+        spec = self.specs.for_artifact(kind, workspace)
+        command = (
+            f"cd {shlex.quote(workspace.remote_root)} && "
+            f"{shlex.quote(spec.script)} clean"
+        )
+        result = subprocess.run(
+            ["gh", "codespace", "ssh", "-c", workspace.codespace_name, "--", command],
+            check=False,
+        )
+        if result.returncode != 0:
+            raise GarDomainError(f"{kind.value} Codespaces clean が失敗しました (exit {result.returncode})")

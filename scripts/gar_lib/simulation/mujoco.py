@@ -1,10 +1,9 @@
-"""Local MuJoCo simulation operations for GAR."""
+"""Local MuJoCo simulation and bridge control environments."""
 
 from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import urllib.error
@@ -12,76 +11,134 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from scripts.gar_lib.access.process import LocalProcessChannel, ProcessChannel
 from scripts.gar_lib.config import PROJECT_ROOT
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.simulation.base import SimCommandBuilder, SimEnvProcessor
+from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
+from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.simulation.control import HardwareControlResult
+from scripts.gar_lib.simulation.diagnostic import PayloadSimulationDiagnostic
 
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "examples" / "mujoco" / "pendulum.xml"
 DEFAULT_WORKSPACE_DIR = PROJECT_ROOT / ".gar" / "mujoco"
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:8081"
 
 
-class MujocoSimCommandBuilder(SimCommandBuilder):
-    """Command descriptions for the local MuJoCo provider."""
+class MujocoSimulationEnvironment:
+    """Manage a local MuJoCo runner through the SimulationEnvironment contract."""
 
-    def build_gpio_systemd_install(self, hw_definition=None) -> str:
-        return ":"
+    requires_runtime_artifact = False
+    runtime_host: str | None = None
 
-    def build_sim_diag_json(self, hw_definition=None) -> str:
-        return "gar sim env diag --json"
-
-    def build_gpio_sim_setup(self, hw_definition=None) -> str:
-        return ":"
-
-    def build_gpio_sim_teardown(self, hw_definition=None) -> str:
-        return ":"
-
-    def build_systemd_install(self, hw_definition=None) -> str:
-        return ":"
-
-    def build_systemd_start(self, hw_definition=None) -> str:
-        return "python -m mujoco.viewer --mjcf=$GAR_MUJOCO_MODEL"
-
-    def build_systemd_stop(self, hw_definition=None) -> str:
-        return ":"
-
-    def build_sim_start(self, hw_definition=None) -> str:
-        return self.build_systemd_start(hw_definition)
-
-    def build_sim_stop(self, hw_definition=None) -> str:
-        return ":"
-
-    def build_sim_status(self, hw_definition=None) -> str:
-        return "gar sim env status --json"
-
-    def build_sim_log(self) -> str:
-        return "tail -f .gar/mujoco/mujoco.log"
-
-    def build_gpio_runtime_status(self, hw_definition=None) -> str:
-        return self.build_sim_status(hw_definition)
-
-    def build_panel(self, action: str, params: dict) -> str:
-        del action, params
-        return ":"
-
-
-class MujocoSimEnvProcessor(SimEnvProcessor):
-    """Manage a MuJoCo JSON bridge and its optional standard viewer.
-
-    ``GAR_MUJOCO_RUNNER`` may point at a Python executable owned by the product.
-    GAR invokes it as ``runner --mjcf <model> --bridge-url <url>``.  The runner
-    owns policies, hardware parameter fitting, trace export, and real-device
-    adapters, but must expose the JSON bridge contract documented in
-    ``docs/06_SIMULATION.md``.  Without it GAR launches its generic bridge.
-    """
-
-    def __init__(self, dev_env: type[DevEnvironment], host: str | None = None):
-        self.dev_env = dev_env
-        self.host = host
-        self.builder = MujocoSimCommandBuilder()
-        self.workspace_dir = Path(os.environ.get("GAR_MUJOCO_WORKSPACE", DEFAULT_WORKSPACE_DIR)).expanduser().resolve()
+    def __init__(
+        self,
+        workspace_dir: Path | None = None,
+        process_channel: ProcessChannel | None = None,
+    ):
+        configured = os.environ.get("GAR_MUJOCO_WORKSPACE")
+        self.workspace_dir = workspace_dir or Path(
+            configured or DEFAULT_WORKSPACE_DIR
+        ).expanduser().resolve()
+        self.process_channel = process_channel or LocalProcessChannel()
         self.state_path = self.workspace_dir / "state.json"
         self.log_path = self.workspace_dir / "mujoco.log"
+
+    def deploy(self, artifact: Artifact) -> None:
+        if artifact.kind is not ArtifactKind.SIM_APP:
+            raise GarDomainError(f"MuJoCoへ配置できないartifactです: {artifact.kind.value}")
+        self._validate_model_or_raise()
+
+    def start(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        del hardware
+        self._validate_model_or_raise()
+        runner = self._runner_path()
+        if runner is not None and not runner.is_file():
+            raise GarDomainError(f"MuJoCo runnerが見つかりません: {runner}")
+
+        if runner:
+            command = (
+                sys.executable,
+                str(runner),
+                "--mjcf",
+                str(self._model_path()),
+                "--bridge-url",
+                self._bridge_url(),
+            )
+        else:
+            bridge = urllib.parse.urlparse(self._bridge_url())
+            if bridge.scheme != "http" or bridge.hostname is None:
+                raise GarDomainError("GAR_MUJOCO_BRIDGE_URLはhttp://host:portで指定してください。")
+            command = (
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "mujoco_bridge.py"),
+                "--mjcf",
+                str(self._model_path()),
+                "--host",
+                bridge.hostname,
+                "--port",
+                str(bridge.port or 80),
+                "--viewer",
+            )
+
+        launched = self.process_channel.start(
+            command,
+            cwd=PROJECT_ROOT,
+            log_path=self.log_path,
+        )
+        self._write_state(
+            {"pid": launched.pid, "command": list(command), "bridge_url": self._bridge_url()}
+        )
+        self._print_status("running", True, pid=launched.pid)
+        return 0
+
+    def stop(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        del hardware
+        pid = self._state().get("pid")
+        if isinstance(pid, int):
+            self.process_channel.terminate_group(pid)
+        self._write_state({})
+        self._print_status("stopped", True)
+        return 0
+
+    def status(self, hardware: dict[str, list[dict[str, str]]]) -> int:
+        diagnostic = self.diag(hardware)
+        payload = diagnostic.to_payload()
+        self._print_status(
+            str(payload.get("status", "unknown")),
+            payload.get("ok") is True,
+            pid=payload.get("pid"),
+        )
+        return diagnostic.exit_code
+
+    def diag(
+        self,
+        hardware: dict[str, list[dict[str, str]]],
+    ) -> PayloadSimulationDiagnostic:
+        del hardware
+        model_ok, model_error = self._validate_model()
+        state = self._state()
+        pid = state.get("pid")
+        running = isinstance(pid, int) and self.process_channel.is_running(pid)
+        bridge_state = _bridge_state(self._bridge_url()) if running else None
+        ok = model_ok and running and bridge_state is not None
+        return PayloadSimulationDiagnostic(
+            {
+                "environment": "mujoco",
+                "status": "running" if ok else ("degraded" if running else "stopped"),
+                "ok": ok,
+                "model": str(self._model_path()),
+                "runner": str(self._runner_path()) if self._runner_path() else None,
+                "bridge_url": self._bridge_url(),
+                "pid": pid if running else None,
+                "bridge_state": bridge_state,
+                **({"error": model_error} if model_error else {}),
+            }
+        )
+
+    def log(self) -> int:
+        if not self.log_path.exists():
+            raise GarDomainError(f"MuJoCo logが見つかりません: {self.log_path}")
+        print(self.log_path.read_text(encoding="utf-8"), end="")
+        return 0
 
     def _model_path(self) -> Path:
         return Path(os.environ.get("GAR_MUJOCO_MODEL", DEFAULT_MODEL_PATH)).expanduser().resolve()
@@ -93,200 +150,124 @@ class MujocoSimEnvProcessor(SimEnvProcessor):
     def _bridge_url(self) -> str:
         return os.environ.get("GAR_MUJOCO_BRIDGE_URL", DEFAULT_BRIDGE_URL).rstrip("/")
 
-    def _state(self) -> dict:
+    def _state(self) -> dict[str, object]:
         try:
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return {}
         return data if isinstance(data, dict) else {}
 
-    def _write_state(self, state: dict) -> None:
+    def _write_state(self, state: dict[str, object]) -> None:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    def _payload(self, *, status: str, ok: bool, **extra) -> dict:
-        return {
-            "provider": "mujoco",
-            "status": status,
-            "ok": ok,
-            "model": str(self._model_path()),
-            "runner": str(self._runner_path()) if self._runner_path() else None,
-            "bridge_url": self._bridge_url(),
-            **extra,
-        }
-
-    @staticmethod
-    def _print(payload: dict, json_output: bool) -> None:
-        if json_output:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-            return
-        for key, value in payload.items():
-            print(f"{key}: {value}")
+        self.state_path.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def _validate_model(self) -> tuple[bool, str | None]:
         model = self._model_path()
         if not model.is_file():
-            return False, f"MJCF/URDF model not found: {model}"
+            return False, f"MJCF/URDF modelが見つかりません: {model}"
         result = subprocess.run(
-            [sys.executable, "-c", "import mujoco, sys; mujoco.MjModel.from_xml_path(sys.argv[1])", str(model)],
+            [
+                sys.executable,
+                "-c",
+                "import mujoco, sys; mujoco.MjModel.from_xml_path(sys.argv[1])",
+                str(model),
+            ],
             text=True,
             capture_output=True,
             check=False,
         )
         if result.returncode:
-            return False, (result.stderr or result.stdout).strip() or "MuJoCo could not load model"
+            return False, (result.stderr or result.stdout).strip() or "MuJoCoがmodelを読み込めません"
         return True, None
 
-    def build(self, *, json_output: bool = False) -> int:
-        ok, error = self._validate_model()
-        self._print(self._payload(status="ready" if ok else "invalid", ok=ok, error=error), json_output)
-        return 0 if ok else 1
-
-    def start(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        del hw_definition
+    def _validate_model_or_raise(self) -> None:
         ok, error = self._validate_model()
         if not ok:
-            self._print(self._payload(status="invalid", ok=False, error=error), False)
-            return 1
-        runner = self._runner_path()
-        if runner is not None and not runner.is_file():
-            self._print(self._payload(status="invalid", ok=False, error=f"MuJoCo runner not found: {runner}"), False)
-            return 1
-        if runner:
-            command = [
-                sys.executable,
-                str(runner),
-                "--mjcf",
-                str(self._model_path()),
-                "--bridge-url",
-                self._bridge_url(),
-            ]
-        else:
-            bridge = urllib.parse.urlparse(self._bridge_url())
-            if bridge.scheme != "http" or bridge.hostname is None:
-                self._print(
-                    self._payload(
-                        status="invalid",
-                        ok=False,
-                        error="GAR_MUJOCO_BRIDGE_URL must be an http://host:port URL",
-                    ),
-                    False,
-                )
-                return 1
-            command = [
-                sys.executable,
-                str(PROJECT_ROOT / "scripts" / "mujoco_bridge.py"),
-                "--mjcf",
-                str(self._model_path()),
-                "--host",
-                bridge.hostname,
-                "--port",
-                str(bridge.port or 80),
-                "--viewer",
-            ]
-        self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("a", encoding="utf-8") as log:
-            proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        self._write_state({"pid": proc.pid, "command": command, "bridge_url": self._bridge_url()})
-        self._print(self._payload(status="running", ok=True, pid=proc.pid), False)
-        return 0
+            raise GarDomainError(error or "MuJoCo modelが無効です。")
 
-    def stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        del hw_definition
-        pid = self._state().get("pid")
-        if isinstance(pid, int):
-            try:
-                os.killpg(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        self._write_state({})
-        self._print(self._payload(status="stopped", ok=True), False)
-        return 0
+    @staticmethod
+    def _print_status(status: str, ok: bool, *, pid: object = None) -> None:
+        print("environment: mujoco")
+        print(f"status: {status}")
+        print(f"ok: {str(ok).lower()}")
+        if pid is not None:
+            print(f"pid: {pid}")
 
-    def status(self, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        del hw_definition
-        state = self._state()
-        pid = state.get("pid")
-        running = isinstance(pid, int) and _is_running(pid)
-        bridge_state = self._bridge_state() if running else None
-        ok = running and bridge_state is not None
-        self._print(
-            self._payload(
-                status="running" if ok else ("degraded" if running else "stopped"),
-                ok=ok,
-                pid=pid if running else None,
-                bridge_state=bridge_state,
-            ),
-            json_output,
+
+class MujocoBridgeHardwareControl:
+    """Translate common control-plane operations to the MuJoCo JSON bridge."""
+
+    def __init__(self, bridge_url: str | None = None):
+        self.bridge_url = (bridge_url or os.environ.get("GAR_MUJOCO_BRIDGE_URL", DEFAULT_BRIDGE_URL)).rstrip("/")
+
+    def gpio(
+        self,
+        action: str,
+        hardware: dict[str, list[dict[str, str]]],
+    ) -> HardwareControlResult:
+        del hardware
+        return HardwareControlResult(
+            0,
+            {
+                "environment": "mujoco",
+                "action": action,
+                "ok": True,
+                "status": "not-applicable",
+                "reason": "MuJoCoはLinux GPIOではなくロボット物理を制御します。",
+            },
         )
-        return 0 if ok else 1
 
-    def log(self) -> int:
-        if not self.log_path.exists():
-            print(f"MuJoCo log not found: {self.log_path}", file=sys.stderr)
-            return 1
-        print(self.log_path.read_text(encoding="utf-8"), end="")
-        return 0
-
-    def diag_json(self, hw_definition: dict[str, list[dict[str, str]]]) -> int:
-        return self.status(hw_definition, json_output=True)
-
-    def _bridge_state(self) -> dict | None:
-        try:
-            with urllib.request.urlopen(f"{self._bridge_url()}/api/state", timeout=2) as response:  # noqa: S310
-                payload = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-            return None
-        return payload if isinstance(payload, dict) else None
-
-    def _bridge_command(self, action: str, params: dict) -> tuple[int, dict | str]:
-        body = json.dumps({"action": action, "params": params}).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self._bridge_url()}/api/command",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
-                raw = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read().decode("utf-8")
-        except urllib.error.URLError as exc:
-            return 503, str(exc.reason)
-        try:
-            return 200, json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
-            return 200, raw
-
-    def gpio_sim_check(self, json_output: bool = False) -> int:
-        self._print(self._payload(status="not-applicable", ok=True, reason="MuJoCo models robot physics rather than Linux GPIO"), json_output)
-        return 0
-
-    def gpio_command(self, command: str, hw_definition: dict[str, list[dict[str, str]]], json_output: bool = False) -> int:
-        del command, hw_definition
-        self._print(self._payload(status="unsupported", ok=True, reason="Use a product-owned MuJoCo runner for robot stimuli"), json_output)
-        return 0
-
-    def panel(self, action: str, params: dict, json_output: bool = False) -> int:
+    def panel(self, action: str, params: dict[str, object]) -> HardwareControlResult:
         if action == "state":
-            payload = self._bridge_state()
+            payload = _bridge_state(self.bridge_url)
             if payload is None:
-                self._print(self._payload(status="unreachable", ok=False), json_output)
-                return 1
-            self._print(payload, json_output)
-            return 0
-        status, payload = self._bridge_command(action, params)
-        result = {"provider": "mujoco", "action": action, "ok": status < 300, "result": payload}
-        self._print(result, json_output)
-        return 0 if status < 300 else 1
+                return HardwareControlResult(1, {"environment": "mujoco", "ok": False})
+            return HardwareControlResult(0, payload)
+        status, payload = _bridge_command(self.bridge_url, action, params)
+        return HardwareControlResult(
+            0 if status < 300 else 1,
+            {
+                "environment": "mujoco",
+                "action": action,
+                "ok": status < 300,
+                "result": payload,
+            },
+        )
 
 
-def _is_running(pid: int) -> bool:
+def _bridge_state(bridge_url: str) -> dict[str, object] | None:
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        with urllib.request.urlopen(f"{bridge_url}/api/state", timeout=2) as response:  # noqa: S310
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _bridge_command(
+    bridge_url: str,
+    action: str,
+    params: dict[str, object],
+) -> tuple[int, dict[str, object] | str]:
+    body = json.dumps({"action": action, "params": params}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{bridge_url}/api/command",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+            raw = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8")
+    except urllib.error.URLError as exc:
+        return 503, str(exc.reason)
+    try:
+        decoded = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        return 200, raw
+    return 200, decoded if isinstance(decoded, dict) else {"value": decoded}

@@ -13,6 +13,7 @@ class GarCommand:
 
 
 SIM_BUILD = GarCommand("sim", "app", "build")
+SIM_CLEAN = GarCommand("sim", "app", "clean")
 SIM_DEPLOY = GarCommand("sim", "app", "deploy")
 SIM_RUNTIME_BUILD = GarCommand("sim", "runtime", "build")
 SIM_RUNTIME_DEPLOY = GarCommand("sim", "runtime", "deploy")

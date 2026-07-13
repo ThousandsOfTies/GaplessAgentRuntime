@@ -1,496 +1,334 @@
-"""`gar sim` subcommand: simulation runtime control over SSH."""
+"""Application service and CLI entry points for ``gar sim`` commands."""
 
 from __future__ import annotations
 
-import os
-import shlex
-import subprocess
+import json
 import sys
-from pathlib import Path
+from dataclasses import dataclass
 
-from scripts.gar_lib.artifacts.manifest import (
-    default_artifacts_dir,
-    get_provider,
-    load_deploy_files,
-    resolve_artifact_src,
-)
+from scripts.gar_lib.artifacts.store import ArtifactStore, LocalArtifactStore
+from scripts.gar_lib.build.resolver import BuildEnvironmentResolver, ConfigBuildEnvironmentResolver
 from scripts.gar_lib.commands.hw import load_hw_definition
-from scripts.gar_lib.config import (
-    default_ec2_host,
-    load_config,
-    set_active_workspace_root,
+from scripts.gar_lib.commands.terminal import run_terminal_request
+from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
+from scripts.gar_lib.core.command import (
+    SIM_BUILD,
+    SIM_CLEAN,
+    SIM_DEPLOY,
+    SIM_RUNTIME_BUILD,
+    SIM_RUNTIME_DEPLOY,
+    GarCommand,
 )
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.discovery import discover_environment_providers
-from scripts.gar_lib.environments.ssh_recovery import ssh_connection_recovery_context
-from scripts.gar_lib.simulation.base import SimEnvProcessor
-from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, LinuxSystemdSimEnvProcessor
-from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
-from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
-
-SIM_DEST_MAP = {
-    "~/cuse_i2c": "/usr/local/sbin/cuse_i2c",
-    "~/cuse_spi": "/usr/local/sbin/cuse_spi",
-    "~/web-bridge": "/usr/local/lib/gar/web-bridge",
-}
-SIM_DEST_PREFIX_MAP = {
-    "~/web-bridge/": "/usr/local/lib/gar/web-bridge/",
-}
-
-
-def _get_sim_provider(provider_override: str | None = None) -> type[DevEnvironment]:
-    config = load_config()
-    pid = provider_override or os.environ.get("GAR_SIM_PROVIDER") or config.get("selected_providers", {}).get("simulator")
-    providers = discover_environment_providers()
-    if pid:
-        for p in providers:
-            if p.provider_id == pid:
-                return p
-    for p in providers:
-        if p.provider_id == "ssh_remote":
-            return p
-    raise RuntimeError("No simulation provider found")
+from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
+from scripts.gar_lib.core.workspace import Workspace
+from scripts.gar_lib.recovery.access import AccessRecoveryPlanner
+from scripts.gar_lib.recovery.terminal import TerminalBridgeRecoveryExecutor
+from scripts.gar_lib.simulation.control_resolver import ConfigSimulationHardwareControlResolver
+from scripts.gar_lib.simulation.environment import (
+    SimulationEnvironmentResolver,
+)
+from scripts.gar_lib.simulation.host_resolver import ConfigSimulationHostControllerResolver
+from scripts.gar_lib.simulation.remote_session import (
+    start_sim_port_forward,
+    status_sim_port_forward,
+    stop_sim_port_forward,
+    write_sim_terminal_profile,
+)
+from scripts.gar_lib.simulation.resolver import ConfigSimulationEnvironmentResolver
+from scripts.gar_lib.workspaces.registry import ConfigWorkspaceRegistry, WorkspaceRegistry
 
 
-def run_sim_deploy_command(
-    artifacts_dir: str | None,
+@dataclass(frozen=True)
+class SimulationCommandServices:
+    workspaces: WorkspaceRegistry
+    build_environments: BuildEnvironmentResolver
+    artifacts: ArtifactStore
+    simulation_environments: SimulationEnvironmentResolver
+
+
+def dispatch_sim_command(
+    command: GarCommand,
     *,
-    host: str | None,
-    section: str = "app",
-    workspace: str | None = None,
-) -> int:
-    """``gar sim deploy`` / ``gar sim env deploy``: resolve the artifact bundle
-    root and push its ``deploy.<section>`` files to the simulation host.
-    """
-    if workspace is not None:
-        set_active_workspace_root(workspace)
-    config = load_config()
-    connection = config.get("workspace_connection")
-    if artifacts_dir:
-        root = Path(artifacts_dir).expanduser().resolve()
-    elif isinstance(connection, dict) and connection.get("type") == "local":
-        root = Path(connection["path"]).expanduser().resolve() / "artifacts" / "from-codespace"
-    else:
-        root = default_artifacts_dir().resolve()
-    command_label = "gar sim env deploy" if section == "sim_env" else "gar sim deploy"
-    with ssh_connection_recovery_context(command_label, workspace=workspace):
-        return deploy_sim_artifacts(root, host=host, section=section)
+    workspace_selector: str | None,
+    services: SimulationCommandServices,
+) -> Artifact | None:
+    """Execute the build/deploy use case expressed by *command*."""
+
+    workspace = services.workspaces.get(workspace_selector)
+
+    if command == SIM_BUILD:
+        build_environment = services.build_environments.for_workspace(workspace)
+        return build_environment.build(ArtifactKind.SIM_APP, workspace)
+
+    if command == SIM_CLEAN:
+        build_environment = services.build_environments.for_workspace(workspace)
+        build_environment.clean(ArtifactKind.SIM_APP, workspace)
+        return None
+
+    if command == SIM_RUNTIME_BUILD:
+        simulation_environment = services.simulation_environments.for_workspace(workspace)
+        if not simulation_environment.requires_runtime_artifact:
+            return None
+        build_environment = services.build_environments.for_workspace(workspace)
+        return build_environment.build(ArtifactKind.SIM_RUNTIME, workspace)
+
+    if command == SIM_DEPLOY:
+        artifact = services.artifacts.latest(ArtifactKind.SIM_APP, workspace)
+        services.simulation_environments.for_workspace(workspace).deploy(artifact)
+        return artifact
+
+    if command == SIM_RUNTIME_DEPLOY:
+        simulation_environment = services.simulation_environments.for_workspace(workspace)
+        if not simulation_environment.requires_runtime_artifact:
+            return None
+        artifact = services.artifacts.latest(ArtifactKind.SIM_RUNTIME, workspace)
+        simulation_environment.deploy(artifact)
+        return artifact
+
+    raise GarDomainError(f"simulation command は未対応です: {command}")
 
 
-def deploy_sim_artifacts(
-    root: Path,
+def _recover_access(
+    error: AccessConnectionError,
     *,
-    host: str | None,
-    section: str = "app",
+    workspace: Workspace,
+    retry_command: str,
 ) -> int:
-    resolved_host = host or default_ec2_host(load_config())
-    loaded = load_deploy_files(root, section)
-    if loaded is None:
-        return 1
-
-    bundle_root, files = loaded
-    provider = get_provider("simulator")
-
-    for entry in files:
-        source = resolve_artifact_src(bundle_root, entry["src"])
-        if source is None:
-            return 1
-
-        target_dest = sim_dest_path(entry["dest"])
-        staging_path = f"/tmp/gar-deploy-{os.getpid()}-{source.name}"
-
-        result = provider.push_file(resolved_host, source, staging_path)
-        if result != 0:
-            return result
-
-        mode = entry.get("mode")
-        install_command = remote_install_command(
-            staging_path,
-            target_dest,
-            source_is_dir=source.is_dir(),
-            mode=mode if isinstance(mode, str) else None,
-        )
-        proc = provider.run_remote(resolved_host, install_command, check=False)
-        if proc.returncode != 0:
-            return proc.returncode
-
-    return 0
-
-
-def sim_dest_path(manifest_dest: str) -> str:
-    mapped = SIM_DEST_MAP.get(manifest_dest)
-    if mapped:
-        return mapped
-    for source_prefix, target_prefix in SIM_DEST_PREFIX_MAP.items():
-        if manifest_dest.startswith(source_prefix):
-            return target_prefix + manifest_dest.removeprefix(source_prefix)
-    return manifest_dest
-
-
-def _shlex_quote(value: str) -> str:
-    return "'" + value.replace("'", "'\"'\"'") + "'"
-
-
-def _remote_path_expr(dest: str) -> str:
-    if dest == "~":
-        return '"${HOME}"'
-    if dest.startswith("~/"):
-        return f'"${{HOME}}"/{_shlex_quote(dest[2:])}'
-    return _shlex_quote(dest)
-
-
-def remote_install_command(staging_path: str, dest: str, *, source_is_dir: bool, mode: str | None) -> str:
-    dest_expr = _remote_path_expr(dest)
-    if dest.startswith("~"):
-        commands = [f"mkdir -p $(dirname {dest_expr})"]
-        if source_is_dir:
-            commands.append(f"mkdir -p {dest_expr}")
-            commands.append(f"cp -a {_shlex_quote(staging_path)}/. {dest_expr}/")
-        else:
-            commands.append(f"cp {_shlex_quote(staging_path)} {dest_expr}")
-        if mode:
-            commands.append(f"chmod {_shlex_quote(mode)} {dest_expr}")
-        return "; ".join(commands)
-
-    commands = [f"sudo mkdir -p $(dirname {dest_expr})"]
-    if source_is_dir:
-        commands.append(f"sudo mkdir -p {dest_expr}")
-        commands.append(f"sudo cp -a {_shlex_quote(staging_path)}/. {dest_expr}/")
-    else:
-        commands.append(f"sudo cp {_shlex_quote(staging_path)} {dest_expr}")
-    if mode:
-        commands.append(f"sudo chmod {_shlex_quote(mode)} {dest_expr}")
-    return "; ".join(commands)
-
-
-def _get_sim_target(host: str | None, *, provider_override: str | None = None) -> SimEnvProcessor:
-    provider = _get_sim_provider(provider_override)
-    if provider.provider_id == "wokwi":
-        raise NotImplementedError(
-            "Wokwiの旧SimEnvProcessor経路は削除されました。workspaceのSimulationEnvironmentを使用してください。"
-        )
-    if provider.provider_id == "mujoco":
-        return MujocoSimEnvProcessor(provider, host)
-    return LinuxSystemdSimEnvProcessor(provider, host, LinuxSimCommandBuilder())
-
-
-def run_sim_env_build_command(
-    *,
-    provider: str | None = None,
-    workspace_root: str | None = None,
-    json_output: bool = False,
-) -> int:
-    """``gar sim env build``: resolve the simulation provider and call its
-    ``build()``. ``provider`` lets a caller narrow the resolution beyond the
-    ``gar setup`` saved config (``selected_providers.simulation``).
-    """
-    if workspace_root is not None:
-        set_active_workspace_root(workspace_root)
-    resolved_provider = _get_sim_provider(provider)
-    if resolved_provider.provider_id == "wokwi":
-        print(
-            "gar sim env build: Wokwiの旧provider経路は削除されました。\n"
-            "  --providerを外し、--workspaceで新しいSimulationEnvironmentを選択してください。",
-            file=sys.stderr,
-        )
-        return 1
-    if resolved_provider.provider_id == "mujoco":
-        target = _get_sim_target(host=None, provider_override="mujoco")
-        return target.build(json_output=json_output)
-    if resolved_provider.provider_id == "ssh_remote":
-        return run_product_sim_env_build(workspace_root=workspace_root)
-    target = _get_sim_target(host=None, provider_override=resolved_provider.provider_id)
-    try:
-        return target.build(json_output=json_output)
-    except NotImplementedError:
-        print(
-            "gar sim env build: 現在の設定では対応する build が見つかりません。\n"
-            f"  simulation: {resolved_provider.provider_id}\n"
-            "  --provider で明示的に指定するか、`gar setup` で Wokwi を選択してください。",
-            file=sys.stderr,
-        )
-        return 1
-
-
-def _run_product_sim_hook(
-    script_name: str,
-    *,
-    command_label: str,
-    workspace_root: str | None = None,
-    clean: bool = False,
-) -> int:
-    """Run a product-local simulation hook in the selected workspace."""
-    if workspace_root is not None:
-        # A selector may be either a local path, a GAR-generated workspace ID,
-        # or the user-facing workspace name shown by `gar setup`.
-        set_active_workspace_root(workspace_root)
-    config = load_config()
-    development = config.get("selected_providers", {}).get("codespace")
-    connection = config.get("workspace_connection")
-    if not isinstance(connection, dict):
-        print(f"{command_label}: product workspace が未設定です。`gar setup` を実行してください。", file=sys.stderr)
-        return 1
-    if development == "local":
-        if connection.get("type") != "local":
-            print(f"{command_label}: local provider には local workspace を選択してください。", file=sys.stderr)
-            return 1
-        script = Path(connection["path"]) / "scripts" / script_name
-        if not script.is_file():
-            print(f"{command_label}: product hook が見つかりません: {script}", file=sys.stderr)
-            return 1
-        command = [str(script)]
-        if clean:
-            command.append("clean")
-        return subprocess.run(command, check=False).returncode
-
-    if development == "github_codespaces":
-        if connection.get("type") != "codespaces":
-            print(f"{command_label}: Codespaces provider には Codespaces workspace を選択してください。", file=sys.stderr)
-            return 1
-        codespace = connection.get("codespace")
-        workspace_root = connection.get("path")
-        if not isinstance(codespace, str) or not isinstance(workspace_root, str):
-            print(f"{command_label}: Codespaces workspace 設定が不完全です。`gar setup` を実行してください。", file=sys.stderr)
-            return 1
-        hook_args = " clean" if clean else ""
-        command = f"cd {shlex.quote(workspace_root)} && scripts/{script_name}{hook_args}"
-        return subprocess.run(["gh", "codespace", "ssh", "-c", codespace, "--", command], check=False).returncode
-
-    if connection.get("type") == "network":
-        print(f"{command_label}: network workspace は build 実行先にできません。Codespaces workspace を選択してください。", file=sys.stderr)
-        return 1
-
-    print(f"{command_label}: development provider が未設定です。`gar setup` を実行してください。", file=sys.stderr)
+    recovery = AccessRecoveryPlanner().plan(error, workspace=workspace, retry_command=retry_command)
+    TerminalBridgeRecoveryExecutor(run_terminal_request).execute(recovery)
+    print(f"gar: {error}", file=sys.stderr)
+    for instruction in recovery.instructions:
+        print(f"  {instruction}", file=sys.stderr)
     return 1
-
-
-def run_product_sim_build(*, workspace_root: str | None = None, clean: bool = False) -> int:
-    """Run the selected product's application simulation build hook."""
-    return _run_product_sim_hook(
-        "product-sim-build.sh",
-        command_label="gar sim build",
-        workspace_root=workspace_root,
-        clean=clean,
-    )
-
-
-def run_product_sim_env_build(*, workspace_root: str | None = None) -> int:
-    """Run the selected product's virtual-device runtime build hook."""
-    return _run_product_sim_hook(
-        "product-sim-env-build.sh",
-        command_label="gar sim env build",
-        workspace_root=workspace_root,
-    )
 
 
 def run_sim_host_command(
-    command: str,
+    action_name: str,
     *,
-    host: str | None = None,
-    instance_id: str | None = None,
-    region: str | None = None,
-    update_ssh: bool = True,
-    pull: bool = False,
+    workspace_selector: str | None,
+    retry_command: str,
+    update_address: bool = True,
+    update_repository: bool = False,
     json_output: bool = False,
-    workspace: str | None = None,
 ) -> int:
-    """``gar sim start/stop/status``: resolve the simulation provider and call
-    its ``host_command()``.
-    """
-    if workspace is not None:
-        set_active_workspace_root(workspace)
-    provider = _get_sim_provider()
+    workspaces = ConfigWorkspaceRegistry()
     try:
-        return provider.host_command(
-            command,
-            host=host,
-            instance_id=instance_id,
-            region=region,
-            update_ssh=update_ssh,
-            pull=pull,
-            json_output=json_output,
-        )
-    except NotImplementedError:
-        print(
-            f"gar sim {command}: 現在の設定では対応するホストVM操作が見つかりません。\n"
-            f"  simulation: {provider.provider_id}\n"
-            "  `gar setup` で SSH Remote を選択してください。",
-            file=sys.stderr,
-        )
+        workspace = workspaces.get(workspace_selector)
+        controller = ConfigSimulationHostControllerResolver().for_workspace(workspace)
+        if action_name == "start":
+            print(f"gar sim host: {workspace.name} の起動を要求し、runningになるまで待機します...")
+            result = controller.start(
+                update_address=update_address,
+                update_repository=update_repository,
+            )
+            print(f"gar sim host: running. public ip = {result.state.public_ip}")
+            if update_address:
+                if result.address_updated:
+                    print(
+                        f"gar sim host: SSH config の Host {result.state.host} を "
+                        f"{result.state.public_ip} に更新しました。"
+                    )
+                else:
+                    print(
+                        f"gar sim host: SSH config の Host {result.state.host} を更新できませんでした。",
+                        file=sys.stderr,
+                    )
+            if result.repository_updated:
+                print("gar sim host: simulation hostのrepositoryを更新しました。")
+            if result.repository_update_skipped:
+                print(
+                    "gar sim host: --pullが指定されましたがec2.repo_dirが未設定のため、"
+                    "git pullをスキップしました。",
+                    file=sys.stderr,
+                )
+            return 0
+        if action_name == "stop":
+            controller.stop()
+            print(f"gar sim host: shutdown要求を送信しました ({workspace.ec2['instance_id']})")
+            return 0
+        if action_name == "status":
+            state = controller.status()
+            if json_output:
+                print(json.dumps(state.to_payload(), ensure_ascii=False, indent=2))
+            else:
+                print(f"instance : {state.instance_id}")
+                print(f"region   : {state.region}")
+                print(f"state    : {state.state}")
+                print(f"public ip: {state.public_ip or '(none)'}")
+            return 0
+        raise GarDomainError(f"simulation host操作は未対応です: {action_name}")
+    except AccessConnectionError as exc:
+        workspace = workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
         return 1
 
 
-def run_sim_diag_json(host: str) -> int:
-    """Run ``gar sim env diag --json``: print structured JSON, exit 0 when ok."""
-    target = _get_sim_target(host)
-    return target.diag_json(load_hw_definition())
-
-
-def run_gpio_sim_check(host: str, *, json_output: bool = False) -> int:
-    """Probe whether the remote simulation host can use the kernel gpio-sim."""
-    target = _get_sim_target(host)
-    return target.gpio_sim_check(json_output=json_output)
-
-
-def run_sim_gpio_command(
-    command: str,
+def run_sim_diagnostic(
     *,
-    host: str | None = None,
-    json_output: bool = False,
+    workspace_selector: str | None,
+    retry_command: str,
+    json_output: bool,
 ) -> int:
-    resolved_host = host or default_ec2_host(load_config())
-    target = _get_sim_target(resolved_host)
-    return target.gpio_command(command, load_hw_definition(), json_output=json_output)
+    workspaces = ConfigWorkspaceRegistry()
+    try:
+        workspace = workspaces.get(workspace_selector)
+        environment = ConfigSimulationEnvironmentResolver().for_workspace(workspace)
+        diagnostic = environment.diag(load_hw_definition())
+        host = workspace.ec2.get("host")
+        payload = diagnostic.to_payload(host=host if isinstance(host, str) else None)
+        if json_output:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_diagnostic(payload)
+        return diagnostic.exit_code
+    except AccessConnectionError as exc:
+        workspace = workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
+        return 1
 
 
-def run_sim_panel(
-    action: str,
-    *,
-    host: str | None = None,
-    json_output: bool = False,
-    **params,
-) -> int:
-    """Drive the virtual panel / display over SSH by calling the bridge API."""
-    resolved_host = host or default_ec2_host(load_config())
-    target = _get_sim_target(resolved_host)
-    return target.panel(action, params, json_output=json_output)
+def _print_diagnostic(payload: dict[str, object]) -> None:
+    print(f"status: {'ok' if payload.get('ok') is True else 'error'}")
+    if payload.get("host"):
+        print(f"host: {payload['host']}")
+    if payload.get("error"):
+        print(f"error: {payload['error']}")
+    processes = payload.get("processes")
+    if isinstance(processes, list):
+        print(f"processes: {len(processes)}")
+        for process in processes:
+            if isinstance(process, dict):
+                print(f"  {process.get('pid', '?')}: {process.get('cmd', '')}")
+    devices = payload.get("devices")
+    if isinstance(devices, dict):
+        print("devices:")
+        for path, available in devices.items():
+            print(f"  {path}: {'OK' if available else 'missing'}")
+    if payload.get("api") is not None:
+        print("api:")
+        print(json.dumps(payload["api"], ensure_ascii=False, indent=2))
 
 
 def run_sim_command(
-    command: str,
+    command: GarCommand,
     *,
-    host: str | None = None,
+    workspace_selector: str | None,
+    retry_command: str,
+) -> int:
+    artifacts = LocalArtifactStore()
+    services = SimulationCommandServices(
+        workspaces=ConfigWorkspaceRegistry(),
+        build_environments=ConfigBuildEnvironmentResolver(artifacts),
+        artifacts=artifacts,
+        simulation_environments=ConfigSimulationEnvironmentResolver(),
+    )
+    try:
+        artifact = dispatch_sim_command(
+            command,
+            workspace_selector=workspace_selector,
+            services=services,
+        )
+        if command == SIM_CLEAN:
+            print("Simulation artifactを削除しました。")
+        elif artifact is None:
+            print("このsimulation environmentには個別のruntime artifactは不要です。")
+        else:
+            print(f"Artifact: {artifact.bundle_path}")
+        return 0
+    except AccessConnectionError as exc:
+        workspace = services.workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
+        return 1
+
+
+def run_sim_lifecycle(
+    action_name: str,
+    *,
+    workspace_selector: str | None,
+    retry_command: str,
     settings: str | None = None,
     profile_name: str | None = None,
-    port_forward: bool = True,
-    stop_port_forward: bool = True,
+    manage_port_forward: bool = True,
+) -> int:
+    workspaces = ConfigWorkspaceRegistry()
+    try:
+        workspace = workspaces.get(workspace_selector)
+        environment = ConfigSimulationEnvironmentResolver().for_workspace(workspace)
+        hardware = load_hw_definition()
+        host = environment.runtime_host
+        if action_name == "start":
+            result = environment.start(hardware)
+            if result == 0 and host is not None:
+                write_sim_terminal_profile(host=host, settings=settings, profile_name=profile_name)
+                if manage_port_forward:
+                    result = start_sim_port_forward(host)
+            return result
+        if action_name == "stop":
+            result = environment.stop(hardware)
+            if result == 0 and manage_port_forward and host is not None:
+                result = stop_sim_port_forward(host)
+            return result
+        if action_name == "status":
+            forward_result = status_sim_port_forward(host) if host is not None else 0
+            runtime_result = environment.status(hardware)
+            return forward_result or runtime_result
+        if action_name == "log":
+            return environment.log()
+        raise GarDomainError(f"simulation lifecycle操作は未対応です: {action_name}")
+    except AccessConnectionError as exc:
+        workspace = workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
+        return 1
+
+
+def run_sim_hardware_command(
+    action_name: str,
+    *,
+    workspace_selector: str | None,
+    retry_command: str,
     json_output: bool = False,
 ) -> int:
-    resolved_host = host or default_ec2_host(load_config())
-    target = _get_sim_target(resolved_host)
-    hw_definition = load_hw_definition()
-
-    if command == "status":
-        if json_output:
-            return target.status(hw_definition, json_output=True)
-        port_forward_result = status_sim_port_forward(resolved_host)
-        state_result = show_sim_state(resolved_host)
-        return port_forward_result or state_result
-
-    if command == "diag" and json_output:
-        return target.diag_json(hw_definition)
-
-    if command == "gpio-sim-check":
-        return target.gpio_sim_check(json_output=json_output)
-
-    if command == "start":
-        result = target.start(hw_definition)
-        if result != 0:
-            return result
-        write_sim_terminal_profile(
-            host=resolved_host,
-            settings=settings,
-            profile_name=profile_name,
-        )
-        if port_forward:
-            return start_sim_port_forward(resolved_host)
-        return 0
-
-    if command == "stop":
-        result = target.stop(hw_definition)
-        if result != 0:
-            return result
-        if stop_port_forward:
-            return stop_sim_port_forward(resolved_host)
-        return 0
-
-    if command == "diag":
-        return target.status(hw_definition, json_output=False)
-
-    if command == "log":
-        return target.log()
-
-    print(f"unknown sim command: {command}", file=sys.stderr)
-    return 1
-
-
-def start_sim_port_forward(host: str) -> int:
-    provider = _get_sim_provider()
+    workspaces = ConfigWorkspaceRegistry()
     try:
-        return provider.start_port_forward(host)
-    except NotImplementedError:
-        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
+        workspace = workspaces.get(workspace_selector)
+        control = ConfigSimulationHardwareControlResolver().for_workspace(workspace)
+        result = control.gpio(action_name, load_hw_definition())
+        result.render(json_output=json_output)
+        return result.exit_code
+    except AccessConnectionError as exc:
+        workspace = workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
         return 1
 
 
-def stop_sim_port_forward(host: str) -> int:
-    provider = _get_sim_provider()
-    try:
-        return provider.stop_port_forward(host)
-    except NotImplementedError:
-        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
-        return 1
-
-
-def status_sim_port_forward(host: str) -> int:
-    provider = _get_sim_provider()
-    try:
-        return provider.status_port_forward(host)
-    except NotImplementedError:
-        print(f"Port forwarding is not supported by provider {provider.display_name}", file=sys.stderr)
-        return 1
-
-
-def show_sim_state(host: str) -> int:
-    print("--- bridge state ---")
-    target = _get_sim_target(host)
-    # We can reuse the panel command to get state via curl directly.
-    # Wait, the panel command "state" prints it. The previous code did:
-    # provider.run_remote(host, "curl -s http://127.0.0.1:8080/api/state")
-    # Our target.panel("state") prints it if we pass json_output=False (the default).
-    # However, in target.panel, the "state" command parses and prints pretty JSON.
-    # The original show_sim_state just does `curl -s http...` and prints raw.
-    # Let's use target.panel("state", params={}, json_output=True) to just dump it,
-    # but since target.panel handles printing, we can just call it.
-    return target.panel("state", params={}, json_output=True)
-
-
-def write_sim_terminal_profile(
+def run_sim_panel(
+    action_name: str,
     *,
-    host: str,
-    settings: str | None = None,
-    profile_name: str | None = None,
-) -> None:
-    home = Path.home()
-    settings_path = Path(
-        settings
-        or os.environ.get(
-            "GAR_SIM_SETTINGS",
-            str(home / ".vscode-server" / "data" / "Machine" / "settings.json"),
-        )
-    ).expanduser()
-    default_profile_name = "EC2 Simulation"
-    selected_profile_name = profile_name or os.environ.get(
-        "GAR_SIM_PROFILE_NAME",
-        default_profile_name,
-    )
-    terminal_bin = home / ".local" / "bin" / "gar-sim-terminal"
-    terminal_bin.parent.mkdir(parents=True, exist_ok=True)
-    terminal_bin.write_text(sim_terminal_script(host), encoding="utf-8")
-    terminal_bin.chmod(0o755)
-    write_vscode_terminal_profile(settings_path, selected_profile_name, terminal_bin)
-    print(f"Terminal:  {terminal_bin}")
-    print(f"Profile:   {selected_profile_name}")
-
-
-def sim_terminal_script(host: str) -> str:
-    provider = _get_sim_provider()
+    workspace_selector: str | None,
+    retry_command: str,
+    json_output: bool = False,
+    params: dict[str, object] | None = None,
+) -> int:
+    workspaces = ConfigWorkspaceRegistry()
     try:
-        return provider.interactive_shell_script(host)
-    except NotImplementedError:
-        quoted_host = shlex.quote(host)
-        return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-exec ssh -F "$HOME/.ssh/config" -t {quoted_host} "cd ~ && exec bash -l"
-"""
+        workspace = workspaces.get(workspace_selector)
+        control = ConfigSimulationHardwareControlResolver().for_workspace(workspace)
+        result = control.panel(action_name, params or {})
+        result.render(json_output=json_output)
+        return result.exit_code
+    except AccessConnectionError as exc:
+        workspace = workspaces.get(workspace_selector)
+        return _recover_access(exc, workspace=workspace, retry_command=retry_command)
+    except GarDomainError as exc:
+        print(f"gar: {exc}", file=sys.stderr)
+        return 1

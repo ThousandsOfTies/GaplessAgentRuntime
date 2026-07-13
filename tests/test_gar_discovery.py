@@ -29,7 +29,7 @@ from scripts.gar_lib.environments.registry.target.adb_usb import AdbUsbEnvironme
 from scripts.gar_lib.environments.registry.target.esp32_esptool import (
     Esp32EsptoolEnvironment,
 )
-from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
+from scripts.gar_lib.simulation.mujoco import MujocoSimulationEnvironment
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -106,14 +106,13 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual("mujoco-python", statuses[0].name)
         self.assertTrue(statuses[0].installed)
 
-    def test_mujoco_processor_validates_and_starts_a_model(self) -> None:
+    def test_mujoco_environment_validates_and_starts_a_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             model = root / "robot.xml"
             workspace = root / "workspace"
             model.write_text("<mujoco model='test'/>", encoding="utf-8")
             completed = subprocess.CompletedProcess([], 0, "", "")
-            process = mock.Mock(pid=12345)
             with (
                 mock.patch.dict(
                     os.environ,
@@ -121,18 +120,19 @@ class GarDiscoveryTest(unittest.TestCase):
                     clear=False,
                 ),
                 mock.patch("scripts.gar_lib.simulation.mujoco.subprocess.run", return_value=completed),
-                mock.patch("scripts.gar_lib.simulation.mujoco.subprocess.Popen", return_value=process) as popen,
-                mock.patch.object(MujocoSimEnvProcessor, "_bridge_state", return_value={"ok": True}),
-                mock.patch("scripts.gar_lib.simulation.mujoco._is_running", return_value=True),
+                mock.patch("scripts.gar_lib.simulation.mujoco.LocalProcessChannel") as channel_type,
+                mock.patch("scripts.gar_lib.simulation.mujoco._bridge_state", return_value={"ok": True}),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
-                provider = MujocoSimEnvProcessor(MujocoEnvironment)
-                self.assertEqual(0, provider.build(json_output=True))
+                channel = channel_type.return_value
+                channel.start.return_value = mock.Mock(pid=12345)
+                channel.is_running.return_value = True
+                provider = MujocoSimulationEnvironment()
                 self.assertEqual(0, provider.start({}))
-                self.assertEqual(0, provider.status({}, json_output=True))
+                self.assertEqual(0, provider.status({}))
 
             self.assertEqual(12345, json.loads((workspace / "state.json").read_text(encoding="utf-8"))["pid"])
-            self.assertTrue(any(part.endswith("mujoco_bridge.py") for part in popen.call_args.args[0]))
+            self.assertTrue(any(part.endswith("mujoco_bridge.py") for part in channel.start.call_args.args[0]))
 
     def test_vibe_remote_device_uses_node_sh_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

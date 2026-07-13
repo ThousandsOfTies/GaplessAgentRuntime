@@ -11,7 +11,7 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
 - :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
 - :mod:`scripts.gar_lib.commands.shim` — ``gar shim``
-- :mod:`scripts.gar_lib.commands.sim` — ``gar sim``
+- :mod:`scripts.gar_lib.commands.sim` — ``gar sim`` orchestration
 - :mod:`scripts.gar_lib.commands.terminal` — ``gar terminal``
 - :mod:`scripts.gar_lib.commands.usb` — ``gar usb``
 - :mod:`scripts.gar_lib.commands.setup` — ``gar setup``
@@ -80,28 +80,13 @@ from scripts.gar_lib.commands.setup import (  # noqa: F401
     unconfigured_categories,
 )
 from scripts.gar_lib.commands.shim import run_shim_command  # noqa: F401
-from scripts.gar_lib.commands.sim import (  # noqa: F401
-    deploy_sim_artifacts,
-    run_gpio_sim_check,
-    run_product_sim_build,
+from scripts.gar_lib.commands.sim import (
     run_sim_command,
-    run_sim_deploy_command,
-    run_sim_diag_json,
-    run_sim_env_build_command,
-    run_sim_gpio_command,
+    run_sim_diagnostic,
+    run_sim_hardware_command,
     run_sim_host_command,
-    show_sim_state,
-    sim_terminal_script,
-    start_sim_port_forward,
-    status_sim_port_forward,
-    stop_sim_port_forward,
-    write_sim_terminal_profile,
-)
-from scripts.gar_lib.commands.sim_entry import (
-    run_next_sim_command,
-    run_next_sim_diagnostic,
-    run_next_sim_host_command,
-    run_next_sim_lifecycle,
+    run_sim_lifecycle,
+    run_sim_panel,
 )
 from scripts.gar_lib.commands.target import (  # noqa: F401
     adb_device_available,
@@ -137,6 +122,7 @@ from scripts.gar_lib.config import (  # noqa: F401
 )
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
+    SIM_CLEAN,
     SIM_DEPLOY,
     SIM_RUNTIME_BUILD,
     SIM_RUNTIME_DEPLOY,
@@ -159,6 +145,13 @@ from scripts.gar_lib.environments.registry.target.esp32_esptool import (  # noqa
     run_esp32_flash_command,
     validate_esp32_artifact,
     verify_esp32_artifact_checksums,
+)
+from scripts.gar_lib.simulation.remote_session import (  # noqa: F401
+    sim_terminal_script,
+    start_sim_port_forward,
+    status_sim_port_forward,
+    stop_sim_port_forward,
+    write_sim_terminal_profile,
 )
 from scripts.gar_lib.targets.esp32 import (  # noqa: F401
     DEFAULT_ESP32_ARTIFACT_ROOT,
@@ -503,21 +496,6 @@ def build_parser() -> argparse.ArgumentParser:
             help=help_text,
         )
         sim_vm_command_parser.add_argument(
-            "--host",
-            default=None,
-            help="SSH config 上の host 名。省略時は .gar/config.json の保存済み host",
-        )
-        sim_vm_command_parser.add_argument(
-            "--instance-id",
-            default=None,
-            help="EC2 instance ID。省略時は保存済み設定",
-        )
-        sim_vm_command_parser.add_argument(
-            "--region",
-            default=None,
-            help="AWS region。省略時は保存済み設定",
-        )
-        sim_vm_command_parser.add_argument(
             "--workspace",
             default=None,
             metavar="NAME",
@@ -552,35 +530,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="仮想デバイススタブ（CUSE I2C/SPI など）や Wokwi firmware をビルドします",
     )
     sim_env_build_parser.add_argument(
-        "--provider",
-        default=None,
-        help="simulation provider id を明示指定します（省略時は .gar/config.json の selected_providers.simulation）",
-    )
-    sim_env_build_parser.add_argument(
         "--workspace",
         default=None,
         metavar="NAME",
         help="gar setup に表示される workspace名でビルド対象を指定します",
     )
-    sim_env_build_parser.add_argument(
-        "--json",
-        dest="json_output",
-        action="store_true",
-        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
-    )
     sim_deploy_parser = sim_env_subparsers.add_parser(
         "deploy",
         help="simulation 環境インフラ（CUSE stubs / web-bridge）を VM へ配置します（artifact.json の deploy.sim_env セクション）",
-    )
-    sim_deploy_parser.add_argument(
-        "--host",
-        default=None,
-        help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
-    )
-    sim_deploy_parser.add_argument(
-        "--artifacts-dir",
-        default=None,
-        help="Codespace から WSL hub へコピー済みの成果物 root",
     )
     sim_deploy_parser.add_argument(
         "--workspace",
@@ -598,12 +555,12 @@ def build_parser() -> argparse.ArgumentParser:
             gpio_command_name,
             help=f"GPIO runtime: {gpio_command_name}",
         )
-        if gpio_command_name != "plan":
-            gpio_command_parser.add_argument(
-                "--host",
-                default=None,
-                help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
-            )
+        gpio_command_parser.add_argument(
+            "--workspace",
+            default=None,
+            metavar="NAME",
+            help="gar setupに表示されるworkspace名のhardware controlを使います",
+        )
         if gpio_command_name in ("plan", "status"):
             gpio_command_parser.add_argument(
                 "--json",
@@ -617,16 +574,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="target app を VM へ転送します（artifact.json の deploy.app セクション）",
     )
     sim_app_deploy_parser.add_argument(
-        "--host",
-        default=None,
-        help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
-    )
-    sim_app_deploy_parser.add_argument(
-        "--artifacts-dir",
-        default=None,
-        help="Codespace から WSL hub へコピー済みの成果物 root",
-    )
-    sim_app_deploy_parser.add_argument(
         "--workspace",
         default=None,
         metavar="NAME",
@@ -636,11 +583,6 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser = sim_env_subparsers.add_parser(
             command_name,
             help=f"simulation services: {command_name}",
-        )
-        command_parser.add_argument(
-            "--host",
-            default=None,
-            help="SSH config 上の runtime host 名。省略時は .gar/config.json の保存済み host",
         )
         command_parser.add_argument(
             "--workspace",
@@ -662,13 +604,29 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Hardware Panel 用の port forward を停止しません",
             )
-        if command_name in ("status", "diag", "gpio-sim-check"):
+        if command_name in ("diag", "gpio-sim-check"):
             command_parser.add_argument(
                 "--json",
                 dest="json_output",
                 action="store_true",
                 help="結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
+
+    sim_panel_parser = sim_env_subparsers.add_parser(
+        "panel",
+        help="共通Bridge control planeへ状態取得・操作を送ります",
+    )
+    sim_panel_parser.add_argument(
+        "action",
+        choices=("state", "button-press", "button-set", "rfid-tap", "rfid-remove", "range-set"),
+    )
+    sim_panel_parser.add_argument("--workspace", default=None, metavar="NAME")
+    sim_panel_parser.add_argument("--button", default=None)
+    sim_panel_parser.add_argument("--line", default=None)
+    sim_panel_parser.add_argument("--duration-ms", type=int, default=150)
+    sim_panel_parser.add_argument("--value", default=None)
+    sim_panel_parser.add_argument("--uid", default=None)
+    sim_panel_parser.add_argument("--json", dest="json_output", action="store_true")
 
     sim_infra_parser = sim_subparsers.add_parser(
         "infra", help="simulation host インフラを Terraform で管理します"
@@ -969,126 +927,120 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if args.sim_command in SIM_VM_COMMAND_MAP:
             workspace = getattr(args, "workspace", None)
-            has_legacy_override = any(
-                value is not None for value in (args.host, args.instance_id, args.region)
+            retry = f"gar sim {args.sim_command}" + (
+                f" --workspace {workspace}" if workspace else ""
             )
-            if not has_legacy_override:
-                retry = f"gar sim {args.sim_command}" + (
-                    f" --workspace {workspace}" if workspace else ""
-                )
-                return run_next_sim_host_command(
-                    SIM_VM_COMMAND_MAP[args.sim_command],
-                    workspace_selector=workspace,
-                    retry_command=retry,
-                    update_address=not getattr(args, "no_update_ssh", False),
-                    update_repository=getattr(args, "pull", False),
-                    json_output=getattr(args, "json_output", False),
-                )
-            host_kwargs = {
-                "host": args.host,
-                "instance_id": args.instance_id,
-                "region": args.region,
-                "update_ssh": not getattr(args, "no_update_ssh", False),
-                "pull": getattr(args, "pull", False),
-                "json_output": getattr(args, "json_output", False),
-            }
-            if workspace is not None:
-                host_kwargs["workspace"] = workspace
             return run_sim_host_command(
                 SIM_VM_COMMAND_MAP[args.sim_command],
-                **host_kwargs,
+                workspace_selector=workspace,
+                retry_command=retry,
+                update_address=not getattr(args, "no_update_ssh", False),
+                update_repository=getattr(args, "pull", False),
+                json_output=getattr(args, "json_output", False),
             )
         if args.sim_command == "deploy":
             workspace = getattr(args, "workspace", None)
-            if getattr(args, "host", None) is None and getattr(args, "artifacts_dir", None) is None:
-                retry = "gar sim deploy" + (f" --workspace {workspace}" if workspace else "")
-                return run_next_sim_command(
-                    SIM_DEPLOY,
-                    workspace_selector=workspace,
-                    retry_command=retry,
-                )
-            deploy_kwargs = {
-                "host": getattr(args, "host", None),
-                "section": "app",
-            }
-            workspace = getattr(args, "workspace", None)
-            if workspace is not None:
-                deploy_kwargs["workspace"] = workspace
-            return run_sim_deploy_command(getattr(args, "artifacts_dir", None), **deploy_kwargs)
+            retry = "gar sim deploy" + (f" --workspace {workspace}" if workspace else "")
+            return run_sim_command(
+                SIM_DEPLOY,
+                workspace_selector=workspace,
+                retry_command=retry,
+            )
         if args.sim_command == "build":
             workspace_root = getattr(args, "workspace", None)
             clean = getattr(args, "action", None) == "clean"
-            if not clean:
-                retry = "gar sim build" + (f" --workspace {workspace_root}" if workspace_root else "")
-                return run_next_sim_command(
-                    SIM_BUILD,
-                    workspace_selector=workspace_root,
-                    retry_command=retry,
-                )
-            if workspace_root is None:
-                return run_product_sim_build(clean=clean) if clean else run_product_sim_build()
-            return run_product_sim_build(workspace_root=workspace_root, clean=clean) if clean else run_product_sim_build(workspace_root=workspace_root)
+            retry = "gar sim build" + (" clean" if clean else "") + (
+                f" --workspace {workspace_root}" if workspace_root else ""
+            )
+            return run_sim_command(
+                SIM_CLEAN if clean else SIM_BUILD,
+                workspace_selector=workspace_root,
+                retry_command=retry,
+            )
         if args.sim_command == "env":
             if args.sim_env_command is None:
                 subcommand_parsers["sim_env"].print_help()
                 return 1
             if args.sim_env_command == "build":
                 workspace_root = getattr(args, "workspace", None)
-                if getattr(args, "provider", None) is None and not getattr(args, "json_output", False):
-                    retry = "gar sim env build" + (f" --workspace {workspace_root}" if workspace_root else "")
-                    return run_next_sim_command(
-                        SIM_RUNTIME_BUILD,
-                        workspace_selector=workspace_root,
-                        retry_command=retry,
-                    )
-                build_kwargs = {
-                    "provider": getattr(args, "provider", None),
-                    "json_output": getattr(args, "json_output", False),
-                }
-                if workspace_root is not None:
-                    build_kwargs["workspace_root"] = workspace_root
-                return run_sim_env_build_command(
-                    **build_kwargs,
+                retry = "gar sim env build" + (f" --workspace {workspace_root}" if workspace_root else "")
+                return run_sim_command(
+                    SIM_RUNTIME_BUILD,
+                    workspace_selector=workspace_root,
+                    retry_command=retry,
                 )
             if args.sim_env_command == "deploy":
                 workspace = getattr(args, "workspace", None)
-                if args.host is None and args.artifacts_dir is None:
-                    retry = "gar sim env deploy" + (f" --workspace {workspace}" if workspace else "")
-                    return run_next_sim_command(
-                        SIM_RUNTIME_DEPLOY,
-                        workspace_selector=workspace,
-                        retry_command=retry,
-                    )
-                deploy_kwargs = {"host": args.host, "section": "sim_env"}
-                if workspace is not None:
-                    deploy_kwargs["workspace"] = workspace
-                return run_sim_deploy_command(args.artifacts_dir, **deploy_kwargs)
+                retry = "gar sim env deploy" + (f" --workspace {workspace}" if workspace else "")
+                return run_sim_command(
+                    SIM_RUNTIME_DEPLOY,
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                )
             if args.sim_env_command == "gpio":
                 if args.gpio_command is None:
                     subcommand_parsers["sim_env"].print_help()
                     return 1
-                return run_sim_gpio_command(
-                    args.gpio_command,
-                    host=getattr(args, "host", None),
-                    json_output=getattr(args, "json_output", False),
-                )
-            if (
-                args.sim_env_command == "diag"
-                and getattr(args, "json_output", False)
-                and args.host is None
-            ):
                 workspace = getattr(args, "workspace", None)
-                retry = "gar sim env diag --json" + (f" --workspace {workspace}" if workspace else "")
-                return run_next_sim_diagnostic(
+                retry = f"gar sim env gpio {args.gpio_command}" + (
+                    f" --workspace {workspace}" if workspace else ""
+                )
+                return run_sim_hardware_command(
+                    args.gpio_command,
                     workspace_selector=workspace,
                     retry_command=retry,
+                    json_output=getattr(args, "json_output", False),
                 )
-            if args.sim_env_command in {"start", "stop", "status", "log"} and args.host is None:
+            if args.sim_env_command == "diag":
+                workspace = getattr(args, "workspace", None)
+                retry = "gar sim env diag" + (
+                    " --json" if getattr(args, "json_output", False) else ""
+                ) + (f" --workspace {workspace}" if workspace else "")
+                return run_sim_diagnostic(
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                    json_output=getattr(args, "json_output", False),
+                )
+            if args.sim_env_command == "gpio-sim-check":
+                workspace = getattr(args, "workspace", None)
+                retry = "gar sim env gpio-sim-check" + (
+                    " --json" if getattr(args, "json_output", False) else ""
+                ) + (f" --workspace {workspace}" if workspace else "")
+                return run_sim_hardware_command(
+                    "check",
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                    json_output=getattr(args, "json_output", False),
+                )
+            if args.sim_env_command == "panel":
+                workspace = getattr(args, "workspace", None)
+                params = {
+                    key: value
+                    for key, value in {
+                        "button": getattr(args, "button", None),
+                        "line": getattr(args, "line", None),
+                        "duration_ms": getattr(args, "duration_ms", None),
+                        "value": getattr(args, "value", None),
+                        "uid": getattr(args, "uid", None),
+                    }.items()
+                    if value is not None
+                }
+                retry = f"gar sim env panel {args.action}" + (
+                    f" --workspace {workspace}" if workspace else ""
+                )
+                return run_sim_panel(
+                    args.action,
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                    json_output=getattr(args, "json_output", False),
+                    params=params,
+                )
+            if args.sim_env_command in {"start", "stop", "status", "log"}:
                 workspace = getattr(args, "workspace", None)
                 retry = f"gar sim env {args.sim_env_command}" + (
                     f" --workspace {workspace}" if workspace else ""
                 )
-                return run_next_sim_lifecycle(
+                return run_sim_lifecycle(
                     args.sim_env_command,
                     workspace_selector=workspace,
                     retry_command=retry,
@@ -1100,15 +1052,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else not getattr(args, "keep_port_forward", False)
                     ),
                 )
-            return run_sim_command(
-                args.sim_env_command,
-                host=args.host,
-                settings=getattr(args, "settings", None),
-                profile_name=getattr(args, "profile_name", None),
-                port_forward=not getattr(args, "no_port_forward", False),
-                stop_port_forward=not getattr(args, "keep_port_forward", False),
-                json_output=getattr(args, "json_output", False),
-            )
+            subcommand_parsers["sim_env"].print_help()
+            return 1
         if args.sim_command == "infra":
             if args.infra_command is None:
                 subcommand_parsers["sim_infra"].print_help()

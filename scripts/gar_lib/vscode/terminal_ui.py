@@ -28,7 +28,7 @@ def style(text: str, *codes: str) -> str:
 def safe_input(prompt: str, *, default_on_eof: str = "q") -> str:
     try:
         return input(prompt).strip()
-    except EOFError:
+    except (EOFError, OSError):
         print()
         print(style("入力を受け取れないため、対話処理を終了します。", YELLOW))
         return default_on_eof

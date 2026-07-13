@@ -9,8 +9,8 @@ from scripts.gar_lib.access.base import CommandChannel, FileChannel
 from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifact_src
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
-from scripts.gar_lib.simulation.base import SimCommandBuilder
 from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
+from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder
 
 
 class LinuxSystemdSimulationEnvironment:
@@ -30,7 +30,7 @@ class LinuxSystemdSimulationEnvironment:
         self,
         command_channel: CommandChannel,
         file_channel: FileChannel,
-        command_builder: SimCommandBuilder,
+        command_builder: LinuxSystemdCommandBuilder,
         runtime_host: str | None = None,
     ):
         self.command_channel = command_channel

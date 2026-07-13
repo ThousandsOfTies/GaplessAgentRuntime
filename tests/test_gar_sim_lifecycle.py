@@ -6,17 +6,17 @@ import json
 import unittest
 from unittest import mock
 
-from scripts.gar_lib.commands.sim_entry import (
-    run_next_sim_diagnostic,
-    run_next_sim_host_command,
-    run_next_sim_lifecycle,
+from scripts.gar_lib.commands.sim import (
+    run_sim_diagnostic,
+    run_sim_host_command,
+    run_sim_lifecycle,
 )
 from scripts.gar_lib.core.errors import AccessConnectionError
 from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
 from scripts.gar_lib.simulation.host import SimulationHostState
 
 
-class GarNextLifecycleTest(unittest.TestCase):
+class GarSimulationLifecycleTest(unittest.TestCase):
     def test_host_aws_authentication_failure_uses_terminal_bridge_recovery(self) -> None:
         workspace = mock.Mock(name="workspace", ec2={"region": "ap-northeast-1"})
         workspace.name = "Local/Product"
@@ -28,18 +28,18 @@ class GarNextLifecycleTest(unittest.TestCase):
             returncode=255,
         )
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationHostControllerResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationHostControllerResolver"
             ) as resolver_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.run_terminal_request", return_value=0
+                "scripts.gar_lib.commands.sim.run_terminal_request", return_value=0
             ) as terminal_request,
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = controller
             with contextlib.redirect_stderr(io.StringIO()):
-                result = run_next_sim_host_command(
+                result = run_sim_host_command(
                     "status",
                     workspace_selector="Local/Product",
                     retry_command="gar sim status --workspace Local/Product",
@@ -62,16 +62,16 @@ class GarNextLifecycleTest(unittest.TestCase):
             public_ip="203.0.113.5",
         )
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationHostControllerResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationHostControllerResolver"
             ) as resolver_type,
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = controller
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = run_next_sim_host_command(
+                result = run_sim_host_command(
                     "status",
                     workspace_selector="Local/Product",
                     retry_command="gar sim status --workspace Local/Product",
@@ -94,19 +94,20 @@ class GarNextLifecycleTest(unittest.TestCase):
             ok=True,
         )
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationEnvironmentResolver"
             ) as resolver_type,
-            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value={}),
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = environment
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                result = run_next_sim_diagnostic(
+                result = run_sim_diagnostic(
                     workspace_selector="Local/Product",
                     retry_command="gar sim env diag --json --workspace Local/Product",
+                    json_output=True,
                 )
 
         self.assertEqual(0, result)
@@ -118,16 +119,16 @@ class GarNextLifecycleTest(unittest.TestCase):
         environment = mock.Mock()
         environment.status.return_value = 0
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationEnvironmentResolver"
             ) as resolver_type,
-            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
-            mock.patch("scripts.gar_lib.commands.sim_entry.status_sim_port_forward", return_value=1),
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value={}),
+            mock.patch("scripts.gar_lib.commands.sim.status_sim_port_forward", return_value=1),
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = environment
-            result = run_next_sim_lifecycle(
+            result = run_sim_lifecycle(
                 "status",
                 workspace_selector="Local/Product",
                 retry_command="gar sim env status --workspace Local/Product",
@@ -141,17 +142,17 @@ class GarNextLifecycleTest(unittest.TestCase):
         environment = mock.Mock()
         environment.start.return_value = 0
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationEnvironmentResolver"
             ) as resolver_type,
-            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
-            mock.patch("scripts.gar_lib.commands.sim_entry.write_sim_terminal_profile"),
-            mock.patch("scripts.gar_lib.commands.sim_entry.start_sim_port_forward") as start_forward,
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value={}),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile"),
+            mock.patch("scripts.gar_lib.commands.sim.start_sim_port_forward") as start_forward,
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = environment
-            result = run_next_sim_lifecycle(
+            result = run_sim_lifecycle(
                 "start",
                 workspace_selector="Local/Product",
                 retry_command="gar sim env start --workspace Local/Product",
@@ -166,17 +167,17 @@ class GarNextLifecycleTest(unittest.TestCase):
         environment = mock.Mock(runtime_host=None)
         environment.start.return_value = 0
         with (
-            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.sim.ConfigWorkspaceRegistry") as registry_type,
             mock.patch(
-                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+                "scripts.gar_lib.commands.sim.ConfigSimulationEnvironmentResolver"
             ) as resolver_type,
-            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
-            mock.patch("scripts.gar_lib.commands.sim_entry.write_sim_terminal_profile") as profile,
-            mock.patch("scripts.gar_lib.commands.sim_entry.start_sim_port_forward") as forward,
+            mock.patch("scripts.gar_lib.commands.sim.load_hw_definition", return_value={}),
+            mock.patch("scripts.gar_lib.commands.sim.write_sim_terminal_profile") as profile,
+            mock.patch("scripts.gar_lib.commands.sim.start_sim_port_forward") as forward,
         ):
             registry_type.return_value.get.return_value = workspace
             resolver_type.return_value.for_workspace.return_value = environment
-            result = run_next_sim_lifecycle(
+            result = run_sim_lifecycle(
                 "start",
                 workspace_selector="Local/WokwiProduct",
                 retry_command="gar sim env start --workspace Local/WokwiProduct",

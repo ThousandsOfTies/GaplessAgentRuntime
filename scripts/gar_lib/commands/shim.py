@@ -1,13 +1,9 @@
-"""`gar shim`: deprecated alias for ``gar sim env build``.
-
-The implementation now lives in :mod:`scripts.gar_lib.commands.sim`
-(``run_sim_env_build_command``). This module is kept only so the older
-``gar shim build`` spelling keeps working.
-"""
+"""`gar shim`: deprecated alias for ``gar sim env build``."""
 
 from __future__ import annotations
 
-from scripts.gar_lib.commands.sim import run_sim_env_build_command
+from scripts.gar_lib.commands.sim import run_sim_command
+from scripts.gar_lib.core.command import SIM_RUNTIME_BUILD
 
 
 def run_shim_command(command: str, *, json_output: bool = False) -> int:
@@ -15,5 +11,9 @@ def run_shim_command(command: str, *, json_output: bool = False) -> int:
         print(f"gar shim: unknown command: {command}")
         return 1
 
-    return run_sim_env_build_command(json_output=json_output)
-
+    del json_output
+    return run_sim_command(
+        SIM_RUNTIME_BUILD,
+        workspace_selector=None,
+        retry_command="gar shim build",
+    )

@@ -1,6 +1,6 @@
 """``artifact.json`` manifest parsing, Codespace fetch, and provider resolution.
 
-Shared by ``gar sim(env) deploy`` (:mod:`scripts.gar_lib.commands.sim`),
+Shared by simulation and target environment deploy operations,
 ``gar target build/flash/deploy`` (:mod:`scripts.gar_lib.commands.target`), and
 the generic ``DevEnvironment.deploy()`` default implementation
 (:mod:`scripts.gar_lib.environments.base`).
