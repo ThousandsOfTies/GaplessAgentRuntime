@@ -271,13 +271,13 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
         print(f"  {style('候補', YELLOW)} {style(default_port, BOLD)}")
     else:
         print(f"  {style('未設定', YELLOW)}")
-        print(f"     {style('gar target deploy が使う serial port を setup で保存できます。', DIM)}")
+        print(f"     {style('gar target deploy が使う serial port をworkspace設定へ保存できます。', DIM)}")
 
     if candidates:
         print(f"     {style('検出候補:', DIM)} {', '.join(candidates)}")
     if not sys.stdin.isatty():
         if not current_port:
-            print(f"     {style('保存するには対話 terminal で gar setup を実行するか、gar target deploy --port COM3 を使ってください。', DIM)}")
+            print(f"     {style('保存するには対話 terminal で gar setup を実行してください。一時指定は gar target flash-esp32 --port COM3 で行えます。', DIM)}")
         return
 
     prompt_default = default_port or ""

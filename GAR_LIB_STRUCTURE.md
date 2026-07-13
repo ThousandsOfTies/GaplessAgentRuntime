@@ -45,7 +45,7 @@ gar_lib/
 
 | モジュール | 役割 |
 |---|---|
-| `cli.py` | 引数解析と `commands/` へのdispatchだけを行う入口。target等の移行中機能は互換性のため一部を再exportしている。 |
+| `cli.py` | 引数解析と `commands/` へのdispatchだけを行う入口。 |
 | `config.py` | `.gar/config.json`、workspace 選択、EC2 接続設定の保存と読み込み。 |
 | `gar_tools.py` | `gar-tools` checkout の場所解決と必要時の取得。 |
 
@@ -69,6 +69,24 @@ commands/sim.py
 - `LinuxBridgeHardwareControl` はGPIO・共通Bridge操作をruntime lifecycleから分離する。
 - `WokwiSimulationEnvironment` と `MujocoSimulationEnvironment` は同じinterfaceで解決される。個別のruntime artifactを必要としないenvironmentでは `gar sim env build/deploy` は何も要求しない。
 - AWS認証やSSH接続に失敗した場合の利用者誘導は、environmentではなく `commands/sim.py` の共通recovery経路がTerminal Bridgeへ渡す。
+
+## `gar target` の現在の分離
+
+```text
+cli.py
+  ↓ workspace名 + GarCommand
+commands/target.py
+  ├─ BuildEnvironment      target build
+  ├─ ArtifactStore         最新TARGET_APP成果物の選択
+  └─ TargetEnvironment     ADB・serial・SSH/scpによるdeploy
+                              ↓
+                        access channels
+```
+
+- `gar target build/deploy` はworkspace設定だけを入力とし、接続先の一時上書きは受け取らない。
+- `commands/target.py` はbuild・artifact選択・deployの順序と、共通の接続復旧だけを扱う。
+- `TargetEnvironment` はworkspaceの実機環境設定から解決され、ADB・SSH/scp・serialの具体的なアクセス手段は `access/` から組み立てる。
+- `gar target fetch`、`build-esp32`、`flash-esp32` は標準のbuild/deployとは用途が異なる明示的な補助commandとして残している。
 
 ## 責務の依存方向
 

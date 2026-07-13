@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import subprocess
 import tempfile
@@ -10,9 +12,14 @@ from unittest import mock
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.local import LocalBuildEnvironment
 from scripts.gar_lib.commands.setup import configure_target_connection
-from scripts.gar_lib.commands.target_next import TargetCommandServices, dispatch
+from scripts.gar_lib.commands.target import (
+    TargetCommandServices,
+    dispatch_target_command,
+    run_target_command,
+)
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.command import TARGET_BUILD, TARGET_DEPLOY
+from scripts.gar_lib.core.errors import AccessConnectionError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.target.esp32 import Esp32ArtifactInstaller
 from scripts.gar_lib.target.file_transfer import FileTransferTargetEnvironment
@@ -81,7 +88,11 @@ class GarTargetArchitectureTest(unittest.TestCase):
         build_environment = services.build_environments.for_workspace.return_value
         build_environment.build.return_value = artifact
 
-        result = dispatch(TARGET_BUILD, workspace_selector="Local/Product", services=services)
+        result = dispatch_target_command(
+            TARGET_BUILD,
+            workspace_selector="Local/Product",
+            services=services,
+        )
 
         self.assertIs(artifact, result)
         build_environment.build.assert_called_once_with(ArtifactKind.TARGET_APP, selected_workspace)
@@ -99,11 +110,48 @@ class GarTargetArchitectureTest(unittest.TestCase):
         services.artifacts.latest.return_value = artifact
         environment = services.target_environments.for_workspace.return_value
 
-        result = dispatch(TARGET_DEPLOY, workspace_selector="Local/Product", services=services)
+        result = dispatch_target_command(
+            TARGET_DEPLOY,
+            workspace_selector="Local/Product",
+            services=services,
+        )
 
         self.assertIs(artifact, result)
         services.artifacts.latest.assert_called_once_with(ArtifactKind.TARGET_APP, selected_workspace)
         environment.deploy.assert_called_once_with(artifact)
+
+    def test_target_adb_failure_uses_shared_recovery_guidance(self) -> None:
+        selected_workspace = workspace(Path("/tmp/product"))
+        artifact = mock.Mock()
+        environment = mock.Mock()
+        environment.deploy.side_effect = AccessConnectionError(
+            channel="adb",
+            endpoint="device-1",
+            reason="no_device",
+            returncode=1,
+        )
+        with (
+            mock.patch("scripts.gar_lib.commands.target.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch("scripts.gar_lib.commands.target.LocalArtifactStore") as artifact_store_type,
+            mock.patch(
+                "scripts.gar_lib.commands.target.ConfigTargetEnvironmentResolver"
+            ) as resolver_type,
+            mock.patch("scripts.gar_lib.commands.target.run_terminal_request") as terminal_request,
+        ):
+            registry_type.return_value.get.return_value = selected_workspace
+            artifact_store_type.return_value.latest.return_value = artifact
+            resolver_type.return_value.for_workspace.return_value = environment
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = run_target_command(
+                    TARGET_DEPLOY,
+                    workspace_selector="Local/Product",
+                    retry_command="gar target deploy --workspace Local/Product",
+                )
+
+        self.assertEqual(1, result)
+        terminal_request.assert_not_called()
+        self.assertIn("gar usb attach", stderr.getvalue())
 
     def test_file_target_transfers_manifest_and_applies_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

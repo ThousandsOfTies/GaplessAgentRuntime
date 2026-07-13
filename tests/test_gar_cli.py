@@ -13,7 +13,6 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib.cli import (
-    adb_device_available,
     completion_bash_script,
     fetch_codespace_artifacts,
     load_config,
@@ -28,7 +27,6 @@ from scripts.gar_lib.cli import (
     run_esp32_flash_command,
     run_setup,
     run_sim_infra_command,
-    run_target_deploy_command,
     run_terminal_request,
     run_usb_command,
     shutdown_code_codespace,
@@ -45,7 +43,6 @@ from scripts.gar_lib.core.command import (
     TARGET_DEPLOY,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.registry.target.esp32_esptool import Esp32EsptoolEnvironment
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
@@ -1100,129 +1097,6 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("BTN_GPIO5", plan["lines"][0]["label"])
         self.assertEqual("LED_GPIO6", plan["lines"][1]["label"])
 
-    def test_deploy_target_pushes_sensor_demo_with_adb(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            artifact = root / "files" / "sensor_demo"
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "sensor-demo",
-                        "deploy": {
-                            "app": {
-                                "files": [
-                                    {
-                                        "src": "files/sensor_demo",
-                                        "dest": "/home/user/sensor_demo",
-                                        "mode": "0755",
-                                    }
-                                ]
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            def run_side_effect(argv, **kwargs):
-                if argv == ["adb", "devices"]:
-                    return subprocess.CompletedProcess(
-                        args=argv,
-                        returncode=0,
-                        stdout="List of devices attached\nraspi\tdevice\n",
-                        stderr="",
-                    )
-                return subprocess.CompletedProcess(args=argv, returncode=0)
-
-            with (
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value={"selected_providers": {"target": "adb_usb"}}),
-                mock.patch("subprocess.run", side_effect=run_side_effect) as run,
-            ):
-
-                result = run_target_deploy_command(
-                    str(root),
-                    serial="raspi",
-                    dest="/home/user",
-                )
-
-        self.assertEqual(0, result)
-        self.assertEqual(3, run.call_count)
-        devices_argv = run.call_args_list[0].args[0]
-        push_argv = run.call_args_list[1].args[0]
-        chmod_argv = run.call_args_list[2].args[0]
-        self.assertEqual(["adb", "devices"], devices_argv)
-        self.assertEqual(["adb", "-s", "raspi", "push"], push_argv[:4])
-        self.assertEqual("/home/user/sensor_demo", push_argv[-1])
-        self.assertEqual(["adb", "-s", "raspi", "shell", "chmod 0755 /home/user/sensor_demo"], chmod_argv)
-
-    def test_adb_device_available_checks_serial_when_given(self) -> None:
-        output = "List of devices attached\nraspi\tdevice\nother\toffline\n"
-        self.assertTrue(adb_device_available(output, serial=None))
-        self.assertTrue(adb_device_available(output, serial="raspi"))
-        self.assertFalse(adb_device_available(output, serial="missing"))
-        self.assertFalse(adb_device_available("List of devices attached\n", serial=None))
-
-    def test_target_deploy_auto_attaches_usb_when_adb_device_is_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            artifact = root / "files" / "sensor_demo"
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "sensor-demo",
-                        "deploy": {
-                            "app": {
-                                "files": [
-                                    {
-                                        "src": "files/sensor_demo",
-                                        "dest": "/home/user/sensor_demo",
-                                        "mode": "0755",
-                                    }
-                                ]
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            devices_calls = 0
-
-            def run_side_effect(argv, **kwargs):
-                nonlocal devices_calls
-                if argv == ["adb", "devices"]:
-                    devices_calls += 1
-                    stdout = (
-                        "List of devices attached\n"
-                        if devices_calls == 1
-                        else "List of devices attached\nraspi\tdevice\n"
-                    )
-                    return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
-                return subprocess.CompletedProcess(args=argv, returncode=0)
-
-            with (
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value={"selected_providers": {"target": "adb_usb"}}),
-                mock.patch("subprocess.run", side_effect=run_side_effect) as run,
-                mock.patch("scripts.gar_lib.commands.target.run_usb_command", return_value=0) as usb_attach,
-                contextlib.redirect_stderr(io.StringIO()),
-            ):
-                result = run_target_deploy_command(
-                    str(root),
-                    serial="raspi",
-                    dest="/home/user",
-                )
-
-        self.assertEqual(0, result)
-        usb_attach.assert_called_once_with("attach")
-        self.assertEqual(4, run.call_count)
-        self.assertEqual(["adb", "devices"], run.call_args_list[0].args[0])
-        self.assertEqual(["adb", "devices"], run.call_args_list[1].args[0])
-        self.assertEqual(["adb", "-s", "raspi", "push"], run.call_args_list[2].args[0][:4])
-
     def test_sim_env_deploy_accepts_workspace_name(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_deploy:
             result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamTx"])
@@ -1367,23 +1241,8 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(2, exc.exception.code)
         run_infra.assert_not_called()
 
-    def test_target_deploy_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_deploy_command", return_value=0) as run_deploy:
-            result = main(["target", "deploy", "--serial", "raspi"])
-
-        self.assertEqual(0, result)
-        run_deploy.assert_called_once_with(
-            None,
-            serial="raspi",
-            port=None,
-            host=None,
-            dest="/home/user",
-            codespace=None,
-            remote_root=None,
-        )
-
     def test_target_deploy_workspace_uses_target_environment(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_target_command", return_value=0) as deploy:
+        with mock.patch("scripts.gar_lib.cli.run_target_command", return_value=0) as deploy:
             result = main(["target", "deploy", "--workspace", "Local/Product"])
 
         self.assertEqual(0, result)
@@ -1393,86 +1252,21 @@ class GarCliTest(unittest.TestCase):
             retry_command="gar target deploy --workspace Local/Product",
         )
 
-    def test_target_deploy_passes_host_for_ssh_provider(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_deploy_command", return_value=0) as run_deploy:
-            result = main(["target", "deploy", "--host", "raspi-net"])
-
-        self.assertEqual(0, result)
-        run_deploy.assert_called_once_with(
-            None,
-            serial=None,
-            port=None,
-            host="raspi-net",
-            dest="/home/user",
-            codespace=None,
-            remote_root=None,
-        )
-
-    def test_target_deploy_uses_scp_when_ssh_provider_is_selected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            artifact = root / "files" / "sensor_demo"
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            artifact.write_text("", encoding="utf-8")
-            (root / "artifact.json").write_text(
-                json.dumps(
-                    {
-                        "name": "sensor-demo",
-                        "deploy": {
-                            "app": {
-                                "files": [
-                                    {
-                                        "src": "files/sensor_demo",
-                                        "dest": "/home/user/sensor_demo",
-                                        "mode": "0755",
-                                    }
-                                ]
-                            }
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            config = {"selected_providers": {"target": "ssh_scp"}}
-            with (
-                mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-                mock.patch("subprocess.run") as run,
-            ):
-                run.return_value.returncode = 0
-
-                result = run_target_deploy_command(
-                    str(root),
-                    host="raspi-net",
-                    dest="/home/user",
-                )
-
-        self.assertEqual(0, result)
-        self.assertEqual(2, run.call_count)
-        copy_argv = run.call_args_list[0].args[0]
-        chmod_argv = run.call_args_list[1].args[0]
-        self.assertEqual("scp", copy_argv[0])
-        self.assertEqual("raspi-net:/home/user/sensor_demo", copy_argv[-1])
-        self.assertEqual(["ssh", "-F"], chmod_argv[:2])
-        self.assertEqual(
-            ["raspi-net", "chmod 0755 /home/user/sensor_demo"],
-            chmod_argv[-2:],
-        )
-
-    def test_target_deploy_with_ssh_provider_requires_host(self) -> None:
-        config = {"selected_providers": {"target": "ssh_scp"}}
-        with (
-            mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-            mock.patch("subprocess.run") as run,
-            contextlib.redirect_stderr(io.StringIO()),
+    def test_target_deploy_rejects_legacy_connection_overrides(self) -> None:
+        for option, value in (
+            ("--serial", "device-1"),
+            ("--port", "COM3"),
+            ("--host", "raspi"),
+            ("--dest", "/opt/product"),
+            ("--artifacts-dir", "/tmp/artifacts"),
+            ("--codespace", "product-space"),
+            ("--remote-root", "/workspaces/product"),
         ):
-            result = run_target_deploy_command(
-                str(Path(__file__).parent),
-                dest="/home/user",
-            )
+            with self.subTest(option=option), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    main(["target", "deploy", option, value])
 
-        self.assertNotEqual(0, result)
-        run.assert_not_called()
+            self.assertEqual(2, raised.exception.code)
 
     def test_target_fetch_copies_manifest_sources_from_codespace(self) -> None:
         manifest = {
@@ -1526,25 +1320,6 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(manifest, written_manifest)
         self.assertEqual(4, cp.call_count)
 
-    def test_target_deploy_with_esp32_esptool_flashes_latest_artifact(self) -> None:
-        config = {"selected_providers": {"target": "esp32_esptool"}, "esp32": {"port": "COM4"}}
-        with (
-            mock.patch("scripts.gar_lib.artifacts.manifest.load_config", return_value=config),
-            mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.load_config", return_value=config),
-            mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.run_esp32_flash_command", return_value=0) as flash,
-        ):
-            result = run_target_deploy_command(None)
-
-        self.assertEqual(0, result)
-        flash.assert_called_once_with(
-            artifact_dir=None,
-            port="COM4",
-            baud=921600,
-            chip="esp32",
-            verify=True,
-            install_esptool=True,
-        )
-
     def test_target_fetch_is_available_from_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1565,34 +1340,6 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(0, result)
         fetch.assert_called_once_with(
             root.resolve(),
-            codespace="codespace-test",
-            remote_root="/workspaces/out",
-        )
-
-    def test_target_deploy_can_fetch_from_codespace_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_deploy_command", return_value=0) as deploy:
-            result = main(
-                [
-                    "target",
-                    "deploy",
-                    "--codespace",
-                    "codespace-test",
-                    "--remote-root",
-                    "/workspaces/out",
-                    "--serial",
-                    "raspi",
-                    "--dest",
-                    "/home/user",
-                ]
-            )
-
-        self.assertEqual(0, result)
-        deploy.assert_called_once_with(
-            None,
-            serial="raspi",
-            port=None,
-            host=None,
-            dest="/home/user",
             codespace="codespace-test",
             remote_root="/workspaces/out",
         )
@@ -1798,13 +1545,10 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("/dev/ttyUSB0", err.getvalue())
 
     def test_target_flash_esp32_is_available_from_cli(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.commands.target.get_provider", return_value=Esp32EsptoolEnvironment),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.target.esp32_esptool.Esp32EsptoolEnvironment.flash",
-                return_value=0,
-            ) as flash,
-        ):
+        with mock.patch(
+            "scripts.gar_lib.cli.run_esp32_flash_command",
+            return_value=0,
+        ) as flash:
             result = main(
                 [
                     "target",
@@ -1831,13 +1575,10 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_target_build_esp32_is_available_from_cli(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.commands.target.get_provider", return_value=Esp32EsptoolEnvironment),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.target.esp32_esptool.Esp32EsptoolEnvironment.build",
-                return_value=0,
-            ) as build,
-        ):
+        with mock.patch(
+            "scripts.gar_lib.cli.run_esp32_build_command",
+            return_value=0,
+        ) as build:
             result = main(
                 [
                     "target",
@@ -1875,7 +1616,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_target_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_next_target_command", return_value=0) as build:
+        with mock.patch("scripts.gar_lib.cli.run_target_command", return_value=0) as build:
             result = main(["target", "build", "--workspace", "Codespaces/Product"])
 
         self.assertEqual(0, result)

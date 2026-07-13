@@ -289,7 +289,7 @@ gar sim env stop
 
 ### RasPi5 で実機実行
 
-実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`gar setup` の実機環境カテゴリで `SSH / scp` provider を選べ、`gar target deploy --host <ssh-host>` で転送できる（詳細: [docs/01_COMMAND_REFERENCE.md](docs/01_COMMAND_REFERENCE.md)）。
+実機接続は adb を既定としている（社内環境で複数 NIC が使えない構成に合わせるため）。ネットワーク越しに到達できる環境では、`gar setup` の実機環境カテゴリで `SSH / scp` を選び、workspaceへhostを保存して `gar target deploy --workspace <name>` で転送できる（詳細: [docs/01_COMMAND_REFERENCE.md](docs/01_COMMAND_REFERENCE.md)）。
 
 ```powershell
 adb shell

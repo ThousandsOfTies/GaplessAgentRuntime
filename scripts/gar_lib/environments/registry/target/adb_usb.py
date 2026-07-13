@@ -79,21 +79,3 @@ class AdbUsbEnvironment(DevEnvironment):
             cmd.extend(["-s", target])
         cmd.extend(["pull", str(src), str(dest)])
         return subprocess.run(cmd, check=False).returncode
-
-    @classmethod
-    def deploy(
-        cls,
-        artifacts_dir: str | None = None,
-        *,
-        serial: str | None = None,
-        port: str | None = None,
-        host: str | None = None,
-        dest: str = "/home/user",
-    ) -> int:
-        del port
-        from scripts.gar_lib.commands.target import ensure_adb_device
-
-        result = ensure_adb_device(serial=serial)
-        if result != 0:
-            return result
-        return super().deploy(artifacts_dir, serial=serial, host=host, dest=dest)

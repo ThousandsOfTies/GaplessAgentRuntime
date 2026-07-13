@@ -1,9 +1,7 @@
 """``artifact.json`` manifest parsing, Codespace fetch, and provider resolution.
 
-Shared by simulation and target environment deploy operations,
-``gar target build/flash/deploy`` (:mod:`scripts.gar_lib.commands.target`), and
-the generic ``DevEnvironment.deploy()`` default implementation
-(:mod:`scripts.gar_lib.environments.base`).
+Shared by simulation and target environment deploy operations and explicit
+artifact fetch commands.
 
 artifact.json スキーマ:
   deploy.app     — target app バイナリ（VM ・実機共通）
@@ -22,25 +20,9 @@ import tempfile
 from pathlib import Path
 
 from scripts.gar_lib.access.codespaces import select_codespace_from_list
-from scripts.gar_lib.config import PROJECT_ROOT, load_config
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.discovery import discover_environment_providers
+from scripts.gar_lib.config import PROJECT_ROOT
 
 DEFAULT_CODESPACE_ARTIFACT_ROOT = "/workspaces/gar-build-env/artifacts/from-codespace"
-
-
-def get_provider(category: str) -> type[DevEnvironment]:
-    config = load_config()
-    pid = config.get("selected_providers", {}).get(category)
-    providers = discover_environment_providers()
-    if pid:
-        for p in providers:
-            if p.provider_id == pid:
-                return p
-    for p in providers:
-        if p.provider_id == ("ssh_remote" if category == "simulator" else "adb_usb"):
-            return p
-    raise RuntimeError(f"No {category} provider found")
 
 
 def default_artifacts_dir() -> Path:

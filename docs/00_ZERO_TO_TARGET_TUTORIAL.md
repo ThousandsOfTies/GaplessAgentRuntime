@@ -302,17 +302,17 @@ gar target build
 gar target deploy
 ```
 
-特定ADB deviceを通常利用する場合は`gar setup`でserialをworkspaceへ保存します。低レベル確認で一時指定する場合:
+特定ADB deviceを利用する場合は`gar setup`でserialをworkspaceへ保存します。確認にはADBを直接利用できます。
 
 ```bash
 adb devices
-gar target deploy --serial <serial>
+gar target deploy --workspace Local/Product
 ```
 
-ネットワーク越しSSH/scp providerでは、通常は`gar setup`でhostを保存して実行します。一時的な低レベル確認では:
+ネットワーク越しSSH/scpでは、`gar setup`でhostをworkspaceへ保存して実行します。
 
 ```bash
-gar target deploy --host raspi5
+gar target deploy --workspace Network/Product
 ```
 
 deploy だけやり直す場合:
@@ -474,6 +474,6 @@ SSH/scp 実機経路の場合:
 
 ```bash
 gar setup                 # 実機環境で SSH / scp を選ぶ
-gar target deploy --host raspi5
+gar target deploy --workspace Network/Product
 ssh raspi5 '~/sensor_demo'
 ```

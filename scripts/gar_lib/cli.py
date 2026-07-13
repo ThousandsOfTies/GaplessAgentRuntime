@@ -86,17 +86,7 @@ from scripts.gar_lib.commands.sim import (
     run_sim_lifecycle,
     run_sim_panel,
 )
-from scripts.gar_lib.commands.target import (  # noqa: F401
-    adb_device_available,
-    deploy_target_artifacts,
-    deploy_target_artifacts_ssh,
-    ensure_adb_device,
-    run_target_build_command,
-    run_target_deploy_command,
-    run_target_flash_command,
-    selected_target_provider_id,
-)
-from scripts.gar_lib.commands.target_entry import run_next_target_command
+from scripts.gar_lib.commands.target import run_target_command
 from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
@@ -659,41 +649,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="gar setupで登録したworkspace名。登録が1件なら省略できます",
     )
-    target_deploy_parser.add_argument(
-        "--serial",
-        default=None,
-        help="adb device serial。esp32_esptool provider では serial port としても扱います",
-    )
-    target_deploy_parser.add_argument(
-        "--port",
-        default=None,
-        help="esp32_esptool provider 利用時の serial port。例: /dev/ttyACM0, /dev/ttyUSB0, COM3",
-    )
-    target_deploy_parser.add_argument(
-        "--host",
-        default=None,
-        help="SSH/scp provider 利用時の SSH config 上の host 名",
-    )
-    target_deploy_parser.add_argument(
-        "--dest",
-        default=None,
-        help="低レベル互換経路: artifact.json の相対destに使う接続先基準ディレクトリ",
-    )
-    target_deploy_parser.add_argument(
-        "--artifacts-dir",
-        default=None,
-        help="Codespace から WSL hub へコピー済みの成果物 root",
-    )
-    target_deploy_parser.add_argument(
-        "--codespace",
-        default=None,
-        help="artifact が未取得のときの取得元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
-    )
-    target_deploy_parser.add_argument(
-        "--remote-root",
-        default=None,
-        help=f"Codespace 上の artifact bundle root（既定: {DEFAULT_CODESPACE_ARTIFACT_ROOT}）",
-    )
     target_fetch_parser = target_subparsers.add_parser(
         "fetch",
         help="Codespace の artifact bundle を WSL hub へ取得します",
@@ -1070,33 +1025,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if args.target_command == "deploy":
             workspace = getattr(args, "workspace", None)
-            has_legacy_override = any(
-                value is not None
-                for value in (
-                    args.artifacts_dir,
-                    args.serial,
-                    args.port,
-                    args.host,
-                    args.dest,
-                    args.codespace,
-                    args.remote_root,
-                )
-            )
-            if not has_legacy_override:
-                retry = "gar target deploy" + (f" --workspace {workspace}" if workspace else "")
-                return run_next_target_command(
-                    TARGET_DEPLOY,
-                    workspace_selector=workspace,
-                    retry_command=retry,
-                )
-            return run_target_deploy_command(
-                args.artifacts_dir,
-                serial=args.serial,
-                port=args.port,
-                host=args.host,
-                dest=args.dest or "/home/user",
-                codespace=args.codespace,
-                remote_root=args.remote_root,
+            retry = "gar target deploy" + (f" --workspace {workspace}" if workspace else "")
+            return run_target_command(
+                TARGET_DEPLOY,
+                workspace_selector=workspace,
+                retry_command=retry,
             )
         if args.target_command == "fetch":
             root = (
@@ -1112,13 +1045,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.target_command == "build":
             workspace = getattr(args, "workspace", None)
             retry = "gar target build" + (f" --workspace {workspace}" if workspace else "")
-            return run_next_target_command(
+            return run_target_command(
                 TARGET_BUILD,
                 workspace_selector=workspace,
                 retry_command=retry,
             )
         if args.target_command == "build-esp32":
-            return run_target_build_command(
+            return run_esp32_build_command(
                 codespace=args.codespace,
                 remote_project_root=args.remote_project_root,
                 pio_env=args.pio_env,
@@ -1134,7 +1067,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_with_json_summary(
                 "target flash-esp32",
                 getattr(args, "json_output", False),
-                lambda: run_target_flash_command(
+                lambda: run_esp32_flash_command(
                     artifact_dir=args.artifact_dir,
                     port=args.port,
                     baud=args.baud,

@@ -130,26 +130,6 @@ class Esp32EsptoolEnvironment(DevEnvironment):
             install_esptool=install_esptool,
         )
 
-    @classmethod
-    def deploy(
-        cls,
-        artifacts_dir: str | None = None,
-        *,
-        serial: str | None = None,
-        port: str | None = None,
-        host: str | None = None,
-        dest: str = "/home/user",
-    ) -> int:
-        """ESP32 has no plain file-push deploy; ``deploy`` flashes the artifact
-        directory at ``artifacts_dir`` via esptool instead (or the latest
-        artifact under the default ESP32 artifact root when omitted)."""
-        del host, dest
-        return cls.flash(
-            artifact_dir=str(Path(artifacts_dir).expanduser().resolve()) if artifacts_dir else None,
-            port=port or serial or saved_esp32_serial_port(load_config()),
-        )
-
-
 def normalize_esp32_serial_port(port: str | None) -> str | None:
     """Map Windows COM names to WSL ttyS names when running from Linux."""
 
@@ -301,7 +281,7 @@ def run_esp32_flash_command(
         print(
             "gar target flash-esp32: ESP32 serial port is not configured.\n"
             "Run: gar setup\n"
-            "or:  gar target deploy --port COM3",
+            "or:  gar target flash-esp32 --port COM3",
             file=sys.stderr,
         )
         return 1

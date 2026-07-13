@@ -188,7 +188,6 @@ DEFAULT_EC2_REGION = None
 
 **改善すべき点**:
 - `gar_tools.py`（target manifest discovery）と `environments/discovery.py`（provider discovery）が似た仕組みだが独立している。将来的に target manifest と provider を紐付ける場合に統合が必要。
-- `artifacts/manifest.py` の `get_provider()` が config → discovery → provider 解決を毎回行っている。頻繁に呼ばれるパスでは遅くなりうる（現時点では問題ないが、将来の `gar deploy` の依存解決で効いてくる可能性）。
 
 ---
 
