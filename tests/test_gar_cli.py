@@ -33,10 +33,16 @@ from scripts.gar_lib.config import load_config
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
     SIM_CLEAN,
+    SIM_HOST_START,
+    SIM_HOST_STATUS,
+    SIM_HOST_STOP,
     SIM_RUNTIME_BUILD,
     SIM_RUNTIME_DEPLOY,
+    SIM_RUNTIME_DIAG,
+    SIM_RUNTIME_START,
     TARGET_BUILD,
     TARGET_DEPLOY,
+    GarCommand,
 )
 from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
@@ -1027,7 +1033,7 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("LED_GPIO6", plan["lines"][1]["label"])
 
     def test_sim_env_deploy_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_deploy:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_deploy:
             result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -1038,7 +1044,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
@@ -1049,7 +1055,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_uses_product_provider_environment(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_product_build:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_product_build:
             result = main(["sim", "build"])
 
         self.assertEqual(0, result)
@@ -1060,7 +1066,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_accepts_setup_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_build:
             result = main(["sim", "build", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
@@ -1071,7 +1077,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_env_build_uses_environment_command_path(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_build:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_build:
             result = main(["sim", "env", "build", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
@@ -1082,7 +1088,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_build_clean_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_sim:
             result = main(["sim", "build", "clean", "--workspace", "local/GarStreamRx"])
 
         self.assertEqual(0, result)
@@ -1097,12 +1103,12 @@ class GarCliTest(unittest.TestCase):
             main(["sim", "build", "--workspace-root", "/tmp/product"])
 
     def test_sim_status_accepts_workspace_name(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_host:
             result = main(["sim", "status", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_host.assert_called_once_with(
-            "status",
+            SIM_HOST_STATUS,
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim status --workspace Local/GarStreamTx",
             update_address=True,
@@ -1111,7 +1117,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_start_workspace_uses_host_controller_options(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_host:
             result = main(
                 [
                     "sim",
@@ -1125,7 +1131,7 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         run_host.assert_called_once_with(
-            "start",
+            SIM_HOST_START,
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim start --workspace Local/GarStreamTx",
             update_address=False,
@@ -1134,12 +1140,12 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_sim_stop_workspace_uses_host_controller(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_host_command", return_value=0) as run_host:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_host:
             result = main(["sim", "stop", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_host.assert_called_once_with(
-            "stop",
+            SIM_HOST_STOP,
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim stop --workspace Local/GarStreamTx",
             update_address=True,
@@ -1171,7 +1177,7 @@ class GarCliTest(unittest.TestCase):
         run_infra.assert_not_called()
 
     def test_target_deploy_workspace_uses_target_environment(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_command", return_value=0) as deploy:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as deploy:
             result = main(["target", "deploy", "--workspace", "Local/Product"])
 
         self.assertEqual(0, result)
@@ -1545,7 +1551,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_target_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_target_command", return_value=0) as build:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as build:
             result = main(["target", "build", "--workspace", "Codespaces/Product"])
 
         self.assertEqual(0, result)
@@ -1953,17 +1959,17 @@ class GarCliTest(unittest.TestCase):
             )
 
     def test_sim_cli_uses_workspace_lifecycle_by_default(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_lifecycle", return_value=0) as run_sim:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_sim:
             result = main(["sim", "env", "start", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
         run_sim.assert_called_once_with(
-            "start",
+            SIM_RUNTIME_START,
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim env start --workspace Local/GarStreamTx",
             settings=None,
             profile_name=None,
-            manage_port_forward=True,
+            manage_session=True,
         )
 
     def test_setup_can_store_default_ec2_host(self) -> None:
@@ -2405,47 +2411,44 @@ class GarCliTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
 
     def test_sim_env_gpio_start_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_hardware_command", return_value=0) as run_gpio:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_gpio:
             result = main(
                 ["sim", "env", "gpio", "start", "--workspace", "Network/Product"]
             )
 
         self.assertEqual(0, result)
         run_gpio.assert_called_once_with(
-            "start",
+            GarCommand("sim", "gpio", "start"),
             workspace_selector="Network/Product",
             retry_command="gar sim env gpio start --workspace Network/Product",
             json_output=False,
         )
 
     def test_sim_env_gpio_plan_json_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_sim_hardware_command", return_value=0) as run_gpio:
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_gpio:
             result = main(["sim", "env", "gpio", "plan", "--json"])
 
         self.assertEqual(0, result)
         run_gpio.assert_called_once_with(
-            "plan",
+            GarCommand("sim", "gpio", "plan"),
             workspace_selector=None,
             retry_command="gar sim env gpio plan",
             json_output=True,
         )
 
     def test_sim_diag_json_without_explicit_host_uses_workspace_environment(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.cli.run_sim_diagnostic", return_value=0) as run_diag,
-            mock.patch("scripts.gar_lib.cli.run_sim_command") as legacy_run,
-        ):
+        with mock.patch("scripts.gar_lib.cli.execute_application_command", return_value=0) as run_diag:
             result = main(
                 ["sim", "env", "diag", "--json", "--workspace", "Local/GarStreamTx"]
             )
 
         self.assertEqual(0, result)
         run_diag.assert_called_once_with(
+            SIM_RUNTIME_DIAG,
             workspace_selector="Local/GarStreamTx",
             retry_command="gar sim env diag --json --workspace Local/GarStreamTx",
             json_output=True,
         )
-        legacy_run.assert_not_called()
 
 
 class SimPanelTests(unittest.TestCase):

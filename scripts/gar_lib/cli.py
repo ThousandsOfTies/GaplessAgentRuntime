@@ -7,10 +7,10 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib.vscode.terminal_bridge` — VSCode Terminal Bridge extension install
 - :mod:`scripts.gar_lib.commands.code` — ``gar code``
 - :mod:`scripts.gar_lib.artifacts.manifest` — artifact.json 共通基盤・Codespace fetch（CLI引数に対応しないドメインロジック）
-- :mod:`scripts.gar_lib.commands.target` — ``gar target``
+- :mod:`scripts.gar_lib.application` — workspace-based ``gar sim/target`` use cases
 - :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
 - :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
-- :mod:`scripts.gar_lib.commands.sim` — ``gar sim`` orchestration
+- :mod:`scripts.gar_lib.commands.application` — application result rendering/recovery
 - :mod:`scripts.gar_lib.commands.terminal` — ``gar terminal``
 - :mod:`scripts.gar_lib.commands.usb` — ``gar usb``
 - :mod:`scripts.gar_lib.commands.setup` — ``gar setup``
@@ -30,29 +30,30 @@ from scripts.gar_lib.artifacts.manifest import (
     default_artifacts_dir,
     fetch_codespace_artifacts,
 )
+from scripts.gar_lib.commands.application import execute_application_command
 from scripts.gar_lib.commands.code import run_code_command
 from scripts.gar_lib.commands.hw import run_hw_command
 from scripts.gar_lib.commands.infra import run_sim_infra_command
 from scripts.gar_lib.commands.setup import run_setup
-from scripts.gar_lib.commands.sim import (
-    run_sim_command,
-    run_sim_diagnostic,
-    run_sim_hardware_command,
-    run_sim_host_command,
-    run_sim_lifecycle,
-    run_sim_panel,
-)
-from scripts.gar_lib.commands.target import run_target_command
 from scripts.gar_lib.commands.terminal import run_terminal_gc, run_terminal_request
 from scripts.gar_lib.commands.usb import run_usb_command
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
     SIM_CLEAN,
     SIM_DEPLOY,
+    SIM_HOST_START,
+    SIM_HOST_STATUS,
+    SIM_HOST_STOP,
     SIM_RUNTIME_BUILD,
     SIM_RUNTIME_DEPLOY,
+    SIM_RUNTIME_DIAG,
+    SIM_RUNTIME_LOG,
+    SIM_RUNTIME_START,
+    SIM_RUNTIME_STATUS,
+    SIM_RUNTIME_STOP,
     TARGET_BUILD,
     TARGET_DEPLOY,
+    GarCommand,
 )
 from scripts.gar_lib.target.esptool import run_esp32_flash_command
 from scripts.gar_lib.targets.esp32 import (
@@ -63,9 +64,9 @@ from scripts.gar_lib.targets.esp32 import (
 )
 
 SIM_VM_COMMAND_MAP = {
-    "start": "start",
-    "stop": "stop",
-    "status": "status",
+    "start": SIM_HOST_START,
+    "stop": SIM_HOST_STOP,
+    "status": SIM_HOST_STATUS,
 }
 
 CODE_COMMAND_MAP = {
@@ -347,7 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("clean",),
         help="clean を指定すると product の simulation build artifact を削除します",
     )
-    for sim_vm_command_name, ec2_command_name in SIM_VM_COMMAND_MAP.items():
+    for sim_vm_command_name in SIM_VM_COMMAND_MAP:
         help_text = {
             "start": "simulation VM を起動します",
             "stop": "simulation VM を停止します",
@@ -370,7 +371,7 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
-        if ec2_command_name == "start":
+        if sim_vm_command_name == "start":
             sim_vm_command_parser.add_argument(
                 "--no-update-ssh",
                 action="store_true",
@@ -748,7 +749,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             retry = f"gar sim {args.sim_command}" + (
                 f" --workspace {workspace}" if workspace else ""
             )
-            return run_sim_host_command(
+            return execute_application_command(
                 SIM_VM_COMMAND_MAP[args.sim_command],
                 workspace_selector=workspace,
                 retry_command=retry,
@@ -759,7 +760,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sim_command == "deploy":
             workspace = getattr(args, "workspace", None)
             retry = "gar sim deploy" + (f" --workspace {workspace}" if workspace else "")
-            return run_sim_command(
+            return execute_application_command(
                 SIM_DEPLOY,
                 workspace_selector=workspace,
                 retry_command=retry,
@@ -770,7 +771,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             retry = "gar sim build" + (" clean" if clean else "") + (
                 f" --workspace {workspace_root}" if workspace_root else ""
             )
-            return run_sim_command(
+            return execute_application_command(
                 SIM_CLEAN if clean else SIM_BUILD,
                 workspace_selector=workspace_root,
                 retry_command=retry,
@@ -782,7 +783,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.sim_env_command == "build":
                 workspace_root = getattr(args, "workspace", None)
                 retry = "gar sim env build" + (f" --workspace {workspace_root}" if workspace_root else "")
-                return run_sim_command(
+                return execute_application_command(
                     SIM_RUNTIME_BUILD,
                     workspace_selector=workspace_root,
                     retry_command=retry,
@@ -790,7 +791,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.sim_env_command == "deploy":
                 workspace = getattr(args, "workspace", None)
                 retry = "gar sim env deploy" + (f" --workspace {workspace}" if workspace else "")
-                return run_sim_command(
+                return execute_application_command(
                     SIM_RUNTIME_DEPLOY,
                     workspace_selector=workspace,
                     retry_command=retry,
@@ -803,8 +804,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 retry = f"gar sim env gpio {args.gpio_command}" + (
                     f" --workspace {workspace}" if workspace else ""
                 )
-                return run_sim_hardware_command(
-                    args.gpio_command,
+                return execute_application_command(
+                    GarCommand("sim", "gpio", args.gpio_command),
                     workspace_selector=workspace,
                     retry_command=retry,
                     json_output=getattr(args, "json_output", False),
@@ -814,7 +815,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 retry = "gar sim env diag" + (
                     " --json" if getattr(args, "json_output", False) else ""
                 ) + (f" --workspace {workspace}" if workspace else "")
-                return run_sim_diagnostic(
+                return execute_application_command(
+                    SIM_RUNTIME_DIAG,
                     workspace_selector=workspace,
                     retry_command=retry,
                     json_output=getattr(args, "json_output", False),
@@ -824,8 +826,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 retry = "gar sim env gpio-sim-check" + (
                     " --json" if getattr(args, "json_output", False) else ""
                 ) + (f" --workspace {workspace}" if workspace else "")
-                return run_sim_hardware_command(
-                    "check",
+                return execute_application_command(
+                    GarCommand("sim", "gpio", "check"),
                     workspace_selector=workspace,
                     retry_command=retry,
                     json_output=getattr(args, "json_output", False),
@@ -846,8 +848,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 retry = f"gar sim env panel {args.action}" + (
                     f" --workspace {workspace}" if workspace else ""
                 )
-                return run_sim_panel(
-                    args.action,
+                return execute_application_command(
+                    GarCommand("sim", "panel", args.action),
                     workspace_selector=workspace,
                     retry_command=retry,
                     json_output=getattr(args, "json_output", False),
@@ -858,13 +860,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 retry = f"gar sim env {args.sim_env_command}" + (
                     f" --workspace {workspace}" if workspace else ""
                 )
-                return run_sim_lifecycle(
-                    args.sim_env_command,
+                lifecycle_command = {
+                    "start": SIM_RUNTIME_START,
+                    "stop": SIM_RUNTIME_STOP,
+                    "status": SIM_RUNTIME_STATUS,
+                    "log": SIM_RUNTIME_LOG,
+                }[args.sim_env_command]
+                return execute_application_command(
+                    lifecycle_command,
                     workspace_selector=workspace,
                     retry_command=retry,
                     settings=getattr(args, "settings", None),
                     profile_name=getattr(args, "profile_name", None),
-                    manage_port_forward=(
+                    manage_session=(
                         not getattr(args, "no_port_forward", False)
                         if args.sim_env_command == "start"
                         else not getattr(args, "keep_port_forward", False)
@@ -891,7 +899,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.target_command == "deploy":
             workspace = getattr(args, "workspace", None)
             retry = "gar target deploy" + (f" --workspace {workspace}" if workspace else "")
-            return run_target_command(
+            return execute_application_command(
                 TARGET_DEPLOY,
                 workspace_selector=workspace,
                 retry_command=retry,
@@ -910,7 +918,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.target_command == "build":
             workspace = getattr(args, "workspace", None)
             retry = "gar target build" + (f" --workspace {workspace}" if workspace else "")
-            return run_target_command(
+            return execute_application_command(
                 TARGET_BUILD,
                 workspace_selector=workspace,
                 retry_command=retry,

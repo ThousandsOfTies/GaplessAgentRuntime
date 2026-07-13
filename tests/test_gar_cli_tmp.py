@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import unittest
-from pathlib import Path
 from unittest import mock
 
+from scripts.gar_lib.application import CommandOutcome
 from scripts.gar_lib.cli_tmp import main, sim_command, target_command
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
@@ -30,69 +28,40 @@ class GarCliTmpTest(unittest.TestCase):
         self.assertEqual(TARGET_BUILD, target_command("build"))
         self.assertEqual(TARGET_DEPLOY, target_command("deploy"))
 
-    def test_sim_build_constructs_services_and_calls_dispatch(self) -> None:
-        artifact = mock.Mock(bundle_path=Path("/tmp/sim-artifact"))
+    def test_sim_build_composes_application_and_dispatches(self) -> None:
+        services = mock.Mock()
+        outcome = CommandOutcome(mock.Mock(), artifact=mock.Mock())
         with (
-            mock.patch("scripts.gar_lib.cli_tmp.LocalArtifactStore") as artifact_store_type,
-            mock.patch("scripts.gar_lib.cli_tmp.ConfigWorkspaceRegistry") as workspace_registry_type,
-            mock.patch("scripts.gar_lib.cli_tmp.ConfigBuildEnvironmentResolver") as build_resolver_type,
-            mock.patch("scripts.gar_lib.cli_tmp.ConfigSimulationEnvironmentResolver") as sim_resolver_type,
-            mock.patch("scripts.gar_lib.cli_tmp.ConfigTargetEnvironmentResolver") as target_resolver_type,
-            mock.patch(
-                "scripts.gar_lib.cli_tmp.dispatch_sim_command",
-                return_value=artifact,
-            ) as dispatch,
+            mock.patch("scripts.gar_lib.cli_tmp.compose_application", return_value=services),
+            mock.patch("scripts.gar_lib.cli_tmp.dispatch", return_value=outcome) as dispatch,
+            mock.patch("scripts.gar_lib.cli_tmp.render_outcome") as render,
         ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = main(["sim", "build", "--workspace", "Local/GarStreamTx"])
+            result = main(["sim", "build", "--workspace", "Local/GarStreamTx"])
 
         self.assertEqual(0, result)
-        build_resolver_type.assert_called_once_with(artifact_store_type.return_value)
-        dispatch.assert_called_once()
-        self.assertEqual(SIM_BUILD, dispatch.call_args.args[0])
-        self.assertEqual("Local/GarStreamTx", dispatch.call_args.kwargs["workspace_selector"])
-        services = dispatch.call_args.kwargs["services"]
-        self.assertIs(workspace_registry_type.return_value, services.workspaces)
-        self.assertIs(build_resolver_type.return_value, services.build_environments)
-        self.assertIs(artifact_store_type.return_value, services.artifacts)
-        self.assertIs(sim_resolver_type.return_value, services.simulation_environments)
-        target_resolver_type.assert_not_called()
-        self.assertIn("/tmp/sim-artifact", output.getvalue())
+        dispatch.assert_called_once_with(
+            SIM_BUILD,
+            workspace_selector="Local/GarStreamTx",
+            services=services,
+        )
+        render.assert_called_once_with(SIM_BUILD, outcome, json_output=False)
 
-    def test_sim_runtime_deploy_calls_same_dispatch_with_runtime_command(self) -> None:
-        with mock.patch(
-            "scripts.gar_lib.cli_tmp.dispatch_sim_command",
-            return_value=None,
-        ) as dispatch:
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = main(["sim", "env", "deploy", "--workspace", "Local/GarStreamRx"])
-
-        self.assertEqual(0, result)
-        self.assertEqual(SIM_RUNTIME_DEPLOY, dispatch.call_args.args[0])
-        self.assertEqual("Local/GarStreamRx", dispatch.call_args.kwargs["workspace_selector"])
-        self.assertIn("runtime artifactは不要", output.getvalue())
-
-    def test_target_deploy_constructs_services_and_calls_target_dispatch(self) -> None:
-        artifact = mock.Mock(bundle_path=Path("/tmp/target-artifact"))
+    def test_target_deploy_uses_same_application_dispatch(self) -> None:
+        services = mock.Mock()
+        outcome = CommandOutcome(mock.Mock(), artifact=mock.Mock())
         with (
-            mock.patch("scripts.gar_lib.cli_tmp.ConfigTargetEnvironmentResolver") as resolver_type,
-            mock.patch(
-                "scripts.gar_lib.cli_tmp.dispatch_target_command",
-                return_value=artifact,
-            ) as dispatch,
+            mock.patch("scripts.gar_lib.cli_tmp.compose_application", return_value=services),
+            mock.patch("scripts.gar_lib.cli_tmp.dispatch", return_value=outcome) as dispatch,
+            mock.patch("scripts.gar_lib.cli_tmp.render_outcome"),
         ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = main(["target", "deploy", "--workspace", "Network/GarStreamTx"])
+            result = main(["target", "deploy", "--workspace", "Network/GarStreamTx"])
 
         self.assertEqual(0, result)
-        self.assertEqual(TARGET_DEPLOY, dispatch.call_args.args[0])
-        self.assertEqual("Network/GarStreamTx", dispatch.call_args.kwargs["workspace_selector"])
-        services = dispatch.call_args.kwargs["services"]
-        self.assertIs(resolver_type.return_value, services.target_environments)
-        self.assertIn("/tmp/target-artifact", output.getvalue())
+        dispatch.assert_called_once_with(
+            TARGET_DEPLOY,
+            workspace_selector="Network/GarStreamTx",
+            services=services,
+        )
 
 
 if __name__ == "__main__":

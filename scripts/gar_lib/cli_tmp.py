@@ -12,12 +12,10 @@ import sys
 from collections.abc import Sequence
 from typing import NoReturn
 
-from scripts.gar_lib.artifacts.store import LocalArtifactStore
-from scripts.gar_lib.build.resolver import ConfigBuildEnvironmentResolver
-from scripts.gar_lib.commands.sim import SimulationCommandServices, dispatch_sim_command
-from scripts.gar_lib.commands.target import TargetCommandServices, dispatch_target_command
+from scripts.gar_lib.application import dispatch
+from scripts.gar_lib.commands.application import render_outcome
 from scripts.gar_lib.commands.terminal import run_terminal_request
-from scripts.gar_lib.core.artifact import Artifact
+from scripts.gar_lib.composition import compose_application
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
     SIM_CLEAN,
@@ -31,9 +29,6 @@ from scripts.gar_lib.core.command import (
 from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
 from scripts.gar_lib.recovery.access import AccessRecoveryPlanner
 from scripts.gar_lib.recovery.terminal import TerminalBridgeRecoveryExecutor
-from scripts.gar_lib.simulation.resolver import ConfigSimulationEnvironmentResolver
-from scripts.gar_lib.target.resolver import ConfigTargetEnvironmentResolver
-from scripts.gar_lib.workspaces.registry import ConfigWorkspaceRegistry
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,58 +71,35 @@ def target_command(action: str) -> GarCommand:
     raise GarDomainError(f"target commandは未対応です: {action}")
 
 
-def render_result(command: GarCommand, artifact: Artifact | None) -> None:
-    if command == SIM_CLEAN:
-        print("Simulation artifactを削除しました。")
-    elif artifact is None:
-        print("このsimulation environmentには個別のruntime artifactは不要です。")
-    else:
-        print(f"Artifact: {artifact.bundle_path}")
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     command_args = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(command_args)
 
-    artifacts = LocalArtifactStore()
-    workspaces = ConfigWorkspaceRegistry()
-    build_environments = ConfigBuildEnvironmentResolver(artifacts)
+    services = compose_application()
 
     try:
         if args.group == "sim":
-            services = SimulationCommandServices(
-                workspaces=workspaces,
-                build_environments=build_environments,
-                artifacts=artifacts,
-                simulation_environments=ConfigSimulationEnvironmentResolver(),
-            )
             command = sim_command(args.parts)
-            artifact = dispatch_sim_command(
+            outcome = dispatch(
                 command,
                 workspace_selector=args.workspace,
                 services=services,
             )
-            render_result(command, artifact)
-            return 0
+            render_outcome(command, outcome, json_output=False)
+            return outcome.exit_code
 
         if args.group == "target":
-            services = TargetCommandServices(
-                workspaces=workspaces,
-                build_environments=build_environments,
-                artifacts=artifacts,
-                target_environments=ConfigTargetEnvironmentResolver(),
-            )
             command = target_command(args.action)
-            artifact = dispatch_target_command(
+            outcome = dispatch(
                 command,
                 workspace_selector=args.workspace,
                 services=services,
             )
-            render_result(command, artifact)
-            return 0
+            render_outcome(command, outcome, json_output=False)
+            return outcome.exit_code
 
     except AccessConnectionError as exc:
-        workspace = workspaces.get(args.workspace)
+        workspace = services.workspaces.get(args.workspace)
         retry_command = shlex.join(("gar", *command_args))
         recovery = AccessRecoveryPlanner().plan(
             exc,

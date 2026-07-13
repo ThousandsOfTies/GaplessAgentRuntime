@@ -9,14 +9,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scripts.gar_lib.application import ApplicationServices, dispatch
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.local import LocalBuildEnvironment
+from scripts.gar_lib.commands.application import execute_application_command
 from scripts.gar_lib.commands.setup import configure_target_connection
-from scripts.gar_lib.commands.target import (
-    TargetCommandServices,
-    dispatch_target_command,
-    run_target_command,
-)
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.command import TARGET_BUILD, TARGET_DEPLOY
 from scripts.gar_lib.core.errors import AccessConnectionError
@@ -33,6 +30,26 @@ def workspace(root: Path, *, target: str = "adb_usb") -> Workspace:
         branch="Product",
         connection={"type": "local", "path": str(root)},
         selected_environments={"codespace": "local", "target": target},
+    )
+
+
+def application_services(
+    *,
+    workspaces: object,
+    build_environments: object,
+    artifacts: object,
+    target_environments: object,
+) -> ApplicationServices:
+    return ApplicationServices(
+        workspaces=workspaces,
+        build_environments=build_environments,
+        artifacts=artifacts,
+        simulation_environments=mock.Mock(),
+        simulation_hosts=mock.Mock(),
+        simulation_hardware=mock.Mock(),
+        simulation_sessions=mock.Mock(),
+        target_environments=target_environments,
+        hardware=mock.Mock(),
     )
 
 
@@ -78,7 +95,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
     def test_target_build_dispatch_uses_build_environment(self) -> None:
         selected_workspace = workspace(Path("/tmp/product"))
         artifact = mock.Mock()
-        services = TargetCommandServices(
+        services = application_services(
             workspaces=mock.Mock(),
             build_environments=mock.Mock(),
             artifacts=mock.Mock(),
@@ -88,19 +105,19 @@ class GarTargetArchitectureTest(unittest.TestCase):
         build_environment = services.build_environments.for_workspace.return_value
         build_environment.build.return_value = artifact
 
-        result = dispatch_target_command(
+        result = dispatch(
             TARGET_BUILD,
             workspace_selector="Local/Product",
             services=services,
         )
 
-        self.assertIs(artifact, result)
+        self.assertIs(artifact, result.artifact)
         build_environment.build.assert_called_once_with(ArtifactKind.TARGET_APP, selected_workspace)
 
     def test_target_deploy_dispatch_uses_latest_artifact_and_environment(self) -> None:
         selected_workspace = workspace(Path("/tmp/product"))
         artifact = mock.Mock()
-        services = TargetCommandServices(
+        services = application_services(
             workspaces=mock.Mock(),
             build_environments=mock.Mock(),
             artifacts=mock.Mock(),
@@ -110,19 +127,18 @@ class GarTargetArchitectureTest(unittest.TestCase):
         services.artifacts.latest.return_value = artifact
         environment = services.target_environments.for_workspace.return_value
 
-        result = dispatch_target_command(
+        result = dispatch(
             TARGET_DEPLOY,
             workspace_selector="Local/Product",
             services=services,
         )
 
-        self.assertIs(artifact, result)
+        self.assertIs(artifact, result.artifact)
         services.artifacts.latest.assert_called_once_with(ArtifactKind.TARGET_APP, selected_workspace)
         environment.deploy.assert_called_once_with(artifact)
 
     def test_target_adb_failure_uses_shared_recovery_guidance(self) -> None:
         selected_workspace = workspace(Path("/tmp/product"))
-        artifact = mock.Mock()
         environment = mock.Mock()
         environment.deploy.side_effect = AccessConnectionError(
             channel="adb",
@@ -130,20 +146,24 @@ class GarTargetArchitectureTest(unittest.TestCase):
             reason="no_device",
             returncode=1,
         )
+        services = application_services(
+            workspaces=mock.Mock(),
+            build_environments=mock.Mock(),
+            artifacts=mock.Mock(),
+            target_environments=mock.Mock(),
+        )
+        services.workspaces.get.return_value = selected_workspace
         with (
-            mock.patch("scripts.gar_lib.commands.target.ConfigWorkspaceRegistry") as registry_type,
-            mock.patch("scripts.gar_lib.commands.target.LocalArtifactStore") as artifact_store_type,
+            mock.patch("scripts.gar_lib.commands.application.compose_application", return_value=services),
             mock.patch(
-                "scripts.gar_lib.commands.target.ConfigTargetEnvironmentResolver"
-            ) as resolver_type,
-            mock.patch("scripts.gar_lib.commands.target.run_terminal_request") as terminal_request,
+                "scripts.gar_lib.commands.application.dispatch",
+                side_effect=environment.deploy.side_effect,
+            ),
+            mock.patch("scripts.gar_lib.commands.application.run_terminal_request") as terminal_request,
         ):
-            registry_type.return_value.get.return_value = selected_workspace
-            artifact_store_type.return_value.latest.return_value = artifact
-            resolver_type.return_value.for_workspace.return_value = environment
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
-                result = run_target_command(
+                result = execute_application_command(
                     TARGET_DEPLOY,
                     workspace_selector="Local/Product",
                     retry_command="gar target deploy --workspace Local/Product",

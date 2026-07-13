@@ -100,6 +100,9 @@ GaplessAgentRuntime/
 ```text
 scripts/gar_lib/
   cli.py                  # argparse parser and top-level dispatch
+  application.py          # workspace/environment/artifact collaboration
+  composition.py          # config-backed object composition
+  hardware.py             # hardware definition repository and CSV implementation
   config.py               # .gar/config.json and project paths
   commands/
     code.py               # `gar code` command dispatcher and Codespaces helpers
@@ -107,7 +110,7 @@ scripts/gar_lib/
     hw.py                 # hardware template initialization
     infra.py              # Terraform wrapper for simulator infra
     setup.py              # target/provider selection and dependency checks
-    sim.py                # `gar sim env ...` orchestration
+    application.py        # application result rendering and recovery
     terminal.py           # VS Code terminal request writer
     usb.py                # usbipd / USB helper command
   gar_tools.py            # gar-tools target manifest discovery
@@ -131,8 +134,8 @@ scripts/gar_lib/
 | 初期設定 | `commands/setup.py` | target 選択、codespace/simulator/target provider 選択、依存コマンド確認 |
 | target 定義 | `gar_tools.py` | `gar-tools/targets/*/target.json` の探索と auto clone |
 | code 環境 | `commands/code.py` | Local / Codespaces の開発環境操作。setupで保存した選択を読み、対応する操作を実行する |
-| simulator 環境 | `commands/sim.py` + `simulation/*` + `access/*` | VM / Wokwi / MuJoCo 等の simulation runtime 操作 |
-| target 環境 | `commands/target.py` + `target/*` + `access/*` | 実機へのartifact配置とADB/SSH/esptool等の接続方式差し替え |
+| simulator 環境 | `application.py` + `simulation/*` + `access/*` | VM / Wokwi / MuJoCo 等の simulation runtime 操作 |
+| target 環境 | `application.py` + `target/*` + `access/*` | 実機へのartifact配置とADB/SSH/esptool等の接続方式差し替え |
 | target 固有処理 | `targets/esp32.py`, `target/esptool.py` | ESP32 firmwareのbuild・artifact管理と、esptoolによる実機書き込み |
 | インフラ | `commands/infra.py`, `simulation/aws_ec2.py`, `access/aws.py` | Terraform実行、EC2 instance lifecycle、AWS CLIアクセス |
 | ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `vscode/profile_manage.py`, `vscode/terminal_bridge.py`, `vscode/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
