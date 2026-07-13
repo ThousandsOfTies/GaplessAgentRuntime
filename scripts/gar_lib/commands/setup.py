@@ -30,7 +30,6 @@ from scripts.gar_lib.gar_tools import (
     ensure_gar_tools_available,
     target_by_id,
 )
-from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor  # noqa: F401
 from scripts.gar_lib.vscode.terminal_bridge import (
     install_vscode_terminal_bridge,
     installed_vscode_terminal_bridge_path,

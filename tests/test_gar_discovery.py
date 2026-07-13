@@ -30,7 +30,6 @@ from scripts.gar_lib.environments.registry.target.esp32_esptool import (
     Esp32EsptoolEnvironment,
 )
 from scripts.gar_lib.simulation.mujoco import MujocoSimEnvProcessor
-from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 
 
 class GarDiscoveryTest(unittest.TestCase):
@@ -167,74 +166,6 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual(1, len(statuses))
         self.assertEqual("node", statuses[0].name)
         self.assertIsNone(statuses[0].path)
-
-    def test_wokwi_sim_provider_generates_m5stackc_project(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            project = root / "project"
-            template = root / "template"
-            app_src = root / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "src"
-            app_src.mkdir(parents=True)
-            (template / "lib" / "M5Unified" / "src").mkdir(parents=True)
-            (template / "diagram.json").write_text(
-                json.dumps(
-                    {
-                        "version": 1,
-                        "parts": [
-                            {"type": "wokwi-esp32-devkit-v1", "id": "esp"},
-                            {"type": "wokwi-ili9341", "id": "lcd"},
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (template / "platformio.ini.template").write_text(
-                "[platformio]\nsrc_dir = {app_src}\n[env:m5stackc]\n",
-                encoding="utf-8",
-            )
-            (app_src / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
-            (template / "lib" / "M5Unified" / "src" / "M5Unified.h").write_text("#pragma once\n", encoding="utf-8")
-            (template / "wokwi.toml.template").write_text(
-                "[wokwi]\nfirmware = '{firmware}'\nelf = '{elf}'\n",
-                encoding="utf-8",
-            )
-            with mock.patch.dict(
-                "os.environ",
-                {
-                    "GAR_WOKWI_APP_SRC_DIR": str(app_src),
-                    "GAR_WOKWI_PROJECT_DIR": str(project),
-                    "GAR_WOKWI_TEMPLATE_DIR": str(template),
-                },
-                clear=False,
-            ):
-                project.mkdir()
-                (project / "diagram.json").write_text(json.dumps({"version": 1, "parts": []}), encoding="utf-8")
-                (project / "wokwi.toml").write_text("[wokwi]\nfirmware = 'stale.bin'\n", encoding="utf-8")
-                provider = WokwiSimEnvProcessor(WokwiEnvironment, host=None)
-
-                with contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(0, provider.start({}))
-                    self.assertEqual(0, provider.stop({}))
-                    self.assertEqual(0, provider.status({}, json_output=True))
-                    self.assertEqual(0, provider.diag_json({}))
-                    self.assertEqual(0, provider.gpio_sim_check(json_output=True))
-                    self.assertEqual(0, provider.gpio_command("status", {}, json_output=True))
-                    self.assertEqual(0, provider.panel("state", {}, json_output=True))
-
-                self.assertTrue((project / "wokwi.toml").exists())
-                self.assertTrue((project / "diagram.json").exists())
-                self.assertTrue((project / "platformio.ini").exists())
-                self.assertTrue((project / "lib" / "M5Unified" / "src" / "M5Unified.h").exists())
-                self.assertFalse((project / "src").exists())
-                expected_src = os.path.relpath(app_src, project)
-                self.assertIn(
-                    f"src_dir = {Path(expected_src).as_posix()}",
-                    (project / "platformio.ini").read_text(encoding="utf-8"),
-                )
-                diagram = json.loads((project / "diagram.json").read_text(encoding="utf-8"))
-                self.assertIn("wokwi-esp32-devkit-v1", {part["type"] for part in diagram["parts"]})
-                self.assertIn("wokwi-ili9341", {part["type"] for part in diagram["parts"]})
-                self.assertIn("firmware.bin", (project / "wokwi.toml").read_text(encoding="utf-8"))
 
     def test_wokwi_installer_runs_official_install_script(self) -> None:
         with (

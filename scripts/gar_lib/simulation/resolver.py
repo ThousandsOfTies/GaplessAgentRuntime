@@ -13,7 +13,7 @@ from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.environment import SimulationEnvironment
 from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder
 from scripts.gar_lib.simulation.linux_systemd import LinuxSystemdSimulationEnvironment
-from scripts.gar_lib.simulation.wokwi_environment import WokwiSimulationEnvironment
+from scripts.gar_lib.simulation.wokwi import WokwiSimulationEnvironment
 
 
 class ConfigSimulationEnvironmentResolver:

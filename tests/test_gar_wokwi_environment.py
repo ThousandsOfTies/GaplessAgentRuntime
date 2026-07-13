@@ -14,7 +14,7 @@ from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.host_resolver import ConfigSimulationHostControllerResolver
 from scripts.gar_lib.simulation.resolver import ConfigSimulationEnvironmentResolver
-from scripts.gar_lib.simulation.wokwi_environment import WokwiSimulationEnvironment
+from scripts.gar_lib.simulation.wokwi import WokwiSimulationEnvironment
 
 
 class GarWokwiEnvironmentTest(unittest.TestCase):

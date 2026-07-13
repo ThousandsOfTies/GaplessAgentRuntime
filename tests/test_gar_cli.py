@@ -47,12 +47,10 @@ from scripts.gar_lib.commands.sim import run_sim_panel
 from scripts.gar_lib.core.command import SIM_BUILD, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulator.ssh_remote import SshRemoteEnvironment
-from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
 from scripts.gar_lib.environments.registry.target.esp32_esptool import Esp32EsptoolEnvironment
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSimCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
-from scripts.gar_lib.simulation.wokwi import WokwiSimEnvProcessor
 
 
 class DevelopmentProvider(DevEnvironment):
@@ -326,7 +324,6 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
             mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0) as prepare_project,
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["", "1", "2", "", "", "q"]),
         ):
@@ -338,7 +335,6 @@ class GarCliTest(unittest.TestCase):
         save_config.assert_any_call(
             {"selected_target": "esp32", "selected_providers": {"codespace": "development_test"}}
         )
-        prepare_project.assert_not_called()
         text = output.getvalue()
         saved_at = text.index("更新しました: Target = ESP32")
         self.assertIn("1. Target", text[saved_at:])
@@ -383,7 +379,7 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("ESP32 / M5Stack (esp32)", text)
         self.assertIn("この項目を選ぶとTargetを選択できます。", text)
 
-    def test_setup_prepares_existing_wokwi_target(self) -> None:
+    def test_setup_reports_existing_wokwi_target(self) -> None:
         providers = [DevelopmentProvider, WokwiProvider]
         targets = [
             TargetManifest(
@@ -406,7 +402,6 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
             mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0) as prepare_project,
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             output = io.StringIO()
@@ -415,7 +410,6 @@ class GarCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         save_config.assert_not_called()
-        prepare_project.assert_not_called()
 
     def test_setup_wokwi_flow_explains_required_and_optional_steps(self) -> None:
         providers = [DevelopmentProvider, WokwiProvider, MissingTargetAccessProvider]
@@ -444,7 +438,6 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
             mock.patch("scripts.gar_lib.commands.setup.save_config"),
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             output = io.StringIO()
@@ -583,7 +576,6 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
             mock.patch("scripts.gar_lib.commands.setup.configure_default_ec2_host"),
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=True),
             mock.patch("builtins.input", side_effect=["", ""]),
         ):
@@ -679,7 +671,6 @@ class GarCliTest(unittest.TestCase):
             mock.patch("scripts.gar_lib.commands.setup.load_config", return_value=config),
             mock.patch("scripts.gar_lib.commands.setup.save_config") as save_config,
             mock.patch("scripts.gar_lib.commands.setup.installed_vscode_terminal_bridge_path", return_value=None),
-            mock.patch("scripts.gar_lib.commands.setup.WokwiSimEnvProcessor.prepare_project", return_value=0),
             mock.patch("sys.stdin.isatty", return_value=False),
         ):
             with contextlib.redirect_stdout(io.StringIO()):
@@ -1295,57 +1286,6 @@ class GarCliTest(unittest.TestCase):
                 {"path": str(terminal)},
                 profile["terminal.integrated.profiles.linux"]["EC2 Simulation"],
             )
-
-    def test_wokwi_sim_start_writes_wokwi_terminal_profile(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            settings = home / "settings.json"
-            template = home / "template"
-            app_src = home / "gar-vibe-ui" / "vibe-remote" / "m5stickc-client" / "src"
-            template.mkdir()
-            app_src.mkdir(parents=True)
-            (template / "diagram.json").write_text(
-                json.dumps({"version": 1, "parts": [{"type": "wokwi-esp32-devkit-v1", "id": "esp"}]}),
-                encoding="utf-8",
-            )
-            (template / "platformio.ini.template").write_text(
-                "[platformio]\nsrc_dir = {app_src}\n[env:m5stackc]\n",
-                encoding="utf-8",
-            )
-            (app_src / "main.cpp").write_text("void setup() {}\nvoid loop() {}\n", encoding="utf-8")
-            (template / "wokwi.toml.template").write_text("[wokwi]\nfirmware = '{firmware}'\n", encoding="utf-8")
-
-            with (
-                mock.patch("scripts.gar_lib.commands.sim.Path.home", return_value=home),
-                mock.patch("scripts.gar_lib.commands.sim._get_sim_provider", return_value=WokwiEnvironment),
-                mock.patch.dict(
-                    os.environ,
-                    {
-                        "GAR_WOKWI_APP_SRC_DIR": str(app_src),
-                        "GAR_WOKWI_PROJECT_DIR": str(home / "wokwi"),
-                        "GAR_WOKWI_TEMPLATE_DIR": str(template),
-                    },
-                    clear=False,
-                ),
-            ):
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    result = run_sim_command(
-                        "start",
-                        host="wokwi",
-                        settings=str(settings),
-                        port_forward=False,
-                    )
-
-            self.assertEqual(0, result)
-            terminal = home / ".local" / "bin" / "gar-sim-terminal"
-            self.assertIn("Wokwi simulation provider", terminal.read_text(encoding="utf-8"))
-            profile = json.loads(settings.read_text(encoding="utf-8"))
-            self.assertEqual(
-                {"path": str(terminal)},
-                profile["terminal.integrated.profiles.linux"]["Wokwi Simulation"],
-            )
-            self.assertIn("Profile:   Wokwi Simulation", output.getvalue())
 
     def test_sim_start_starts_port_forward(self) -> None:
         with (
@@ -3554,40 +3494,6 @@ class SimPanelTests(unittest.TestCase):
 
         self.assertEqual(2, exc.exception.code)
         self.assertIn("invalid choice: 'ui'", stderr.getvalue())
-
-    def test_wokwi_panel_button_press_runs_generated_scenario(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            project = Path(tmp)
-            (project / "diagram.json").write_text("{}", encoding="utf-8")
-            firmware = project / ".pio" / "build" / "m5stackc" / "firmware.bin"
-            firmware.parent.mkdir(parents=True)
-            firmware.write_bytes(b"firmware")
-
-            def run_side_effect(argv, **kwargs):
-                scenario_path = Path(argv[argv.index("--scenario") + 1])
-                scenario = scenario_path.read_text(encoding="utf-8")
-                self.assertIn("part-id: btnA", scenario)
-                self.assertIn("value: 1", scenario)
-                self.assertIn("delay: 150ms", scenario)
-                completed = mock.Mock(returncode=0)
-                return completed
-
-            with (
-                mock.patch.dict(os.environ, {"GAR_WOKWI_PROJECT_DIR": str(project)}, clear=False),
-                mock.patch("scripts.gar_lib.simulation.wokwi._template_dir", return_value=project),
-                mock.patch("scripts.gar_lib.simulation.wokwi.shutil.which", return_value="/usr/bin/wokwi-cli"),
-                mock.patch("scripts.gar_lib.simulation.wokwi.subprocess.run", side_effect=run_side_effect) as run,
-            ):
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    result = WokwiSimEnvProcessor(WokwiEnvironment).panel(
-                        "button-press",
-                        {"button": "A", "duration_ms": 150},
-                    )
-
-        self.assertEqual(0, result)
-        self.assertIn("--scenario", run.call_args.args[0])
-        self.assertIn("button: btnA", output.getvalue())
 
     def test_sim_env_status_json_is_available_from_cli(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_sim_command", return_value=0) as run_sim:
