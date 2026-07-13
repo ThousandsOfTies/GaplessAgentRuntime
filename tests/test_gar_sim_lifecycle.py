@@ -7,7 +7,8 @@ import unittest
 from unittest import mock
 
 from scripts.gar_lib.application import ApplicationServices, dispatch
-from scripts.gar_lib.commands.application import execute_application_command, render_outcome
+from scripts.gar_lib.commands.executor import execute_application_command
+from scripts.gar_lib.commands.presentation import render_outcome
 from scripts.gar_lib.core.command import (
     SIM_HOST_STATUS,
     SIM_RUNTIME_DIAG,
@@ -48,9 +49,9 @@ class GarSimulationLifecycleTest(unittest.TestCase):
             returncode=255,
         )
         with (
-            mock.patch("scripts.gar_lib.commands.application.compose_application", return_value=services),
+            mock.patch("scripts.gar_lib.commands.executor.compose_application", return_value=services),
             mock.patch(
-                "scripts.gar_lib.commands.application.run_terminal_request", return_value=0
+                "scripts.gar_lib.commands.executor.run_terminal_request", return_value=0
             ) as terminal_request,
         ):
             with contextlib.redirect_stderr(io.StringIO()):

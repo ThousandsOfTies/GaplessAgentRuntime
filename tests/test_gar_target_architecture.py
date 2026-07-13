@@ -12,7 +12,7 @@ from unittest import mock
 from scripts.gar_lib.application import ApplicationServices, dispatch
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.local import LocalBuildEnvironment
-from scripts.gar_lib.commands.application import execute_application_command
+from scripts.gar_lib.commands.executor import execute_application_command
 from scripts.gar_lib.commands.setup import configure_target_connection
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.command import TARGET_BUILD, TARGET_DEPLOY
@@ -154,12 +154,12 @@ class GarTargetArchitectureTest(unittest.TestCase):
         )
         services.workspaces.get.return_value = selected_workspace
         with (
-            mock.patch("scripts.gar_lib.commands.application.compose_application", return_value=services),
+            mock.patch("scripts.gar_lib.commands.executor.compose_application", return_value=services),
             mock.patch(
-                "scripts.gar_lib.commands.application.dispatch",
+                "scripts.gar_lib.commands.executor.dispatch",
                 side_effect=environment.deploy.side_effect,
             ),
-            mock.patch("scripts.gar_lib.commands.application.run_terminal_request") as terminal_request,
+            mock.patch("scripts.gar_lib.commands.executor.run_terminal_request") as terminal_request,
         ):
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):

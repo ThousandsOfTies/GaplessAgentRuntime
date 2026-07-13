@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import NoReturn
 
 from scripts.gar_lib.application import dispatch
-from scripts.gar_lib.commands.application import render_outcome
+from scripts.gar_lib.commands.presentation import render_outcome
 from scripts.gar_lib.commands.terminal import run_terminal_request
 from scripts.gar_lib.composition import compose_application
 from scripts.gar_lib.core.command import (

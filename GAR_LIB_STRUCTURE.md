@@ -119,7 +119,8 @@ scripts/gar_lib/
 │        └─ esp32_esptool.py   esptoolの依存確認・導入
 │
 ├─ commands/                   CLI境界とApplication外の補助command
-│  ├─ application.py           Application実行・結果表示・共通接続復旧
+│  ├─ executor.py              Application実行と共通接続復旧
+│  ├─ presentation.py          CommandOutcomeのCLI表示
 │  ├─ setup.py                 workspace / target / setup選択肢の対話設定
 │  ├─ code.py                  Local / Codespacesのboot・mount・terminal管理
 │  ├─ infra.py                 Terraformによるsimulation host作成・破棄
@@ -140,10 +141,10 @@ scripts/gar_lib/
 ```text
 cli.py
   ↓ GarCommand + workspace selector
-commands/application.py
+commands/executor.py
   ├─ composition.pyで具体オブジェクトを生成
   ├─ application.dispatchを実行
-  ├─ CommandOutcomeを表示
+  ├─ presentation.pyでCommandOutcomeを表示
   └─ AccessConnectionErrorをrecoveryへ渡す
           ↓
 application.py
@@ -316,7 +317,7 @@ workspaceの `ec2.host / instance_id / region` から生成されます。
    - protocol境界は有用だが、具体実装を1ファイルにまとめるか、`remote_session.py`をaccess/vscode側へ移すと責務が明確になる。
 
 10. **表示責務がCLI境界へ完全には集約されていない**
-    - `commands/application.py`が結果表示を担う一方、`HardwareControlResult.render`、Wokwi、MuJoCo、Linux systemd、target/esptool、artifact manifestも直接`print`する。
+    - `commands/presentation.py`が結果表示を担う一方、`HardwareControlResult.render`、Wokwi、MuJoCo、Linux systemd、target/esptool、artifact manifestも直接`print`する。
     - domain結果を構造化してCLI境界で表示する方針をどこまで適用するか決める必要がある。
 
 11. **hardware定義とtemplate生成が同居している**

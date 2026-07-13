@@ -10,7 +10,8 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib.application` — workspace-based ``gar sim/target`` use cases
 - :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
 - :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
-- :mod:`scripts.gar_lib.commands.application` — application result rendering/recovery
+- :mod:`scripts.gar_lib.commands.executor` — application execution/recovery
+- :mod:`scripts.gar_lib.commands.presentation` — application result rendering
 - :mod:`scripts.gar_lib.commands.terminal` — ``gar terminal``
 - :mod:`scripts.gar_lib.commands.usb` — ``gar usb``
 - :mod:`scripts.gar_lib.commands.setup` — ``gar setup``
@@ -30,8 +31,8 @@ from scripts.gar_lib.artifacts.manifest import (
     default_artifacts_dir,
     fetch_codespace_artifacts,
 )
-from scripts.gar_lib.commands.application import execute_application_command
 from scripts.gar_lib.commands.code import run_code_command
+from scripts.gar_lib.commands.executor import execute_application_command
 from scripts.gar_lib.commands.hw import run_hw_command
 from scripts.gar_lib.commands.infra import run_sim_infra_command
 from scripts.gar_lib.commands.setup import run_setup
