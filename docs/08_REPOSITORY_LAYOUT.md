@@ -165,7 +165,6 @@ scripts/gar_lib/environments/
       renode_mcu.py
       esp32_qemu.py
       aws_ssm.py
-      vibe_remote_device.py
     target/
       adb_usb.py
       adb_win.py

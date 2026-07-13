@@ -21,9 +21,6 @@ from scripts.gar_lib.environments.registry.simulator.mujoco import MujocoEnviron
 from scripts.gar_lib.environments.registry.simulator.renode_mcu import (
     RenodeMcuEnvironment,
 )
-from scripts.gar_lib.environments.registry.simulator.vibe_remote_device import (
-    VibeRemoteVirtualDeviceEnvironment,
-)
 from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment
 from scripts.gar_lib.environments.registry.target.adb_usb import AdbUsbEnvironment
 from scripts.gar_lib.environments.registry.target.esp32_esptool import (
@@ -44,7 +41,6 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("mujoco", provider_ids)
         self.assertIn("esp32_qemu_firmware", provider_ids)
         self.assertIn("wokwi", provider_ids)
-        self.assertIn("vibe_remote_device", provider_ids)
         self.assertIn("local", provider_ids)
         self.assertIn("adb_usb", provider_ids)
         self.assertIn("ssh_scp", provider_ids)
@@ -69,7 +65,6 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertEqual("simulator", categories_by_provider["mujoco"])
         self.assertEqual("simulator", categories_by_provider["esp32_qemu_firmware"])
         self.assertEqual("simulator", categories_by_provider["wokwi"])
-        self.assertEqual("simulator", categories_by_provider["vibe_remote_device"])
         self.assertEqual("target", categories_by_provider["adb_usb"])
         self.assertEqual("target", categories_by_provider["ssh_scp"])
         self.assertEqual("target", categories_by_provider["esp32_esptool"])
@@ -133,39 +128,6 @@ class GarDiscoveryTest(unittest.TestCase):
 
             self.assertEqual(12345, json.loads((workspace / "state.json").read_text(encoding="utf-8"))["pid"])
             self.assertTrue(any(part.endswith("mujoco_bridge.py") for part in channel.start.call_args.args[0]))
-
-    def test_vibe_remote_device_uses_node_sh_when_available(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            node_sh = Path(tmp) / "node.sh"
-            node_sh.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-
-            with mock.patch.dict(
-                "os.environ",
-                {"VIBE_REMOTE_NODE_SH": str(node_sh)},
-            ):
-                statuses = VibeRemoteVirtualDeviceEnvironment.dependency_status()
-
-        self.assertEqual(1, len(statuses))
-        self.assertEqual(str(node_sh), statuses[0].name)
-        self.assertEqual(str(node_sh), statuses[0].path)
-
-    def test_vibe_remote_device_requires_node_without_node_sh(self) -> None:
-        missing_node_sh = Path(tempfile.gettempdir()) / "gar-missing-node.sh"
-        with (
-            mock.patch.dict(
-                "os.environ",
-                {"VIBE_REMOTE_NODE_SH": str(missing_node_sh)},
-            ),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.vibe_remote_device._find_node",
-                return_value=None,
-            ),
-        ):
-            statuses = VibeRemoteVirtualDeviceEnvironment.dependency_status()
-
-        self.assertEqual(1, len(statuses))
-        self.assertEqual("node", statuses[0].name)
-        self.assertIsNone(statuses[0].path)
 
     def test_wokwi_installer_runs_official_install_script(self) -> None:
         with (

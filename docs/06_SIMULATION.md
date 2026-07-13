@@ -307,7 +307,8 @@ VIBE_REMOTE_TOKEN=... npm run smoke:protocol
 
 `scripts/virtual-device.js` は旧来の smoke/debug 補助として残っているが、
 `/tmp/gar-vibe-remote-device/button_a` などから `agentStatus` を直接送る実装なので、
-現在の Decision relay や実機ボタン仕様の正本としては扱わない。
+現在の Decision relay や実機ボタン仕様の正本としては扱わない。また、GARの
+Simulation Environmentとして `gar setup` に登録しない。
 
 ---
 

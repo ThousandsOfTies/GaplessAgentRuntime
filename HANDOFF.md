@@ -173,7 +173,6 @@ runtime経路で使われない旧`gar shim`と実装を削除した。
                            esp32_qemu         esp32_esptool
                            renode_mcu         ssh_scp
                            ssh_remote
-                           vibe_remote_device
                            wokwi
 ```
 
@@ -223,7 +222,6 @@ runtime経路で使われない旧`gar shim`と実装を削除した。
 - `target/esptool.py` — esptool によるflash実装
 - `environments/registry/target/esp32_esptool.py` — setup用の依存確認と導入
 - `environments/registry/simulator/wokwi.py`（115行）+ `simulation/wokwi.py`（613行）— Wokwi simulation
-- `environments/registry/simulator/vibe_remote_device.py`（137行）— Vibe Remote device provider
 - `scripts/gar_lib/targets/esp32.py`（293行）— ESP32 ビルド・artifact 管理
 - `gar target build-esp32` / `gar target flash-esp32` コマンド
 - `docs/07_HANDOFF.md` の vibe-remote 作業記録
