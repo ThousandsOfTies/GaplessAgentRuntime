@@ -46,7 +46,6 @@ from scripts.gar_lib.core.command import (
     TARGET_DEPLOY,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.registry.simulator.ssh_remote import SshRemoteEnvironment
 from scripts.gar_lib.environments.registry.target.esp32_esptool import Esp32EsptoolEnvironment
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
@@ -1101,28 +1100,6 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual(54, plan["num_lines"])
         self.assertEqual("BTN_GPIO5", plan["lines"][0]["label"])
         self.assertEqual("LED_GPIO6", plan["lines"][1]["label"])
-
-    def test_ssh_remote_connection_failure_requests_terminal_bridge_without_sim_deploy(self) -> None:
-        config = {"ec2": {"region": "ap-northeast-1"}}
-        completed = mock.Mock(returncode=255)
-        stderr = io.StringIO()
-        with (
-            mock.patch("scripts.gar_lib.environments.ssh_recovery.load_config", return_value=config),
-            mock.patch(
-                "scripts.gar_lib.environments.ssh_recovery.run_terminal_request", return_value=0
-            ) as terminal_request,
-            mock.patch("subprocess.run", return_value=completed),
-            contextlib.redirect_stderr(stderr),
-        ):
-            result = SshRemoteEnvironment.run_remote("ec2-builder", "make")
-
-        self.assertEqual(255, result.returncode)
-        terminal_request.assert_called_once_with(
-            command_parts=["aws", "login", "--remote", "--region", "ap-northeast-1"],
-            title="GAR: AWS ログイン（SSH 接続を復旧）",
-            cwd=None,
-        )
-        self.assertIn("失敗した gar コマンドを再実行", stderr.getvalue())
 
     def test_deploy_target_pushes_sensor_demo_with_adb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

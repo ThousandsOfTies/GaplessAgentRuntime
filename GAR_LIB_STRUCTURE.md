@@ -74,9 +74,7 @@ commands/sim.py
 
 アクセス手段とコマンド実行を分離する観点で、次の依存関係は整理対象です。
 
-1. setup discovery側の旧 `SshRemoteEnvironment` は、現在も `ssh_recovery` を通じてAWS認証とTerminal Bridgeに関与している。標準の`gar sim`実行経路からは使われない。
-2. `environments/ssh_recovery` が `commands/terminal` をimportしており、下位のenvironment層から上位のcommand層へ依存している。
-3. `artifacts/manifest.py` がCodespaces選択のため `commands/code` をimportしており、成果物層からcommand層への逆向き依存がある。
+1. `artifacts/manifest.py` がCodespaces選択のため `commands/code` をimportしており、成果物層からcommand層への逆向き依存がある。
 
 ## 分離後の目標
 
