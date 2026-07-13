@@ -97,7 +97,11 @@ from scripts.gar_lib.commands.sim import (  # noqa: F401
     stop_sim_port_forward,
     write_sim_terminal_profile,
 )
-from scripts.gar_lib.commands.sim_entry import run_next_sim_command, run_next_sim_lifecycle
+from scripts.gar_lib.commands.sim_entry import (
+    run_next_sim_command,
+    run_next_sim_diagnostic,
+    run_next_sim_lifecycle,
+)
 from scripts.gar_lib.commands.target import (  # noqa: F401
     adb_device_available,
     deploy_target_artifacts,
@@ -1053,6 +1057,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.gpio_command,
                     host=getattr(args, "host", None),
                     json_output=getattr(args, "json_output", False),
+                )
+            if (
+                args.sim_env_command == "diag"
+                and getattr(args, "json_output", False)
+                and args.host is None
+            ):
+                workspace = getattr(args, "workspace", None)
+                retry = "gar sim env diag --json" + (f" --workspace {workspace}" if workspace else "")
+                return run_next_sim_diagnostic(
+                    workspace_selector=workspace,
+                    retry_command=retry,
                 )
             if args.sim_env_command in {"start", "stop", "status", "log"} and args.host is None:
                 workspace = getattr(args, "workspace", None)

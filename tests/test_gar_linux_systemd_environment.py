@@ -72,3 +72,37 @@ class GarLinuxSystemdEnvironmentTest(unittest.TestCase):
         self.assertEqual(0, result)
         builder.build_sim_start.assert_called_once_with({"gpio": []})
         commands.run.assert_called_once_with("systemctl start gar-sim.target")
+
+    def test_diag_returns_structured_result_without_printing_channel_output(self) -> None:
+        commands = mock.Mock()
+        commands.run.return_value = CommandResult(
+            ("channel",),
+            0,
+            '@@PROC@@\n123 bridge.py\n@@DEV@@\n/dev/i2c-1 1\n@@API@@\n{"ready": true}\n',
+            "",
+        )
+        builder = mock.Mock()
+        builder.build_sim_diag_json.return_value = "diagnose"
+        environment = LinuxSystemdSimulationEnvironment(commands, mock.Mock(), builder)
+
+        diagnostic = environment.diag({"i2c": []})
+
+        self.assertTrue(diagnostic.ok)
+        self.assertEqual([{"pid": 123, "cmd": "bridge.py"}], diagnostic.processes)
+        self.assertEqual({"/dev/i2c-1": True}, diagnostic.devices)
+        self.assertEqual({"ready": True}, diagnostic.api)
+        commands.run.assert_called_once_with("diagnose")
+
+    def test_diag_preserves_command_failure_as_structured_result(self) -> None:
+        commands = mock.Mock()
+        commands.run.return_value = CommandResult(("channel",), 7, "", "not running\n")
+        builder = mock.Mock()
+        builder.build_sim_diag_json.return_value = "diagnose"
+        environment = LinuxSystemdSimulationEnvironment(commands, mock.Mock(), builder)
+
+        diagnostic = environment.diag({})
+
+        self.assertFalse(diagnostic.ok)
+        self.assertEqual(1, diagnostic.exit_code)
+        self.assertEqual("diagnostic command exited 7", diagnostic.error)
+        self.assertEqual("not running", diagnostic.stderr)

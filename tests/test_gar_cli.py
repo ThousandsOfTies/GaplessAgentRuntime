@@ -3446,6 +3446,22 @@ class GarCliTest(unittest.TestCase):
             json_output=True,
         )
 
+    def test_sim_diag_json_without_explicit_host_uses_workspace_environment(self) -> None:
+        with (
+            mock.patch("scripts.gar_lib.cli.run_next_sim_diagnostic", return_value=0) as run_diag,
+            mock.patch("scripts.gar_lib.cli.run_sim_command") as legacy_run,
+        ):
+            result = main(
+                ["sim", "env", "diag", "--json", "--workspace", "Local/GarStreamTx"]
+            )
+
+        self.assertEqual(0, result)
+        run_diag.assert_called_once_with(
+            workspace_selector="Local/GarStreamTx",
+            retry_command="gar sim env diag --json --workspace Local/GarStreamTx",
+        )
+        legacy_run.assert_not_called()
+
 
 class SimPanelTests(unittest.TestCase):
     def test_build_panel_command_button_press(self) -> None:

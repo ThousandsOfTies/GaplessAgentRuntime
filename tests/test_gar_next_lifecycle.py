@@ -1,12 +1,45 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import unittest
 from unittest import mock
 
-from scripts.gar_lib.commands.sim_entry import run_next_sim_lifecycle
+from scripts.gar_lib.commands.sim_entry import run_next_sim_diagnostic, run_next_sim_lifecycle
+from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
 
 
 class GarNextLifecycleTest(unittest.TestCase):
+    def test_diag_serializes_environment_result_with_workspace_host(self) -> None:
+        workspace = mock.Mock(ec2={"host": "sim-host"})
+        environment = mock.Mock()
+        environment.diag.return_value = SimulationDiagnostic(
+            processes=[{"pid": 123, "cmd": "bridge.py"}],
+            devices={"/dev/i2c-1": True},
+            api={"ready": True},
+            ok=True,
+        )
+        with (
+            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch(
+                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+            ) as resolver_type,
+            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
+        ):
+            registry_type.return_value.get.return_value = workspace
+            resolver_type.return_value.for_workspace.return_value = environment
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_next_sim_diagnostic(
+                    workspace_selector="Local/Product",
+                    retry_command="gar sim env diag --json --workspace Local/Product",
+                )
+
+        self.assertEqual(0, result)
+        self.assertEqual("sim-host", json.loads(output.getvalue())["host"])
+        environment.diag.assert_called_once_with({})
+
     def test_status_checks_runtime_even_when_port_forward_is_stopped(self) -> None:
         workspace = mock.Mock(ec2={"host": "sim-host"})
         environment = mock.Mock()

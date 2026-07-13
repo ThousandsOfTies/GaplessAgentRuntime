@@ -10,6 +10,7 @@ from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifa
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.simulation.base import SimCommandBuilder
+from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
 
 
 class LinuxSystemdSimulationEnvironment:
@@ -71,8 +72,9 @@ class LinuxSystemdSimulationEnvironment:
     def status(self, hardware: dict[str, list[dict[str, str]]]) -> int:
         return self._run(self.command_builder.build_sim_status(hardware))
 
-    def diag(self, hardware: dict[str, list[dict[str, str]]]) -> int:
-        return self._run(self.command_builder.build_sim_diag_json(hardware))
+    def diag(self, hardware: dict[str, list[dict[str, str]]]) -> SimulationDiagnostic:
+        result = self.command_channel.run(self.command_builder.build_sim_diag_json(hardware))
+        return SimulationDiagnostic.from_command(result)
 
     def log(self) -> int:
         return self._run(self.command_builder.build_sim_log())

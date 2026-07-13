@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from scripts.gar_lib.core.artifact import Artifact
+from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
 
 
 class DeployableSimulationEnvironment(Protocol):
@@ -16,7 +17,7 @@ class DeployableSimulationEnvironment(Protocol):
 
     def status(self, hardware: dict[str, list[dict[str, str]]]) -> int: ...
 
-    def diag(self, hardware: dict[str, list[dict[str, str]]]) -> int: ...
+    def diag(self, hardware: dict[str, list[dict[str, str]]]) -> SimulationDiagnostic: ...
 
     def log(self) -> int: ...
 
