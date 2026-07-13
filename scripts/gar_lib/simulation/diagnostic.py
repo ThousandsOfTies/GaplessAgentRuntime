@@ -2,11 +2,32 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from scripts.gar_lib.access.base import CommandResult
 from scripts.gar_lib.simulation.parse import parse_sim_diag
+
+
+class SimulationDiagnosticReport(Protocol):
+    @property
+    def exit_code(self) -> int: ...
+
+    def to_payload(self, *, host: str | None = None) -> dict[str, object]: ...
+
+
+@dataclass(frozen=True)
+class PayloadSimulationDiagnostic:
+    payload: Mapping[str, object]
+
+    @property
+    def exit_code(self) -> int:
+        return 0 if self.payload.get("ok") is True else 1
+
+    def to_payload(self, *, host: str | None = None) -> dict[str, object]:
+        del host
+        return dict(self.payload)
 
 
 @dataclass(frozen=True)

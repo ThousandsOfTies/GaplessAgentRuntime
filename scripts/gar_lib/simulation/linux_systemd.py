@@ -14,6 +14,8 @@ from scripts.gar_lib.simulation.diagnostic import SimulationDiagnostic
 
 
 class LinuxSystemdSimulationEnvironment:
+    requires_runtime_artifact = True
+
     _SECTIONS = {
         ArtifactKind.SIM_APP: "app",
         ArtifactKind.SIM_RUNTIME: "sim_env",
@@ -29,10 +31,12 @@ class LinuxSystemdSimulationEnvironment:
         command_channel: CommandChannel,
         file_channel: FileChannel,
         command_builder: SimCommandBuilder,
+        runtime_host: str | None = None,
     ):
         self.command_channel = command_channel
         self.file_channel = file_channel
         self.command_builder = command_builder
+        self.runtime_host = runtime_host
 
     def deploy(self, artifact: Artifact) -> None:
         section = self._SECTIONS.get(artifact.kind)

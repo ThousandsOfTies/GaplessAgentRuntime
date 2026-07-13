@@ -160,3 +160,28 @@ class GarNextLifecycleTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         start_forward.assert_not_called()
+
+    def test_wokwi_lifecycle_does_not_use_ssh_profile_or_port_forward(self) -> None:
+        workspace = mock.Mock()
+        environment = mock.Mock(runtime_host=None)
+        environment.start.return_value = 0
+        with (
+            mock.patch("scripts.gar_lib.commands.sim_entry.ConfigWorkspaceRegistry") as registry_type,
+            mock.patch(
+                "scripts.gar_lib.commands.sim_entry.ConfigSimulationEnvironmentResolver"
+            ) as resolver_type,
+            mock.patch("scripts.gar_lib.commands.sim_entry.load_hw_definition", return_value={}),
+            mock.patch("scripts.gar_lib.commands.sim_entry.write_sim_terminal_profile") as profile,
+            mock.patch("scripts.gar_lib.commands.sim_entry.start_sim_port_forward") as forward,
+        ):
+            registry_type.return_value.get.return_value = workspace
+            resolver_type.return_value.for_workspace.return_value = environment
+            result = run_next_sim_lifecycle(
+                "start",
+                workspace_selector="Local/WokwiProduct",
+                retry_command="gar sim env start --workspace Local/WokwiProduct",
+            )
+
+        self.assertEqual(0, result)
+        profile.assert_not_called()
+        forward.assert_not_called()

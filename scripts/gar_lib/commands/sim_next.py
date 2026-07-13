@@ -32,7 +32,7 @@ def dispatch(
     *,
     workspace_selector: str | None,
     services: SimCommandServices,
-) -> Artifact:
+) -> Artifact | None:
     workspace = services.workspaces.get(workspace_selector)
 
     if command == SIM_BUILD:
@@ -40,6 +40,9 @@ def dispatch(
         return build_environment.build(ArtifactKind.SIM_APP, workspace)
 
     if command == SIM_RUNTIME_BUILD:
+        simulation_environment = services.simulation_environments.for_workspace(workspace)
+        if not simulation_environment.requires_runtime_artifact:
+            return None
         build_environment = services.build_environments.for_workspace(workspace)
         return build_environment.build(ArtifactKind.SIM_RUNTIME, workspace)
 
@@ -49,8 +52,11 @@ def dispatch(
         return artifact
 
     if command == SIM_RUNTIME_DEPLOY:
+        simulation_environment = services.simulation_environments.for_workspace(workspace)
+        if not simulation_environment.requires_runtime_artifact:
+            return None
         artifact = services.artifacts.latest(ArtifactKind.SIM_RUNTIME, workspace)
-        services.simulation_environments.for_workspace(workspace).deploy(artifact)
+        simulation_environment.deploy(artifact)
         return artifact
 
     raise GarDomainError(f"新しい sim command 経路ではまだ未対応です: {command}")

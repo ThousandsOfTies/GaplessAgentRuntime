@@ -1,7 +1,7 @@
-"""Executable entry point for the new GAR architecture during migration.
+"""Reference entry point for the new GAR architecture during migration.
 
-The production ``cli.py`` remains unchanged.  Commands are added here only
-after their new orchestration path is implemented.
+Production ``cli.py`` now routes implemented commands through the same
+orchestration services; this smaller entry point remains useful for inspection.
 """
 
 from __future__ import annotations
@@ -60,7 +60,10 @@ def main(argv: list[str] | None = None) -> int:
                 workspace_selector=args.workspace,
                 services=services,
             )
-            print(f"Artifact: {artifact.bundle_path}")
+            if artifact is None:
+                print("このsimulation environmentには個別のruntime artifactは不要です。")
+            else:
+                print(f"Artifact: {artifact.bundle_path}")
             return 0
     except AccessConnectionError as exc:
         workspace = services.workspaces.get(args.workspace)

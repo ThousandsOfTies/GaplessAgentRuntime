@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib.access.adb import AdbFileChannel, AdbShellChannel
+from scripts.gar_lib.access.process import LocalProcessChannel
 from scripts.gar_lib.access.serial import SerialArtifactInstaller, SerialConsoleChannel
 from scripts.gar_lib.access.ssh import ScpFileChannel, SshCommandChannel
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
@@ -14,6 +16,25 @@ from scripts.gar_lib.core.workspace import Workspace
 
 
 class GarAccessChannelsTest(unittest.TestCase):
+    def test_local_process_channel_launches_without_wokwi_specific_knowledge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log_path = root / "runtime.log"
+            process = mock.Mock(pid=1234)
+            with mock.patch(
+                "scripts.gar_lib.access.process.subprocess.Popen", return_value=process
+            ) as popen:
+                result = LocalProcessChannel().start(
+                    ("simulator", "--project", str(root)),
+                    cwd=root,
+                    log_path=log_path,
+                )
+
+        self.assertEqual(1234, result.pid)
+        self.assertEqual(("simulator", "--project", str(root)), result.argv)
+        self.assertEqual(root, popen.call_args.kwargs["cwd"])
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
     def test_ssh_command_channel_returns_structured_result(self) -> None:
         completed = subprocess.CompletedProcess([], 0, "hello\n", "")
         with mock.patch("scripts.gar_lib.access.ssh.subprocess.run", return_value=completed) as run:

@@ -27,13 +27,13 @@ gar_lib/
 | `core/` | workspace、artifact、GAR command、利用者へ説明可能なdomain errorなど、外部接続に依存しないモデル。 |
 | `workspaces/` | `.gar/config.json` のworkspaceを識別子・名前・既定選択から解決する。 |
 | `build/` | Local・Codespaces等のbuild environmentを選び、製品build hookからartifactを生成する。 |
-| `access/` | SSH command、scp、ADB、serial、AWS CLI、SSH config更新などの個別アクセス能力。simulation固有の判断は持たない。 |
+| `access/` | SSH command、scp、ADB、serial、AWS CLI、local process、SSH config更新などの個別アクセス能力。simulation固有の判断は持たない。 |
 | `recovery/` | 構造化された接続失敗を利用者向けの復旧操作へ変換し、必要な場合だけTerminal Bridgeへ渡す。 |
 | `environments/` | 実行環境 provider の共通インターフェースと provider 自動発見の仕組み。接続方法・環境固有の実装を置く。 |
 | `environments/registry/codespace/` | Local と GitHub Codespaces の、開発・ビルド環境 provider。 |
 | `environments/registry/simulator/` | SSH Remote、Wokwi、Renode、MuJoCo、QEMU 等のシミュレータ provider。`aws_ec2` は SSH transport ではなく、EC2 の起動停止・Public IP 解決を担う補助実装。 |
 | `environments/registry/target/` | adb、SSH/scp、esptool 等の実機到達 provider。 |
-| `simulation/` | Linux systemd/CUSE等のruntime操作、診断結果、EC2等のsimulation host lifecycleを表現する。アクセス手段は `access/` から注入する。 |
+| `simulation/` | Linux systemd/CUSE・Wokwi等のruntime操作、診断結果、EC2等のsimulation host lifecycleを表現する。アクセス手段は `access/` から注入する。Wokwiはhost controllerやruntime artifactを持たないローカル実行環境として実装する。 |
 | `artifacts/` | artifact manifest の検証、成果物配置先の解決、Codespaces からの取得。 |
 | `vscode/` | terminal profile、Terminal Bridge 拡張の導入、terminal 表示用 UI の補助。 |
 

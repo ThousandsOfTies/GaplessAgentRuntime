@@ -11,7 +11,7 @@ from scripts.gar_lib.build.codespaces import CodespacesBuildEnvironment
 from scripts.gar_lib.build.local import LocalBuildEnvironment
 from scripts.gar_lib.commands.sim_next import SimCommandServices, dispatch
 from scripts.gar_lib.core.artifact import ArtifactKind
-from scripts.gar_lib.core.command import SIM_BUILD
+from scripts.gar_lib.core.command import SIM_BUILD, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.workspaces.registry import ConfigWorkspaceRegistry
@@ -150,3 +150,44 @@ class GarNextArchitectureTest(unittest.TestCase):
         )
         artifacts.sync_from_codespaces.assert_called_once_with(workspace)
         artifacts.latest.assert_called_once_with(ArtifactKind.SIM_APP, workspace)
+
+    def test_wokwi_runtime_build_does_not_invoke_a_product_runtime_hook(self) -> None:
+        workspace = local_workspace(Path("/tmp/product"))
+        workspaces = mock.Mock()
+        workspaces.get.return_value = workspace
+        build_environments = mock.Mock()
+        simulation_environment = mock.Mock(requires_runtime_artifact=False)
+        simulation_environments = mock.Mock()
+        simulation_environments.for_workspace.return_value = simulation_environment
+        services = SimCommandServices(
+            workspaces=workspaces,
+            build_environments=build_environments,
+            artifacts=mock.Mock(),
+            simulation_environments=simulation_environments,
+        )
+
+        result = dispatch(SIM_RUNTIME_BUILD, workspace_selector="Local/Product", services=services)
+
+        self.assertIsNone(result)
+        build_environments.for_workspace.assert_not_called()
+
+    def test_wokwi_runtime_deploy_does_not_require_an_artifact(self) -> None:
+        workspace = local_workspace(Path("/tmp/product"))
+        workspaces = mock.Mock()
+        workspaces.get.return_value = workspace
+        artifacts = mock.Mock()
+        simulation_environment = mock.Mock(requires_runtime_artifact=False)
+        simulation_environments = mock.Mock()
+        simulation_environments.for_workspace.return_value = simulation_environment
+        services = SimCommandServices(
+            workspaces=workspaces,
+            build_environments=mock.Mock(),
+            artifacts=artifacts,
+            simulation_environments=simulation_environments,
+        )
+
+        result = dispatch(SIM_RUNTIME_DEPLOY, workspace_selector="Local/Product", services=services)
+
+        self.assertIsNone(result)
+        artifacts.latest.assert_not_called()
+        simulation_environment.deploy.assert_not_called()

@@ -140,7 +140,10 @@ def run_next_sim_command(
     )
     try:
         artifact = dispatch(command, workspace_selector=workspace_selector, services=services)
-        print(f"Artifact: {artifact.bundle_path}")
+        if artifact is None:
+            print("このsimulation environmentには個別のruntime artifactは不要です。")
+        else:
+            print(f"Artifact: {artifact.bundle_path}")
         return 0
     except AccessConnectionError as exc:
         workspace = services.workspaces.get(workspace_selector)
@@ -164,21 +167,21 @@ def run_next_sim_lifecycle(
         workspace = workspaces.get(workspace_selector)
         environment = ConfigSimulationEnvironmentResolver().for_workspace(workspace)
         hardware = load_hw_definition()
-        host = workspace.ec2.get("host")
+        host = environment.runtime_host
         if action_name == "start":
             result = environment.start(hardware)
-            if result == 0:
+            if result == 0 and host is not None:
                 write_sim_terminal_profile(host=host, settings=settings, profile_name=profile_name)
                 if manage_port_forward:
                     result = start_sim_port_forward(host)
             return result
         if action_name == "stop":
             result = environment.stop(hardware)
-            if result == 0 and manage_port_forward:
+            if result == 0 and manage_port_forward and host is not None:
                 result = stop_sim_port_forward(host)
             return result
         if action_name == "status":
-            forward_result = status_sim_port_forward(host)
+            forward_result = status_sim_port_forward(host) if host is not None else 0
             runtime_result = environment.status(hardware)
             return forward_result or runtime_result
         if action_name == "log":
