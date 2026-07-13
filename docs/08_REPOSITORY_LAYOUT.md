@@ -114,8 +114,10 @@ scripts/gar_lib/
     terminal.py           # VS Code terminal request writer
     usb.py                # usbipd / USB helper command
   gar_tools.py            # gar-tools target manifest discovery
-  targets/
-    esp32.py              # ESP32 firmware artifact fetch / build helpers
+  target/
+    esp32.py              # ESP32 artifact installer
+    esp32_firmware.py     # ESP32 firmware artifact fetch / build helpers
+    esptool.py            # ESP32 serial flashing
   environments/
   vscode/
     terminal_ui.py        # shared terminal UI helpers
@@ -136,7 +138,7 @@ scripts/gar_lib/
 | code 環境 | `commands/code.py` | Local / Codespaces の開発環境操作。setupで保存した選択を読み、対応する操作を実行する |
 | simulator 環境 | `application.py` + `simulation/*` + `access/*` | VM / Wokwi / MuJoCo 等の simulation runtime 操作 |
 | target 環境 | `application.py` + `target/*` + `access/*` | 実機へのartifact配置とADB/SSH/esptool等の接続方式差し替え |
-| target 固有処理 | `targets/esp32.py`, `target/esptool.py` | ESP32 firmwareのbuild・artifact管理と、esptoolによる実機書き込み |
+| target 固有処理 | `target/esp32.py`, `target/esp32_firmware.py`, `target/esptool.py` | ESP32 firmwareのbuild・artifact管理と、esptoolによる実機書き込み |
 | インフラ | `commands/infra.py`, `simulation/aws_ec2.py`, `access/aws.py` | Terraform実行、EC2 instance lifecycle、AWS CLIアクセス |
 | ローカル補助 | `commands/terminal.py`, `commands/usb.py`, `vscode/profile_manage.py`, `vscode/terminal_bridge.py`, `vscode/terminal_ui.py` | VS Code terminal bridge、settings、USB、表示 |
 

@@ -48,8 +48,11 @@ from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.gar_lib.target.esp32_firmware import (
+    parse_esp32_build_artifact_path,
+    run_esp32_build_command,
+)
 from scripts.gar_lib.target.esptool import normalize_esp32_serial_port, run_esp32_flash_command
-from scripts.gar_lib.targets.esp32 import parse_esp32_build_artifact_path, run_esp32_build_command
 
 
 class DevelopmentProvider(EnvironmentSetupOption):
@@ -1309,13 +1312,16 @@ class GarCliTest(unittest.TestCase):
         local_artifact = Path("/tmp/local-artifacts/20260620-001750-m5stickc-plus2-vibe-min")
 
         with (
-            mock.patch("scripts.gar_lib.targets.esp32.select_codespace", return_value="codespace-test"),
             mock.patch(
-                "scripts.gar_lib.targets.esp32.run_streaming_command",
+                "scripts.gar_lib.target.esp32_firmware.select_codespace",
+                return_value="codespace-test",
+            ),
+            mock.patch(
+                "scripts.gar_lib.target.esp32_firmware.run_streaming_command",
                 return_value=(0, build_output),
             ) as run,
             mock.patch(
-                "scripts.gar_lib.targets.esp32.fetch_esp32_codespace_artifact",
+                "scripts.gar_lib.target.esp32_firmware.fetch_esp32_codespace_artifact",
                 return_value=local_artifact,
             ) as fetch,
             mock.patch("scripts.gar_lib.target.esptool.run_esp32_flash_command", return_value=0) as flash,

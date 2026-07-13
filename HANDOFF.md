@@ -222,7 +222,7 @@ runtime経路で使われない旧`gar shim`と実装を削除した。
 - `target/esptool.py` — esptool によるflash実装
 - `environments/registry/target/esp32_esptool.py` — setup用の依存確認と導入
 - `environments/registry/simulator/wokwi.py`（115行）+ `simulation/wokwi.py`（613行）— Wokwi simulation
-- `scripts/gar_lib/targets/esp32.py`（293行）— ESP32 ビルド・artifact 管理
+- `scripts/gar_lib/target/esp32_firmware.py` — ESP32 ビルド・artifact 管理
 - `gar target build-esp32` / `gar target flash-esp32` コマンド
 - `docs/07_HANDOFF.md` の vibe-remote 作業記録
 

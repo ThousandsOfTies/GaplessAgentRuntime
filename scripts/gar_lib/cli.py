@@ -55,13 +55,13 @@ from scripts.gar_lib.core.command import (
     TARGET_DEPLOY,
     GarCommand,
 )
-from scripts.gar_lib.target.esptool import run_esp32_flash_command
-from scripts.gar_lib.targets.esp32 import (
+from scripts.gar_lib.target.esp32_firmware import (
     DEFAULT_ESP32_ARTIFACT_ROOT,
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
     run_esp32_build_command,
 )
+from scripts.gar_lib.target.esptool import run_esp32_flash_command
 
 SIM_VM_COMMAND_MAP = {
     "start": SIM_HOST_START,

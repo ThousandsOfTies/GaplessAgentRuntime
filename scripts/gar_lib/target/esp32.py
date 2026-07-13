@@ -8,8 +8,8 @@ from scripts.gar_lib.access.base import CommandResult
 from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifact_src
 from scripts.gar_lib.core.artifact import Artifact
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.target.esp32_firmware import FLASH_LAYOUT
 from scripts.gar_lib.target.esptool import run_esp32_flash_command
-from scripts.gar_lib.targets.esp32 import FLASH_LAYOUT
 
 
 class Esp32ArtifactInstaller:
