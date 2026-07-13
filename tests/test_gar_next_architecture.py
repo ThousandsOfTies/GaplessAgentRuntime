@@ -35,6 +35,7 @@ class GarNextArchitectureTest(unittest.TestCase):
             "branch": "Product",
             "connection": {"type": "local", "path": "/tmp/product"},
             "selected_providers": {"codespace": "local"},
+            "target": {"host": "raspi", "dest": "/opt/product"},
         }
         with (
             mock.patch("scripts.gar_lib.workspaces.registry.load_config", return_value={"workspaces": [entry]}),
@@ -44,6 +45,7 @@ class GarNextArchitectureTest(unittest.TestCase):
 
         self.assertEqual("ws_test", workspace.id)
         self.assertEqual("local", workspace.selected_environments["codespace"])
+        self.assertEqual("raspi", workspace.target["host"])
 
     def test_workspace_registry_requires_selector_for_multiple_entries(self) -> None:
         entries = [

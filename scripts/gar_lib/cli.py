@@ -113,6 +113,7 @@ from scripts.gar_lib.commands.target import (  # noqa: F401
     run_target_flash_command,
     selected_target_provider_id,
 )
+from scripts.gar_lib.commands.target_entry import run_next_target_command
 from scripts.gar_lib.commands.terminal import (  # noqa: F401
     run_terminal_gc,
     run_terminal_request,
@@ -134,7 +135,14 @@ from scripts.gar_lib.config import (  # noqa: F401
     save_config,
     set_default_ec2_host,
 )
-from scripts.gar_lib.core.command import SIM_BUILD, SIM_DEPLOY, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
+from scripts.gar_lib.core.command import (
+    SIM_BUILD,
+    SIM_DEPLOY,
+    SIM_RUNTIME_BUILD,
+    SIM_RUNTIME_DEPLOY,
+    TARGET_BUILD,
+    TARGET_DEPLOY,
+)
 from scripts.gar_lib.environments.discovery import (  # noqa: F401
     discover_environment_providers,
 )
@@ -682,28 +690,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="setup 済み target の実機用 artifact をビルドします",
     )
     target_build_parser.add_argument(
-        "--codespace",
+        "--workspace",
         default=None,
-        help="ビルド元 Codespace 名。省略時は GAR_CODESPACE_NAME / CODESPACE_NAME / gh list",
-    )
-    target_build_parser.add_argument(
-        "--remote-project-root",
-        default=DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-        help=f"Codespace 上の project root（既定: {DEFAULT_ESP32_CODESPACE_PROJECT_ROOT}）",
-    )
-    target_build_parser.add_argument(
-        "--pio-env",
-        default=DEFAULT_ESP32_PIO_ENV,
-        help=f"PlatformIO environment（既定: {DEFAULT_ESP32_PIO_ENV}）",
-    )
-    target_build_parser.add_argument(
-        "--artifact-root",
-        default=None,
-        help=f"WSL 側に保存する artifact root（既定: {DEFAULT_ESP32_ARTIFACT_ROOT}）",
+        help="gar setupで登録したworkspace名。登録が1件なら省略できます",
     )
     target_deploy_parser = target_subparsers.add_parser(
         "deploy",
         help="target runtime へ成果物を配置します",
+    )
+    target_deploy_parser.add_argument(
+        "--workspace",
+        default=None,
+        help="gar setupで登録したworkspace名。登録が1件なら省略できます",
     )
     target_deploy_parser.add_argument(
         "--serial",
@@ -722,8 +720,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     target_deploy_parser.add_argument(
         "--dest",
-        default="/home/user",
-        help="artifact.json の target dest が相対パスのときの接続先基準ディレクトリ",
+        default=None,
+        help="低レベル互換経路: artifact.json の相対destに使う接続先基準ディレクトリ",
     )
     target_deploy_parser.add_argument(
         "--artifacts-dir",
@@ -1128,12 +1126,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             subcommand_parsers["target"].print_help()
             return 1
         if args.target_command == "deploy":
+            workspace = getattr(args, "workspace", None)
+            has_legacy_override = any(
+                value is not None
+                for value in (
+                    args.artifacts_dir,
+                    args.serial,
+                    args.port,
+                    args.host,
+                    args.dest,
+                    args.codespace,
+                    args.remote_root,
+                )
+            )
+            if not has_legacy_override:
+                retry = "gar target deploy" + (f" --workspace {workspace}" if workspace else "")
+                return run_next_target_command(
+                    TARGET_DEPLOY,
+                    workspace_selector=workspace,
+                    retry_command=retry,
+                )
             return run_target_deploy_command(
                 args.artifacts_dir,
                 serial=args.serial,
                 port=args.port,
                 host=args.host,
-                dest=args.dest,
+                dest=args.dest or "/home/user",
                 codespace=args.codespace,
                 remote_root=args.remote_root,
             )
@@ -1149,17 +1167,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 remote_root=args.remote_root,
             )
         if args.target_command == "build":
-            return run_target_build_command(
-                codespace=args.codespace,
-                remote_project_root=args.remote_project_root,
-                pio_env=args.pio_env,
-                local_artifact_root=args.artifact_root,
-                flash=False,
-                port=None,
-                baud=921600,
-                chip="esp32",
-                verify=True,
-                install_esptool=True,
+            workspace = getattr(args, "workspace", None)
+            retry = "gar target build" + (f" --workspace {workspace}" if workspace else "")
+            return run_next_target_command(
+                TARGET_BUILD,
+                workspace_selector=workspace,
+                retry_command=retry,
             )
         if args.target_command == "build-esp32":
             return run_target_build_command(

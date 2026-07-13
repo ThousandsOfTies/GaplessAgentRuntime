@@ -291,24 +291,25 @@ adb devices
 
 `device` と表示されれば OK です。
 
-`gar target deploy` は adb device が見えないときに `gar usb attach` 相当を自動で試します。ただし初回の `usbipd bind` だけは管理者 PowerShell が必要です。
+`gar target deploy` はADB接続失敗を分類し、Terminal Bridge経由で`gar usb list` / `gar usb attach`の復旧手順を案内します。ただし初回の`usbipd bind`だけは管理者PowerShellが必要です。
 
 ## 8. 実機へ deploy する
 
-Codespace から artifact bundle を取得し、そのまま RasPi5 へ push します。
+選択したworkspaceの最新target artifactを、`gar setup`で設定した実機へ配置します。先にartifactを作る場合は`gar target build`を実行します。
 
 ```bash
+gar target build
 gar target deploy
 ```
 
-特定 adb device を指定する場合:
+特定ADB deviceを通常利用する場合は`gar setup`でserialをworkspaceへ保存します。低レベル確認で一時指定する場合:
 
 ```bash
 adb devices
 gar target deploy --serial <serial>
 ```
 
-ネットワーク越し SSH/scp provider を選んだ場合:
+ネットワーク越しSSH/scp providerでは、通常は`gar setup`でhostを保存して実行します。一時的な低レベル確認では:
 
 ```bash
 gar target deploy --host raspi5

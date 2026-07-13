@@ -192,6 +192,9 @@ def load_config() -> dict:
     if isinstance(esp32, dict) and isinstance(esp32.get("port"), str) and esp32["port"]:
         esp32_port = esp32["port"]
 
+    target = data.get("target")
+    target_settings = dict(target) if isinstance(target, dict) else {}
+
     return {
         "workspace_id": data["id"],
         "workspace_name": data["name"],
@@ -213,6 +216,7 @@ def load_config() -> dict:
         **({"_invalid_ec2_host": True} if invalid_ec2_host else {}),
         **({"usb": {"busid": usb_busid}} if usb_busid else {}),
         **({"esp32": {"port": esp32_port}} if esp32_port else {}),
+        **({"target": target_settings} if target_settings else {}),
         **(
             {
                 "adb": {
@@ -347,6 +351,21 @@ def set_saved_esp32_serial_port(config: dict, port: str) -> None:
         esp32 = {}
         config["esp32"] = esp32
     esp32["port"] = port
+
+
+def saved_target_setting(config: dict, key: str) -> str | None:
+    target = config.get("target")
+    if isinstance(target, dict) and isinstance(target.get(key), str) and target[key]:
+        return target[key]
+    return None
+
+
+def set_saved_target_setting(config: dict, key: str, value: str) -> None:
+    target = config.setdefault("target", {})
+    if not isinstance(target, dict):
+        target = {}
+        config["target"] = target
+    target[key] = value
 
 
 def saved_workspaces(config: dict) -> list[dict]:

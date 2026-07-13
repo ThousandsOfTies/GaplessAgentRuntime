@@ -15,10 +15,12 @@ from scripts.gar_lib.config import (
     load_config,
     save_config,
     saved_esp32_serial_port,
+    saved_target_setting,
     saved_workspaces,
     set_active_workspace_root,
     set_default_ec2_host,
     set_saved_esp32_serial_port,
+    set_saved_target_setting,
     set_saved_workspaces,
 )
 from scripts.gar_lib.environments.base import DevEnvironment
@@ -146,6 +148,8 @@ def run_setup(no_install: bool = False, ec2_host: str | None = None, esp32_port:
     print_terminal_bridge_status(offer_install=not no_install)
     print()
     configure_esp32_serial_port(config, esp32_port=esp32_port)
+    print()
+    configure_target_connection(config)
     print()
     print_target_next_steps(config)
     print()
@@ -287,6 +291,49 @@ def configure_esp32_serial_port(config: dict, *, esp32_port: str | None = None) 
         set_saved_esp32_serial_port(config, selected_port)
         save_config(config)
         print(f"  {style('更新しました:', GREEN)} {selected_port}")
+
+
+def configure_target_connection(config: dict) -> None:
+    provider = config.get("selected_providers", {}).get("target")
+    if provider not in {"adb_usb", "adb_win", "ssh_scp"}:
+        return
+
+    print(style("Target Runtime:", BOLD, BLUE))
+    if provider == "ssh_scp":
+        current = saved_target_setting(config, "host")
+        if current:
+            print(f"  SSH host: {style(current, BOLD, GREEN)}")
+        else:
+            print(f"  SSH host: {style('未設定', YELLOW)}")
+        if not sys.stdin.isatty():
+            if not current:
+                print(f"     {style('対話terminalでgar setupを実行して実機のSSH hostを保存してください。', DIM)}")
+            return
+        answer = safe_input(
+            "実機の SSH config host を入力してください"
+            f"{f' [{current}]' if current else ''}: ",
+            default_on_eof=current or "",
+        ).strip()
+        selected = answer or current
+        if selected and selected != current:
+            set_saved_target_setting(config, "host", selected)
+            save_config(config)
+            print(f"  {style('更新しました:', GREEN)} {selected}")
+        return
+
+    current = saved_target_setting(config, "serial")
+    print(f"  ADB device: {style(current or '既定デバイス', BOLD, GREEN)}")
+    if not sys.stdin.isatty():
+        return
+    answer = safe_input(
+        "ADB device serial を入力してください"
+        f"{f' [{current}]' if current else ' (未入力なら既定デバイス)'}: ",
+        default_on_eof=current or "",
+    ).strip()
+    if answer and answer != current:
+        set_saved_target_setting(config, "serial", answer)
+        save_config(config)
+        print(f"  {style('更新しました:', GREEN)} {answer}")
 
 
 def configure_workspace_root(config: dict) -> str | None:

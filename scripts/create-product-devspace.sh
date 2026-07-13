@@ -28,8 +28,9 @@ Example:
     https://github.com/ThousandsOfTies/gar-stream-tx \
     --destination /home/user/Yurufuwa/GarStreamTx
 
-After the script succeeds, implement the application-specific command in
-scripts/product-sim-build.sh, then run `gar setup` and add the checkout from
+After the script succeeds, implement the application-specific commands in
+scripts/product-sim-build.sh and scripts/product-target-build.sh, then run
+`gar setup` and add the checkout from
 the interactive Product Workspaces screen.
 EOF
 }
@@ -141,7 +142,9 @@ run git -C "${destination}" submodule add -b main "${gar_tools_repository}" sour
 if [[ "${dry_run}" == 0 ]]; then
   cp "${destination}/config/product.env.example" "${destination}/config/product.env"
   cp "${destination}/scripts/product-sim-build.sh.example" "${destination}/scripts/product-sim-build.sh"
+  cp "${destination}/scripts/product-target-build.sh.example" "${destination}/scripts/product-target-build.sh"
   chmod +x "${destination}/scripts/product-sim-build.sh"
+  chmod +x "${destination}/scripts/product-target-build.sh"
   {
     printf '\n# Product workspace paths created by create-product-devspace.sh.\n'
     printf 'export GAR_PRODUCT_NAME=%q\n' "${product_name}"
@@ -150,7 +153,7 @@ if [[ "${dry_run}" == 0 ]]; then
   } >> "${destination}/config/product.env"
 fi
 
-run git -C "${destination}" add .gitmodules config/product.env scripts/product-sim-build.sh "${app_path}" sources/gar-tools
+run git -C "${destination}" add .gitmodules config/product.env scripts/product-sim-build.sh scripts/product-target-build.sh "${app_path}" sources/gar-tools
 run git -C "${destination}" commit -m "Initialize ${product_name} product devspace"
 
 if [[ "${push_branch}" == 1 ]]; then
@@ -163,6 +166,6 @@ if [[ "${dry_run}" == 1 ]]; then
 fi
 
 printf '\nCreated %s at %s.\n' "${product_name}" "${destination}"
-printf 'Next: edit %s/scripts/product-sim-build.sh, then run:\n' "${destination}"
+printf 'Next: edit %s/scripts/product-sim-build.sh and product-target-build.sh, then run:\n' "${destination}"
 printf '  gar setup\n'
 printf '  # Product Workspaces で追加し、local path に %q を入力\n' "${destination}"

@@ -11,6 +11,7 @@ gar_lib/
 ├─ artifacts/      artifact.json と成果物の解決・保管
 ├─ access/         SSH・scp・ADB・AWS CLI 等のアクセス手段
 ├─ simulation/     simulation environment と host lifecycle
+├─ target/         実機environmentとADB・serial・SSH/scpの組み立て
 ├─ recovery/       接続失敗の復旧方針とTerminal Bridge連携
 ├─ environments/   移行前のprovider実装と自動発見
 ├─ vscode/         VS Code 統合
@@ -34,6 +35,7 @@ gar_lib/
 | `environments/registry/simulator/` | SSH Remote、Wokwi、Renode、MuJoCo、QEMU 等のシミュレータ provider。`aws_ec2` は SSH transport ではなく、EC2 の起動停止・Public IP 解決を担う補助実装。 |
 | `environments/registry/target/` | adb、SSH/scp、esptool 等の実機到達 provider。 |
 | `simulation/` | Linux systemd/CUSE・Wokwi等のruntime操作、診断結果、EC2等のsimulation host lifecycleを表現する。アクセス手段は `access/` から注入する。Wokwiはhost controllerやruntime artifactを持たないローカル実行環境として実装する。 |
+| `target/` | ADB・serial・SSH/scpを組み合わせ、`TARGET_APP` artifactを実機へ配置する。実行先はworkspaceの実機環境設定から解決する。 |
 | `artifacts/` | artifact manifest の検証、成果物配置先の解決、Codespaces からの取得。 |
 | `vscode/` | terminal profile、Terminal Bridge 拡張の導入、terminal 表示用 UI の補助。 |
 

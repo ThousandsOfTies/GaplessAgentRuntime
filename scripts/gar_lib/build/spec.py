@@ -18,6 +18,7 @@ class ProductBuildSpecResolver:
     _SCRIPTS = {
         ArtifactKind.SIM_APP: "scripts/product-sim-build.sh",
         ArtifactKind.SIM_RUNTIME: "scripts/product-sim-env-build.sh",
+        ArtifactKind.TARGET_APP: "scripts/product-target-build.sh",
     }
 
     def for_artifact(self, kind: ArtifactKind, workspace: Workspace) -> BuildSpec:

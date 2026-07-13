@@ -178,8 +178,8 @@ gar sim stop
 
 | コマンド | 内容 |
 |---|---|
-| `gar target build` | setup 済み target の実機用 artifact を最新化（現在は ESP32/M5Stack firmware build 経路に委譲） |
-| `gar target deploy` | `target.artifact` と `target.access` を解決し、最新 artifact を実機へ反映（target graph 化中） |
+| `gar target build [--workspace NAME]` | workspaceのbuild environmentで `scripts/product-target-build.sh` を実行し、実機用artifactを最新化 |
+| `gar target deploy [--workspace NAME]` | workspaceに設定したADB・serial・SSH/scp環境へ最新artifactを配置 |
 
 低レベルコマンド:
 
@@ -189,7 +189,7 @@ gar sim stop
 | `gar target build-esp32` | ESP32/M5Stack firmware を Codespaces でビルドし、artifact を WSL へ取得 |
 | `gar target flash-esp32` | ESP32/M5Stack firmware artifact を esptool で実機へ書き込み |
 
-adb 実機が未検出の場合、`gar target deploy` が自動的に `gar usb attach` を先行実行する。
+ADB接続に失敗した場合は、Terminal Bridgeを通じて`gar usb list` / `gar usb attach`による復旧手順を案内する。
 
 日常操作:
 

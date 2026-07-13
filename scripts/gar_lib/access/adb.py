@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from scripts.gar_lib.access.base import CommandResult, TransferResult
@@ -50,11 +51,21 @@ class AdbShellChannel(_AdbChannel):
 
 
 class AdbFileChannel(_AdbChannel):
+    def __init__(
+        self,
+        serial: str | None = None,
+        *,
+        executable: str = "adb",
+        local_path_transform: Callable[[Path], str] | None = None,
+    ):
+        super().__init__(serial, executable=executable)
+        self.local_path_transform = local_path_transform or (lambda path: str(path))
+
     def push(self, source: Path, destination: str) -> TransferResult:
-        return self._run("push", str(source), destination)
+        return self._run("push", self.local_path_transform(source), destination)
 
     def pull(self, source: str, destination: Path) -> TransferResult:
-        return self._run("pull", source, str(destination))
+        return self._run("pull", source, self.local_path_transform(destination))
 
     def _run(self, action: str, source: str, destination: str) -> TransferResult:
         argv = (*self._prefix(), action, source, destination)

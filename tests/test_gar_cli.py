@@ -13,8 +13,6 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib.cli import (
-    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-    DEFAULT_ESP32_PIO_ENV,
     adb_device_available,
     completion_bash_script,
     fetch_codespace_artifacts,
@@ -44,7 +42,13 @@ from scripts.gar_lib.cli import (
     update_ssh_config_hostname,
 )
 from scripts.gar_lib.commands.sim import run_sim_panel
-from scripts.gar_lib.core.command import SIM_BUILD, SIM_RUNTIME_BUILD, SIM_RUNTIME_DEPLOY
+from scripts.gar_lib.core.command import (
+    SIM_BUILD,
+    SIM_RUNTIME_BUILD,
+    SIM_RUNTIME_DEPLOY,
+    TARGET_BUILD,
+    TARGET_DEPLOY,
+)
 from scripts.gar_lib.environments.base import DevEnvironment
 from scripts.gar_lib.environments.registry.simulator.ssh_remote import SshRemoteEnvironment
 from scripts.gar_lib.environments.registry.target.esp32_esptool import Esp32EsptoolEnvironment
@@ -1799,6 +1803,17 @@ class GarCliTest(unittest.TestCase):
             remote_root=None,
         )
 
+    def test_target_deploy_workspace_uses_target_environment(self) -> None:
+        with mock.patch("scripts.gar_lib.cli.run_next_target_command", return_value=0) as deploy:
+            result = main(["target", "deploy", "--workspace", "Local/Product"])
+
+        self.assertEqual(0, result)
+        deploy.assert_called_once_with(
+            TARGET_DEPLOY,
+            workspace_selector="Local/Product",
+            retry_command="gar target deploy --workspace Local/Product",
+        )
+
     def test_target_deploy_passes_host_for_ssh_provider(self) -> None:
         with mock.patch("scripts.gar_lib.cli.run_target_deploy_command", return_value=0) as run_deploy:
             result = main(["target", "deploy", "--host", "raspi-net"])
@@ -2281,27 +2296,14 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_target_build_is_available_from_cli(self) -> None:
-        with (
-            mock.patch("scripts.gar_lib.commands.target.get_provider", return_value=Esp32EsptoolEnvironment),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.target.esp32_esptool.Esp32EsptoolEnvironment.build",
-                return_value=0,
-            ) as build,
-        ):
-            result = main(["target", "build", "--codespace", "codespace-test"])
+        with mock.patch("scripts.gar_lib.cli.run_next_target_command", return_value=0) as build:
+            result = main(["target", "build", "--workspace", "Codespaces/Product"])
 
         self.assertEqual(0, result)
         build.assert_called_once_with(
-            codespace="codespace-test",
-            remote_project_root=DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-            pio_env=DEFAULT_ESP32_PIO_ENV,
-            local_artifact_root=None,
-            flash=False,
-            port=None,
-            baud=921600,
-            chip="esp32",
-            verify=True,
-            install_esptool=True,
+            TARGET_BUILD,
+            workspace_selector="Codespaces/Product",
+            retry_command="gar target build --workspace Codespaces/Product",
         )
 
     def test_code_start_is_available_from_cli(self) -> None:

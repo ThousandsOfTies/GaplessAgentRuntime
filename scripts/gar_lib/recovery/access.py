@@ -23,6 +23,7 @@ class AccessRecoveryPlanner:
         *,
         workspace: Workspace,
         retry_command: str,
+        purpose: str = "simulation",
     ) -> RecoveryAction:
         if error.channel == "aws":
             region = workspace.ec2.get("region")
@@ -53,6 +54,15 @@ class AccessRecoveryPlanner:
                     terminal_command=None,
                     instructions=(
                         "SSH configのUserとIdentityFile、および秘密鍵の権限を確認してください。",
+                        f"確認後に再実行: {retry_command}",
+                    ),
+                )
+            if purpose == "target":
+                return RecoveryAction(
+                    title="GAR: 実機SSH接続の復旧",
+                    terminal_command=None,
+                    instructions=(
+                        "実機が起動していることと、SSH configのHost・User・接続経路を確認してください。",
                         f"確認後に再実行: {retry_command}",
                     ),
                 )

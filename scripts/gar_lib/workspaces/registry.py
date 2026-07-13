@@ -34,6 +34,9 @@ class ConfigWorkspaceRegistry:
         entry = matches[0]
         environments = entry.get("selected_providers")
         ec2 = entry.get("ec2")
+        target = entry.get("target")
+        adb = entry.get("adb")
+        esp32 = entry.get("esp32")
         return Workspace(
             id=entry["id"],
             name=entry["name"],
@@ -41,4 +44,7 @@ class ConfigWorkspaceRegistry:
             connection=dict(entry["connection"]),
             selected_environments=dict(environments) if isinstance(environments, dict) else {},
             ec2=dict(ec2) if isinstance(ec2, dict) else {},
+            target=dict(target) if isinstance(target, dict) else {},
+            adb=dict(adb) if isinstance(adb, dict) else {},
+            esp32=dict(esp32) if isinstance(esp32, dict) else {},
         )
