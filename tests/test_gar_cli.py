@@ -12,28 +12,24 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
+from scripts.gar_lib.access.ssh_config import SshConfigHostAddressUpdater
+from scripts.gar_lib.artifacts.manifest import fetch_codespace_artifacts
 from scripts.gar_lib.cli import (
     completion_bash_script,
-    fetch_codespace_artifacts,
-    load_config,
     main,
-    normalize_esp32_serial_port,
     normalize_question_help,
-    parse_esp32_build_artifact_path,
-    parse_usbipd_list,
+)
+from scripts.gar_lib.commands.code import (
     run_code_command,
-    run_ec2_command,
-    run_esp32_build_command,
-    run_esp32_flash_command,
-    run_setup,
-    run_sim_infra_command,
-    run_terminal_request,
-    run_usb_command,
     shutdown_code_codespace,
     start_code_codespace,
     stop_code_codespace,
-    update_ssh_config_hostname,
 )
+from scripts.gar_lib.commands.infra import run_sim_infra_command
+from scripts.gar_lib.commands.setup import run_setup
+from scripts.gar_lib.commands.terminal import run_terminal_request
+from scripts.gar_lib.commands.usb import parse_usbipd_list, run_usb_command
+from scripts.gar_lib.config import load_config
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
     SIM_CLEAN,
@@ -46,6 +42,8 @@ from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
+from scripts.gar_lib.target.esptool import normalize_esp32_serial_port, run_esp32_flash_command
+from scripts.gar_lib.targets.esp32 import parse_esp32_build_artifact_path, run_esp32_build_command
 
 
 class DevelopmentProvider(EnvironmentSetupOption):
@@ -127,13 +125,6 @@ class GarCliTest(unittest.TestCase):
             ["terminal", "run", "--", "echo", "?"],
             normalize_question_help(["terminal", "run", "--", "echo", "?"]),
         )
-
-    def test_shim_build_is_available_from_cli(self) -> None:
-        with mock.patch("scripts.gar_lib.cli.run_shim_command", return_value=0) as shim:
-            result = main(["shim", "build", "--json"])
-
-        self.assertEqual(0, result)
-        shim.assert_called_once_with("build", json_output=True)
 
     def test_completion_bash_script_uses_argcomplete(self) -> None:
         text = completion_bash_script()
@@ -725,67 +716,6 @@ class GarCliTest(unittest.TestCase):
             self.assertEqual("echo hello", request["command"])
             self.assertEqual(str(tmp_path), request["cwd"])
 
-    def test_ec2_status_uses_configured_instance_and_region(self) -> None:
-        config = {
-            "selected_providers": {},
-            "ec2": {
-                "host": "configured-ec2",
-                "instance_id": "i-test123",
-                "region": "ap-test-1",
-            },
-        }
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ec2._aws_available", return_value=True),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ec2.load_config", return_value=config),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.aws_ec2.ec2_instance_state", return_value="running"
-            ) as state,
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.aws_ec2.ec2_public_ip", return_value="203.0.113.5"
-            ) as ip,
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_ec2_command("status")
-
-        self.assertEqual(0, result)
-        state.assert_called_once_with("i-test123", "ap-test-1")
-        ip.assert_called_once_with("i-test123", "ap-test-1")
-        self.assertIn("203.0.113.5", output.getvalue())
-
-    def test_ec2_start_updates_ssh_config_hostname(self) -> None:
-        config = {
-            "selected_providers": {},
-            "ec2": {
-                "host": "configured-ec2",
-                "instance_id": "i-test123",
-                "region": "ap-test-1",
-            },
-        }
-        completed = mock.Mock(returncode=0, stdout="", stderr="")
-        with (
-            mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ec2._aws_available", return_value=True),
-            mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ec2.load_config", return_value=config),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.aws_ec2._run_aws", return_value=completed
-            ) as run_aws,
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.aws_ec2.ec2_public_ip", return_value="203.0.113.5"
-            ),
-            mock.patch(
-                "scripts.gar_lib.environments.registry.simulator.aws_ec2.update_ssh_config_hostname", return_value=True
-            ) as update_ssh,
-        ):
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output):
-                result = run_ec2_command("start")
-
-        self.assertEqual(0, result)
-        update_ssh.assert_called_once_with("configured-ec2", "203.0.113.5")
-        first_aws_args = run_aws.call_args_list[0].args[0]
-        self.assertIn("start-instances", first_aws_args)
-        self.assertIn("i-test123", first_aws_args)
-
     def test_sim_infra_setup_shows_settings_and_runs_terraform_plan(self) -> None:
         completed = mock.Mock(returncode=0, stdout="", stderr="")
         output_result = mock.Mock(
@@ -859,10 +789,9 @@ class GarCliTest(unittest.TestCase):
                     "scripts.gar_lib.commands.infra._run_terraform",
                     side_effect=[init_result, apply_result, output_result],
                 ) as run_tf,
-                mock.patch(
-                    "scripts.gar_lib.commands.infra.update_ssh_config_hostname", return_value=True
-                ) as update_ssh,
+                mock.patch("scripts.gar_lib.commands.infra.SshConfigHostAddressUpdater") as updater_type,
             ):
+                updater_type.return_value.update.return_value = True
                 result = run_sim_infra_command(
                     "apply",
                     region="ap-test-2",
@@ -874,7 +803,7 @@ class GarCliTest(unittest.TestCase):
         saved_config = save_config.call_args.args[0]
         self.assertEqual("i-from-tf", saved_config["ec2"]["instance_id"])
         self.assertEqual("ap-test-2", saved_config["ec2"]["region"])
-        update_ssh.assert_called_once_with("configured-ec2", "203.0.113.55")
+        updater_type.return_value.update.assert_called_once_with("configured-ec2", "203.0.113.55")
 
     def test_update_ssh_config_hostname_rewrites_target_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -889,8 +818,8 @@ class GarCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            updated = update_ssh_config_hostname(
-                "vibecode-graviton", "203.0.113.5", path=config_path
+            updated = SshConfigHostAddressUpdater(config_path).update(
+                "vibecode-graviton", "203.0.113.5"
             )
 
             self.assertTrue(updated)
@@ -908,8 +837,8 @@ class GarCliTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            updated = update_ssh_config_hostname(
-                "vibecode-graviton", "203.0.113.5", path=config_path
+            updated = SshConfigHostAddressUpdater(config_path).update(
+                "vibecode-graviton", "203.0.113.5"
             )
 
             self.assertTrue(updated)
@@ -1348,7 +1277,7 @@ class GarCliTest(unittest.TestCase):
         self.assertEqual("/dev/ttyS3", normalize_esp32_serial_port("COM3"))
 
     def test_esp32_serial_port_uses_setup_saved_port(self) -> None:
-        with mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.load_config", return_value={"esp32": {"port": "COM4"}}):
+        with mock.patch("scripts.gar_lib.target.esptool.load_config", return_value={"esp32": {"port": "COM4"}}):
             self.assertEqual("/dev/ttyS4", normalize_esp32_serial_port(None))
 
     def test_esp32_build_output_parses_artifact_path(self) -> None:
@@ -1383,7 +1312,7 @@ class GarCliTest(unittest.TestCase):
                 "scripts.gar_lib.targets.esp32.fetch_esp32_codespace_artifact",
                 return_value=local_artifact,
             ) as fetch,
-            mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.run_esp32_flash_command", return_value=0) as flash,
+            mock.patch("scripts.gar_lib.target.esptool.run_esp32_flash_command", return_value=0) as flash,
         ):
             result = run_esp32_build_command(
                 codespace=None,
@@ -1444,15 +1373,15 @@ class GarCliTest(unittest.TestCase):
             completed = mock.Mock(returncode=0)
             with (
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.ensure_esptool_python",
+                    "scripts.gar_lib.target.esptool.ensure_esptool_python",
                     return_value=Path("/opt/gar-esptool/bin/python"),
                 ),
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.esp32_serial_port_access_error",
+                    "scripts.gar_lib.target.esptool.esp32_serial_port_access_error",
                     return_value=None,
                 ),
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.subprocess.run",
+                    "scripts.gar_lib.target.esptool.subprocess.run",
                     return_value=completed,
                 ) as run,
             ):
@@ -1489,10 +1418,10 @@ class GarCliTest(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.esp32_serial_port_access_error",
+                    "scripts.gar_lib.target.esptool.esp32_serial_port_access_error",
                     return_value="serial port is not readable/writable by current user: /dev/ttyS3",
                 ),
-                mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.ensure_esptool_python") as ensure_esptool,
+                mock.patch("scripts.gar_lib.target.esptool.ensure_esptool_python") as ensure_esptool,
             ):
                 err = io.StringIO()
                 with contextlib.redirect_stderr(err):
@@ -1520,15 +1449,15 @@ class GarCliTest(unittest.TestCase):
             completed = mock.Mock(returncode=2)
             with (
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.ensure_esptool_python",
+                    "scripts.gar_lib.target.esptool.ensure_esptool_python",
                     return_value=Path("/opt/gar-esptool/bin/python"),
                 ),
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.esp32_serial_port_access_error",
+                    "scripts.gar_lib.target.esptool.esp32_serial_port_access_error",
                     return_value=None,
                 ),
                 mock.patch(
-                    "scripts.gar_lib.environments.registry.target.esp32_esptool.subprocess.run",
+                    "scripts.gar_lib.target.esptool.subprocess.run",
                     return_value=completed,
                 ),
             ):
@@ -2276,7 +2205,7 @@ class GarCliTest(unittest.TestCase):
         )
 
     def test_load_config_warns_on_invalid_json(self) -> None:
-        from scripts.gar_lib.cli import default_config
+        from scripts.gar_lib.config import default_config
 
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
@@ -2294,7 +2223,7 @@ class GarCliTest(unittest.TestCase):
         self.assertIn("not valid JSON", stderr.getvalue())
 
     def test_default_config_leaves_target_unselected(self) -> None:
-        from scripts.gar_lib.cli import default_config
+        from scripts.gar_lib.config import default_config
 
         config = default_config()
 
@@ -2304,7 +2233,7 @@ class GarCliTest(unittest.TestCase):
         self.assertNotIn("region", config["ec2"])
 
     def test_save_config_is_atomic_and_leaves_no_temp_file(self) -> None:
-        from scripts.gar_lib.cli import save_config
+        from scripts.gar_lib.config import save_config
 
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / ".gar" / "config.json"
@@ -2342,7 +2271,7 @@ class GarCliTest(unittest.TestCase):
 
     def test_project_root_points_to_repository_root(self) -> None:
         """PROJECT_ROOT must resolve to the repo root, not scripts/."""
-        from scripts.gar_lib.cli import PROJECT_ROOT
+        from scripts.gar_lib.config import PROJECT_ROOT
 
         self.assertTrue(
             (PROJECT_ROOT / "AGENT.md").is_file(),
@@ -2352,7 +2281,7 @@ class GarCliTest(unittest.TestCase):
         self.assertTrue((PROJECT_ROOT / "scripts" / "gar_lib").is_dir())
 
     def test_terminal_gc_removes_old_processed_requests(self) -> None:
-        from scripts.gar_lib.cli import run_terminal_gc
+        from scripts.gar_lib.commands.terminal import run_terminal_gc
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

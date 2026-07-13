@@ -10,7 +10,6 @@ Implementation lives in sibling submodules:
 - :mod:`scripts.gar_lib.commands.target` — ``gar target``
 - :mod:`scripts.gar_lib.commands.hw` — ``gar hw``
 - :mod:`scripts.gar_lib.commands.infra` — ``gar sim infra``
-- :mod:`scripts.gar_lib.commands.shim` — ``gar shim``
 - :mod:`scripts.gar_lib.commands.sim` — ``gar sim`` orchestration
 - :mod:`scripts.gar_lib.commands.terminal` — ``gar terminal``
 - :mod:`scripts.gar_lib.commands.usb` — ``gar usb``
@@ -26,58 +25,15 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from scripts.gar_lib.artifacts.manifest import (  # noqa: F401
+from scripts.gar_lib.artifacts.manifest import (
     DEFAULT_CODESPACE_ARTIFACT_ROOT,
-    artifact_deploy_files,
-    artifact_manifest_deploy_sources,
     default_artifacts_dir,
-    default_codespace_artifact_root,
     fetch_codespace_artifacts,
-    find_artifact_manifest,
-    gh_codespace_cp,
-    load_artifact_manifest,
-    load_deploy_files,
-    resolve_artifact_src,
-    select_codespace,
-    target_dest_path,
 )
-
-# Re-exports — keep public surface stable for callers and tests.
-from scripts.gar_lib.commands.code import (  # noqa: F401
-    boot_code_codespace,
-    codespace_terminal_script,
-    detect_codespace_workspace,
-    first_ssh_host,
-    load_codespace_state,
-    mount_codespace_code,
-    remote_path_exists,
-    run_code_command,
-    shutdown_code_codespace,
-    start_code_codespace,
-    status_code_codespace,
-    stop_code_codespace,
-    unmount_codespace_code,
-)
-from scripts.gar_lib.commands.hw import (  # noqa: F401
-    HW_TEMPLATE_FILES,
-    run_hw_command,
-    write_hw_template,
-)
-from scripts.gar_lib.commands.infra import run_sim_infra_command  # noqa: F401
-from scripts.gar_lib.commands.setup import (  # noqa: F401
-    configure_default_ec2_host,
-    ensure_provider_dependencies,
-    first_unconfigured_category_index,
-    grouped_providers,
-    print_provider_overview,
-    print_terminal_bridge_status,
-    provider_by_id,
-    run_setup,
-    select_provider_for_category,
-    select_setup_category,
-    unconfigured_categories,
-)
-from scripts.gar_lib.commands.shim import run_shim_command  # noqa: F401
+from scripts.gar_lib.commands.code import run_code_command
+from scripts.gar_lib.commands.hw import run_hw_command
+from scripts.gar_lib.commands.infra import run_sim_infra_command
+from scripts.gar_lib.commands.setup import run_setup
 from scripts.gar_lib.commands.sim import (
     run_sim_command,
     run_sim_diagnostic,
@@ -87,27 +43,8 @@ from scripts.gar_lib.commands.sim import (
     run_sim_panel,
 )
 from scripts.gar_lib.commands.target import run_target_command
-from scripts.gar_lib.commands.terminal import (  # noqa: F401
-    run_terminal_gc,
-    run_terminal_request,
-)
-from scripts.gar_lib.commands.usb import (  # noqa: F401
-    UsbDevice,
-    list_usb_devices,
-    parse_usbipd_list,
-    run_usb_command,
-)
-from scripts.gar_lib.config import (  # noqa: F401
-    CONFIG_PATH,
-    PROJECT_ROOT,
-    VSCODE_EXT_NAME,
-    VSCODE_EXT_VERSION,
-    default_config,
-    default_ec2_host,
-    load_config,
-    save_config,
-    set_default_ec2_host,
-)
+from scripts.gar_lib.commands.terminal import run_terminal_gc, run_terminal_request
+from scripts.gar_lib.commands.usb import run_usb_command
 from scripts.gar_lib.core.command import (
     SIM_BUILD,
     SIM_CLEAN,
@@ -117,59 +54,12 @@ from scripts.gar_lib.core.command import (
     TARGET_BUILD,
     TARGET_DEPLOY,
 )
-from scripts.gar_lib.environments.discovery import (  # noqa: F401
-    discover_environment_providers,
-)
-from scripts.gar_lib.environments.registry.simulator.aws_ec2 import (  # noqa: F401
-    ec2_instance_state,
-    ec2_public_ip,
-    run_ec2_command,
-    update_ssh_config_hostname,
-)
-from scripts.gar_lib.environments.registry.target.esp32_esptool import (  # noqa: F401
-    ensure_esptool_python,
-    esp32_serial_port_access_error,
-    normalize_esp32_serial_port,
-    run_esp32_flash_command,
-    validate_esp32_artifact,
-    verify_esp32_artifact_checksums,
-)
-from scripts.gar_lib.simulation.remote_session import (  # noqa: F401
-    sim_terminal_script,
-    start_sim_port_forward,
-    status_sim_port_forward,
-    stop_sim_port_forward,
-    write_sim_terminal_profile,
-)
-from scripts.gar_lib.targets.esp32 import (  # noqa: F401
+from scripts.gar_lib.target.esptool import run_esp32_flash_command
+from scripts.gar_lib.targets.esp32 import (
     DEFAULT_ESP32_ARTIFACT_ROOT,
     DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
     DEFAULT_ESP32_PIO_ENV,
-    fetch_esp32_codespace_artifact,
-    find_latest_esp32_artifact,
-    parse_esp32_build_artifact_path,
-    resolve_esp32_artifact_dir,
     run_esp32_build_command,
-)
-from scripts.gar_lib.vscode.profile_manage import (  # noqa: F401
-    remove_vscode_terminal_profile,
-    write_vscode_terminal_profile,
-)
-from scripts.gar_lib.vscode.terminal_bridge import (  # noqa: F401
-    install_vscode_terminal_bridge,
-    installed_vscode_terminal_bridge_path,
-)
-from scripts.gar_lib.vscode.terminal_ui import (  # noqa: F401
-    BLUE,
-    BOLD,
-    CYAN,
-    DIM,
-    GREEN,
-    RED,
-    RESET,
-    YELLOW,
-    safe_input,
-    style,
 )
 
 SIM_VM_COMMAND_MAP = {
@@ -438,22 +328,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     completion_words_parser.add_argument("--cword", type=int, required=True)
     completion_words_parser.add_argument("words", nargs=argparse.REMAINDER)
-
-    shim_parser = subparsers.add_parser(
-        "shim",
-        help="[非推奨: gar sim env build を使ってください] setup 済み target の simulation shim をビルドします",
-    )
-    shim_subparsers = shim_parser.add_subparsers(dest="shim_command", metavar="command")
-    shim_build_parser = shim_subparsers.add_parser(
-        "build",
-        help="[非推奨: gar sim env build のエイリアス] setup 済み target/provider に対応する shim artifact をビルドします",
-    )
-    shim_build_parser.add_argument(
-        "--json",
-        dest="json_output",
-        action="store_true",
-        help="結果を機械可読な JSON で出力します（AI / CI 向け）",
-    )
 
     sim_parser = subparsers.add_parser("sim", help="simulation VM / services / virtual H/W を操作します")
     sim_subparsers = sim_parser.add_subparsers(dest="sim_command", metavar="command")
@@ -806,7 +680,6 @@ def build_parser() -> argparse.ArgumentParser:
         "code": code_parser,
         "terminal": terminal_parser,
         "completion": completion_parser,
-        "shim": shim_parser,
         "sim": sim_parser,
         "sim_env": sim_env_parser,
         "sim_infra": sim_infra_parser,
@@ -866,14 +739,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         subcommand_parsers["completion"].print_help()
         return 1
-    if args.command == "shim":
-        if args.shim_command is None:
-            subcommand_parsers["shim"].print_help()
-            return 1
-        return run_shim_command(
-            args.shim_command,
-            json_output=getattr(args, "json_output", False),
-        )
     if args.command == "sim":
         if args.sim_command is None:
             subcommand_parsers["sim"].print_help()

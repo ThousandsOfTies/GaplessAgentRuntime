@@ -39,7 +39,7 @@ gar_lib/
 | `artifacts/` | artifact manifest の検証、成果物配置先の解決、Codespaces からの取得。 |
 | `vscode/` | terminal profile、Terminal Bridge 拡張の導入、terminal 表示用 UI の補助。 |
 
-`environments/registry/development/`、`environments/registry/simulation/`、`environments/registry/target_access/` は現在は空の旧フォルダです。provider 自動発見の対象は、実装のある `codespace`、`simulator`、`target` の3分類です。
+setup候補の自動発見対象は、実装のある `codespace`、`simulator`、`target` の3分類です。
 
 ## 直下モジュールの役割
 
@@ -110,7 +110,7 @@ access               # SSH, scp, adb, AWS CLI 等の純粋なアクセス能力
 external systems
 ```
 
-- `environments` は接続・転送・リモート実行の結果だけを返し、AWS 認証・Terminal Bridge・ユーザー向け文言を持たない。
+- `environments` はsetup候補のメタデータと依存導入だけを持ち、runtime操作を持たない。
 - `commands` または専用の access orchestration 層が接続失敗を分類し、必要な復旧手順を決定する。
 - `vscode` はユーザー入力が必要な復旧操作を visible terminal へ渡す実装として使う。
 - `simulation` と `artifacts` は command 層に依存せず、入力された設定・provider・成果物を処理する。

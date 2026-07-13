@@ -1,4 +1,4 @@
-"""``artifact.json`` manifest parsing, Codespace fetch, and provider resolution.
+"""``artifact.json`` manifest parsing and Codespace artifact fetching.
 
 Shared by simulation and target environment deploy operations and explicit
 artifact fetch commands.

@@ -16,12 +16,10 @@
 
 ## 🔴 高優先（構造的負債・今のうちに直すと後で効く）
 
-### 1. `cli.py` の巨大 re-export が保守コストの爆弾になっている
+### 1. `cli.py` の巨大 re-export（対応済み）
 
-[cli.py](file:///home/user/Yurufuwa/GaplessAgentRuntime/scripts/gar_lib/cli.py) の冒頭 100 行超が `# noqa: F401` 付きの re-export で埋まっている。これは「`from scripts.gar_lib.cli import xxx` で何でも取れる」便宜を提供するが、**実際にこの表面を使っている外部呼び出し元がほぼ存在しない**（テストは各モジュールを直接 import している）。
-
-- **問題**: 新しい関数を追加するたびに cli.py に re-export を足す必要があり、忘れると re-export 表面との不整合が生まれる。1,067 行のうち約 150 行が boilerplate。
-- **提案**: re-export を `scripts.gar_lib` パッケージの `__init__.py` に移すか、完全に廃止して各モジュールの直接 import に統一する。テスト側は既にそうなっている。
+`cli.py` の互換 re-exportを廃止し、CLI dispatchに必要なimportだけを残した。
+テストも各実装モジュールを直接importする。
 
 ### 2. `cli.py` の dispatch が if-elif の手書き連鎖
 
@@ -118,11 +116,9 @@ accessの実行契約はそれぞれの専用層へ分離済み。
 - **現状**: sshfs マウント先として使っているため実害はないが、新規クローン時に「この空ディレクトリは何？」となる可能性がある。
 - **提案**: `codespaces/README.md` に「このディレクトリは `gar code start` で Codespaces を sshfs マウントする先です。中身は git 追跡していません」と書いておく。
 
-### 16. `shim` コマンドの存在意義の説明不足
+### 16. `shim` コマンド（対応済み）
 
-`gar shim` は 19 行の実装（`commands/shim.py`）で、何をするものかがドキュメントに見当たらない。CLI help にも出るがユーザーが迷う。
-
-- **提案**: help テキストに「内部コマンド。通常は使いません」と明記するか、`gar` のトップレベル help から隠す。
+runtime経路で使われない旧`gar shim`と実装を削除した。
 
 ### 17. `AGENT.md` と `CLAUDE.md` の分離方針が外部に伝わりにくい
 
@@ -159,7 +155,7 @@ accessの実行契約はそれぞれの専用層へ分離済み。
             │                  │                  │
      commands/code       commands/sim       commands/target
      commands/setup      commands/usb       commands/hw
-     commands/terminal   commands/infra     commands/shim
+     commands/terminal   commands/infra
             │                  │                  │
             └──────────────────┼──────────────────┘
                                │
@@ -172,7 +168,7 @@ accessの実行契約はそれぞれの専用層へ分離済み。
               ┌────────────────┼───────────────────┐
               │                │                   │
         codespace/        simulator/          target/
-        github_codespaces  aws_ec2            adb_usb
+        github_codespaces                     adb_usb
         local              aws_ssm            adb_win
                            esp32_qemu         esp32_esptool
                            renode_mcu         ssh_scp
@@ -194,7 +190,7 @@ accessの実行契約はそれぞれの専用層へ分離済み。
 
 | # | 項目 | 優先度 | 工数 | 効果 |
 |---|---|---|---|---|
-| 1 | cli.py re-export 整理 | 🔴 高 | 小 | 保守コスト削減 |
+| 1 | cli.py re-export 整理 | ✅ 完了 | - | 保守コスト削減 |
 | 2 | cli.py dispatch のテーブル化 | 🔴 高 | 中 | 新コマンド追加の安全性 |
 | 3 | config.py のハードコード除去 | 🔴 高 | 小 | 安全性・汎用性 |
 | 4 | テストファイル分割 | 🔴 高 | 中 | 開発体験 |
@@ -209,7 +205,7 @@ accessの実行契約はそれぞれの専用層へ分離済み。
 | 13 | Makefile の役割明示 | 🟢 低 | 小 | 導入体験 |
 | 14 | VSCode 拡張テスト | 🟢 低 | 中 | 品質 |
 | 15 | codespaces/ の説明追加 | 🟢 低 | 小 | 導入体験 |
-| 16 | shim コマンドの説明 | 🟢 低 | 小 | ユーザー体験 |
+| 16 | shim コマンドの削除 | ✅ 完了 | - | 表面積の縮小 |
 | 17 | AI 向けファイルの方針説明 | 🟢 低 | 小 | 導入体験 |
 
 ---
@@ -224,7 +220,8 @@ accessの実行契約はそれぞれの専用層へ分離済み。
 
 初回レビューで「2 件目がない」と評価したが、**gar-vibe-remote（M5StickC Plus2）が 2 件目として既に存在**していた。コードベースに以下の証拠がある：
 
-- `environments/registry/target/esp32_esptool.py`（393行）— esptool による flash
+- `target/esptool.py` — esptool によるflash実装
+- `environments/registry/target/esp32_esptool.py` — setup用の依存確認と導入
 - `environments/registry/simulator/wokwi.py`（115行）+ `simulation/wokwi.py`（613行）— Wokwi simulation
 - `environments/registry/simulator/vibe_remote_device.py`（137行）— Vibe Remote device provider
 - `scripts/gar_lib/targets/esp32.py`（293行）— ESP32 ビルド・artifact 管理

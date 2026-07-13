@@ -215,7 +215,7 @@ def run_esp32_build_command(
     print(f"Artifact: {local_artifact_dir}")
 
     if flash:
-        from scripts.gar_lib.environments.registry.target.esp32_esptool import run_esp32_flash_command
+        from scripts.gar_lib.target.esptool import run_esp32_flash_command
 
         return run_esp32_flash_command(
             artifact_dir=str(local_artifact_dir),
@@ -280,7 +280,7 @@ def run_esp32_build_local(
     print(f"Artifact: {local_artifact_dir}")
 
     if flash:
-        from scripts.gar_lib.environments.registry.target.esp32_esptool import run_esp32_flash_command
+        from scripts.gar_lib.target.esptool import run_esp32_flash_command
 
         return run_esp32_flash_command(
             artifact_dir=str(local_artifact_dir),

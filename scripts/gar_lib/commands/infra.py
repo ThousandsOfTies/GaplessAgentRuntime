@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.gar_lib.access.ssh_config import SshConfigHostAddressUpdater
 from scripts.gar_lib.config import (
     PROJECT_ROOT,
     default_ec2_host,
@@ -19,7 +20,6 @@ from scripts.gar_lib.config import (
     set_default_ec2_instance_id,
     set_default_ec2_region,
 )
-from scripts.gar_lib.environments.registry.simulator.aws_ec2 import update_ssh_config_hostname
 
 TERRAFORM_DIR = PROJECT_ROOT / "infra" / "terraform"
 
@@ -96,7 +96,7 @@ def _sync_config_from_outputs(outputs: dict[str, str], *, region: str | None) ->
 
     if public_ip:
         host = default_ec2_host(config)
-        if update_ssh_config_hostname(host, public_ip):
+        if SshConfigHostAddressUpdater().update(host, public_ip):
             print(f"gar sim infra: SSH config の Host {host} を {public_ip} に更新しました。")
 
 
