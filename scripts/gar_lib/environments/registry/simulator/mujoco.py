@@ -5,10 +5,10 @@ from __future__ import annotations
 import shutil
 import sys
 
-from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
+from scripts.gar_lib.environments.base import CommandStatus, EnvironmentSetupOption
 
 
-class MujocoEnvironment(DevEnvironment):
+class MujocoEnvironment(EnvironmentSetupOption):
     """Local MuJoCo installation used for articulated-robot simulation."""
 
     provider_id = "mujoco"
@@ -47,48 +47,7 @@ class MujocoEnvironment(DevEnvironment):
             print(cls.install_hint(missing))
             return 1
         print("MuJoCo Python package をインストールします。")
-        return cls.run_subprocess([sys.executable, "-m", "pip", "install", "mujoco"])
-
-    @classmethod
-    def list_instances(cls) -> int:
-        print("runtime: local MuJoCo Python viewer / product runner")
-        print("default model: GaplessAgentRuntime/examples/mujoco/pendulum.xml")
-        print("override: GAR_MUJOCO_MODEL=/path/to/robot.xml")
-        return 0
-
-    @classmethod
-    def shell(cls, target: str | None = None) -> int:
-        del target
-        print("MuJoCo simulation provider is configured.")
-        print("Run: gar sim env build && gar sim env start --no-port-forward")
-        return 0
-
-    @classmethod
-    def start_port_forward(cls, target: str) -> int:
-        del target
-        return 0
-
-    @classmethod
-    def stop_port_forward(cls, target: str) -> int:
-        del target
-        return 0
-
-    @classmethod
-    def status_port_forward(cls, target: str) -> int:
-        del target
-        return 0
-
-    @classmethod
-    def interactive_shell_script(cls, target: str) -> str:
-        del target
-        return """#!/usr/bin/env bash
-set -euo pipefail
-
-echo "MuJoCo is a local simulation provider."
-echo "Model: ${GAR_MUJOCO_MODEL:-examples/mujoco/pendulum.xml}"
-echo "Run: gar sim env build && gar sim env start --no-port-forward"
-exec bash -l
-"""
+        return cls.run_install_command([sys.executable, "-m", "pip", "install", "mujoco"])
 
 
 def _mujoco_is_importable() -> bool:

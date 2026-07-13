@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from pathlib import Path
 
 from scripts.gar_lib.config import (
     load_config,
@@ -22,40 +21,13 @@ from scripts.gar_lib.config import (
     saved_adb_exe,
     set_saved_adb_exe,
 )
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 
 # winget の Android Platform Tools パッケージ ID。
 WINGET_PACKAGE_ID = "Google.PlatformTools"
 
 
-def _resolve_adb_exe() -> str | None:
-    """保存パス > PATH 上の adb.exe の順で adb.exe を解決する。"""
-    # TODO(外形ゆえの暫定): winget インストール直後は同一プロセスの PATH が未更新で
-    # which が adb.exe を拾えないことがある。保存パスでカバーしているが、保存前に
-    # 解決が必要なケース（インストール先の既定パス探索など）は未対応。要強化。
-    saved = saved_adb_exe(load_config())
-    if saved and Path(saved).exists():
-        return saved
-    return shutil.which("adb.exe")
-
-
-def _to_windows_path(path: str | Path) -> str:
-    """WSL のローカルパスを Windows 形式（UNC 可）へ変換する。"""
-    # TODO(外形ゆえの暫定): wslpath 不在 / 失敗時は素のパスを返すだけ。実際には
-    # フォールバックの変換（/mnt/c -> C:\ への手動マップ等）や明確なエラー提示が必要。
-    result = subprocess.run(
-        ["wslpath", "-w", str(path)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    # wslpath が無い / 失敗した場合は素のまま返す（後段で修正できる外形）。
-    return str(path)
-
-
-class AdbWinEnvironment(DevEnvironment):
+class AdbWinEnvironment(EnvironmentSetupOption):
     provider_id = "adb_win"
     display_name = "ADB (Windows native)"
     description = (
@@ -81,7 +53,7 @@ class AdbWinEnvironment(DevEnvironment):
             return 1
 
         print("Windows へ Android Platform Tools を winget でインストールします。")
-        result = cls.run_subprocess(
+        result = cls.run_install_command(
             [
                 winget,
                 "install",
@@ -126,49 +98,3 @@ class AdbWinEnvironment(DevEnvironment):
             set_saved_adb_exe(config, exe, version=version)
             save_config(config)
         return exe
-
-    @classmethod
-    def run_remote(
-        cls,
-        target: str,
-        command: str,
-        *,
-        capture_output: bool = False,
-        text: bool = True,
-        check: bool = False,
-    ):
-        exe = _resolve_adb_exe()
-        if exe is None:
-            raise FileNotFoundError("adb.exe")
-        cmd = [exe]
-        if target:
-            cmd.extend(["-s", target])
-        # device 側で実行する shell コマンドはパス変換しない。
-        cmd.extend(["shell", command])
-        return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
-
-    @classmethod
-    def push_file(cls, target: str, src, dest) -> int:
-        exe = _resolve_adb_exe()
-        if exe is None:
-            raise FileNotFoundError("adb.exe")
-        # src は WSL ローカル → Windows パスへ変換。dest は device 側なので変換しない。
-        win_src = _to_windows_path(src)
-        cmd = [exe]
-        if target:
-            cmd.extend(["-s", target])
-        cmd.extend(["push", win_src, str(dest)])
-        return subprocess.run(cmd, check=False).returncode
-
-    @classmethod
-    def pull_file(cls, target: str, src, dest) -> int:
-        exe = _resolve_adb_exe()
-        if exe is None:
-            raise FileNotFoundError("adb.exe")
-        # dest は WSL ローカル → Windows パスへ変換。src は device 側なので変換しない。
-        win_dest = _to_windows_path(dest)
-        cmd = [exe]
-        if target:
-            cmd.extend(["-s", target])
-        cmd.extend(["pull", str(src), win_dest])
-        return subprocess.run(cmd, check=False).returncode

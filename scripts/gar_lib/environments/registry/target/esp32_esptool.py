@@ -13,20 +13,17 @@ import venv
 from pathlib import Path
 
 from scripts.gar_lib.config import PROJECT_ROOT, load_config, saved_esp32_serial_port
-from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
+from scripts.gar_lib.environments.base import CommandStatus, EnvironmentSetupOption
 from scripts.gar_lib.targets.esp32 import (
     DEFAULT_ESP32_ARTIFACT_ROOT,
-    DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-    DEFAULT_ESP32_PIO_ENV,
     FLASH_LAYOUT,
     resolve_esp32_artifact_dir,
-    run_esp32_build_command,
 )
 
 ESPTOOL_VENV = Path.home() / ".local" / "share" / "gar" / "esptool-venv"
 
 
-class Esp32EsptoolEnvironment(DevEnvironment):
+class Esp32EsptoolEnvironment(EnvironmentSetupOption):
     provider_id = "esp32_esptool"
     display_name = "ESP32 esptool"
     description = "esptool で ESP32/M5Stack firmware を USBシリアル経由で実機へ書き込みます"
@@ -60,75 +57,10 @@ class Esp32EsptoolEnvironment(DevEnvironment):
             return 1
 
         print("ESP32 firmware 書き込みツール esptool を GAR の .venv にインストールします。")
-        result = cls.run_subprocess([str(python), "-m", "pip", "install", "esptool"])
+        result = cls.run_install_command([str(python), "-m", "pip", "install", "esptool"])
         if result == 0:
             _refresh_tool_path()
         return result
-
-    @classmethod
-    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
-        args = ["esptool", "--port", normalize_esp32_serial_port(target) or target, *command.split()]
-        result = subprocess.run(args, capture_output=capture_output, text=text, check=False)
-        if check:
-            raise subprocess.CalledProcessError(result.returncode, result.args)
-        return result
-
-    @classmethod
-    def push_file(cls, target: str, src, dest) -> int:
-        return run_esp32_flash_command(artifact_dir=str(src), port=target)
-
-    @classmethod
-    def pull_file(cls, target: str, src, dest) -> int:
-        print("gar: ESP32 esptool provider cannot pull files from firmware flash.", file=sys.stderr)
-        return 1
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        codespace: str | None = None,
-        remote_project_root: str | None = None,
-        pio_env: str | None = None,
-        local_artifact_root: str | None = None,
-        flash: bool = False,
-        port: str | None = None,
-        baud: int = 921600,
-        chip: str = "esp32",
-        verify: bool = True,
-        install_esptool: bool = True,
-    ) -> int:
-        return run_esp32_build_command(
-            codespace=codespace,
-            remote_project_root=remote_project_root or DEFAULT_ESP32_CODESPACE_PROJECT_ROOT,
-            pio_env=pio_env or DEFAULT_ESP32_PIO_ENV,
-            local_artifact_root=local_artifact_root,
-            flash=flash,
-            port=port,
-            baud=baud,
-            chip=chip,
-            verify=verify,
-            install_esptool=install_esptool,
-        )
-
-    @classmethod
-    def flash(
-        cls,
-        *,
-        artifact_dir: str | None = None,
-        port: str | None = None,
-        baud: int = 921600,
-        chip: str = "esp32",
-        verify: bool = True,
-        install_esptool: bool = True,
-    ) -> int:
-        return run_esp32_flash_command(
-            artifact_dir=artifact_dir,
-            port=port,
-            baud=baud,
-            chip=chip,
-            verify=verify,
-            install_esptool=install_esptool,
-        )
 
 def normalize_esp32_serial_port(port: str | None) -> str | None:
     """Map Windows COM names to WSL ttyS names when running from Linux."""

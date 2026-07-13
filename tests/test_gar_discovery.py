@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.environments.registry.codespace.github_codespaces import (
     GitHubCodespacesEnvironment,
@@ -50,7 +50,7 @@ class GarDiscoveryTest(unittest.TestCase):
         self.assertIn("ssh_scp", provider_ids)
         self.assertIn("esp32_esptool", provider_ids)
         self.assertTrue(
-            all(issubclass(provider, DevEnvironment) for provider in providers)
+            all(issubclass(provider, EnvironmentSetupOption) for provider in providers)
         )
 
     def test_discovers_provider_categories_from_directories(self) -> None:
@@ -170,7 +170,7 @@ class GarDiscoveryTest(unittest.TestCase):
     def test_wokwi_installer_runs_official_install_script(self) -> None:
         with (
             mock.patch("shutil.which", return_value="/usr/bin/tool"),
-            mock.patch.object(WokwiEnvironment, "run_subprocess", return_value=0) as run,
+            mock.patch.object(WokwiEnvironment, "run_install_command", return_value=0) as run,
         ):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -227,7 +227,7 @@ class GarDiscoveryTest(unittest.TestCase):
 
             with (
                 mock.patch("scripts.gar_lib.environments.registry.target.esp32_esptool.PROJECT_ROOT", root),
-                mock.patch.object(Esp32EsptoolEnvironment, "run_subprocess", return_value=0) as run,
+                mock.patch.object(Esp32EsptoolEnvironment, "run_install_command", return_value=0) as run,
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):
@@ -279,14 +279,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
-            mock.patch.object(
-                GitHubCodespacesEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 GitHubCodespacesEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
         ):
@@ -318,14 +317,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.codespace.local.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
-            mock.patch.object(
-                LocalEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.local.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 LocalEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
             mock.patch(
@@ -360,9 +358,8 @@ class GarDiscoveryTest(unittest.TestCase):
                     "scripts.gar_lib.environments.registry.codespace.local.shutil.which",
                     return_value="/usr/bin/apt-get",
                 ),
-                mock.patch.object(
-                    LocalEnvironment,
-                    "sudo_block_reason",
+                mock.patch(
+                    "scripts.gar_lib.environments.registry.codespace.local.sudo_block_reason",
                     return_value="sudo: The no new privileges flag is set",
                 ),
             ):
@@ -390,14 +387,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
-            mock.patch.object(
-                GitHubCodespacesEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 GitHubCodespacesEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
         ):
@@ -429,14 +425,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
-            mock.patch.object(
-                GitHubCodespacesEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.codespace.github_codespaces.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 GitHubCodespacesEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
         ):
@@ -474,14 +469,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.simulator.aws_ssm.shutil.which",
                 return_value="/usr/bin/tool",
             ),
-            mock.patch.object(
-                AwsSsmEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.simulator.aws_ssm.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 AwsSsmEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
         ):
@@ -520,28 +514,19 @@ class GarDiscoveryTest(unittest.TestCase):
         )
         self.assertIn(["sudo", "dpkg", "-i", mock.ANY], commands)
 
-    def test_aws_ssm_runtime_operations_fail_closed(self) -> None:
-        with mock.patch("scripts.gar_lib.environments.registry.simulator.aws_ssm.subprocess.run") as run:
-            result = AwsSsmEnvironment.run_remote(
-                "vibecode-graviton",
-                "echo hello",
-                capture_output=True,
-            )
-
-        self.assertEqual(1, result.returncode)
-        self.assertIn("deprecated", result.stderr)
-        run.assert_not_called()
-
-        stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            self.assertEqual(1, AwsSsmEnvironment.push_file("target", "src", "dest"))
-            self.assertEqual(1, AwsSsmEnvironment.pull_file("target", "src", "dest"))
-            self.assertEqual(1, AwsSsmEnvironment.start_port_forward("target"))
-            self.assertEqual(1, AwsSsmEnvironment.stop_port_forward("target"))
-            self.assertEqual(1, AwsSsmEnvironment.status_port_forward("target"))
-
-        self.assertIn("ssh_remote", stderr.getvalue())
-        self.assertIn("exit 1", AwsSsmEnvironment.interactive_shell_script("target"))
+    def test_setup_providers_do_not_expose_runtime_operations(self) -> None:
+        for name in (
+            "code_command",
+            "run_remote",
+            "push_file",
+            "pull_file",
+            "host_command",
+            "build",
+            "deploy",
+            "flash",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(AwsSsmEnvironment, name))
 
     def test_adb_usb_installs_adb_with_apt_get(self) -> None:
         commands: list[list[str]] = []
@@ -559,14 +544,13 @@ class GarDiscoveryTest(unittest.TestCase):
                 "scripts.gar_lib.environments.registry.target.adb_usb.shutil.which",
                 return_value="/usr/bin/apt-get",
             ),
-            mock.patch.object(
-                AdbUsbEnvironment,
-                "sudo_block_reason",
+            mock.patch(
+                "scripts.gar_lib.environments.registry.target.adb_usb.sudo_block_reason",
                 return_value=None,
             ),
             mock.patch.object(
                 AdbUsbEnvironment,
-                "run_subprocess",
+                "run_install_command",
                 side_effect=fake_run_subprocess,
             ),
         ):
@@ -594,12 +578,11 @@ class GarDiscoveryTest(unittest.TestCase):
                     "scripts.gar_lib.environments.registry.codespace.github_codespaces.shutil.which",
                     return_value="/usr/bin/apt-get",
                 ),
-                mock.patch.object(
-                    GitHubCodespacesEnvironment,
-                    "sudo_block_reason",
+                mock.patch(
+                    "scripts.gar_lib.environments.registry.codespace.github_codespaces.sudo_block_reason",
                     return_value="sudo: The no new privileges flag is set",
                 ),
-                mock.patch("scripts.gar_lib.environments.base.Path.cwd", return_value=tmp_path),
+                mock.patch("scripts.gar_lib.environments.install.Path.cwd", return_value=tmp_path),
             ):
                 output = io.StringIO()
                 with contextlib.redirect_stdout(output):

@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 
 RENODE_RELEASES_API = "https://api.github.com/repos/renode/renode/releases/latest"
 RENODE_RELEASES_PAGE = "https://github.com/renode/renode/releases/latest"
@@ -40,7 +40,7 @@ LAUNCHER = BIN_DIR / "renode"
 TEST_LAUNCHER = BIN_DIR / "renode-test"
 
 
-class RenodeMcuEnvironment(DevEnvironment):
+class RenodeMcuEnvironment(EnvironmentSetupOption):
     provider_id = "renode_mcu"
     display_name = "Renode (MCU/ベアメタル)"
     description = (
@@ -110,82 +110,6 @@ class RenodeMcuEnvironment(DevEnvironment):
             return 1
 
         return _install_portable(asset, release.get("tag_name", "latest"))
-
-    # ------------------------------------------------------------------
-    # ランタイム系: Renode ターゲットの統合は今後対応。現時点は安全に降格する。
-    # （selection しても gar sim env が NotImplementedError で落ちないようにする）
-    # ------------------------------------------------------------------
-    @classmethod
-    def run_remote(
-        cls,
-        target: str,
-        command: str,
-        *,
-        capture_output: bool = False,
-        text: bool = True,
-        check: bool = False,
-    ):
-        message = _runtime_unwired_message()
-        if not capture_output:
-            print(message, file=sys.stderr)
-        result = subprocess.CompletedProcess(
-            args=["renode_mcu", "run_remote", target],
-            returncode=1,
-            stdout="" if text else b"",
-            stderr=message if text else message.encode(),
-        )
-        if check:
-            raise subprocess.CalledProcessError(
-                result.returncode,
-                result.args,
-                output=result.stdout,
-                stderr=result.stderr,
-            )
-        return result
-
-    @classmethod
-    def push_file(cls, target: str, src, dest) -> int:
-        print(_runtime_unwired_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def pull_file(cls, target: str, src, dest) -> int:
-        print(_runtime_unwired_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def start_port_forward(cls, target: str) -> int:
-        print(_runtime_unwired_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def stop_port_forward(cls, target: str) -> int:
-        print(_runtime_unwired_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def status_port_forward(cls, target: str) -> int:
-        print(_runtime_unwired_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def interactive_shell_script(cls, target: str) -> str:
-        return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-cat >&2 <<'EOF'
-{_runtime_unwired_message()}
-EOF
-exit 1
-"""
-
-
-def _runtime_unwired_message() -> str:
-    return (
-        "Renode (renode_mcu) provider の gar sim env ランタイム統合は未配線です。\n"
-        "現時点では Renode の導入/検証のみ対応します。"
-        "Linux runtime 操作には ssh_remote provider を使ってください。"
-    )
 
 
 def _host_arch() -> str | None:

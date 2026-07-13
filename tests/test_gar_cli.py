@@ -42,13 +42,13 @@ from scripts.gar_lib.core.command import (
     TARGET_BUILD,
     TARGET_DEPLOY,
 )
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.gar_tools import TargetManifest, discover_target_manifests, ensure_gar_tools_available
 from scripts.gar_lib.simulation.linux import LinuxSystemdCommandBuilder, gpio_sim_plan
 from scripts.gar_lib.simulation.parse import parse_gpio_runtime_status, parse_gpio_sim_check, parse_sim_diag
 
 
-class DevelopmentProvider(DevEnvironment):
+class DevelopmentProvider(EnvironmentSetupOption):
     provider_id = "development_test"
     display_name = "Development Test"
     description = "codespace"
@@ -57,7 +57,7 @@ class DevelopmentProvider(DevEnvironment):
     required_commands = ()
 
 
-class SimulationProvider(DevEnvironment):
+class SimulationProvider(EnvironmentSetupOption):
     provider_id = "simulation_test"
     display_name = "Simulation Test"
     description = "simulator"
@@ -66,7 +66,7 @@ class SimulationProvider(DevEnvironment):
     required_commands = ()
 
 
-class WokwiProvider(DevEnvironment):
+class WokwiProvider(EnvironmentSetupOption):
     provider_id = "wokwi"
     display_name = "Wokwi"
     description = "wokwi"
@@ -75,7 +75,7 @@ class WokwiProvider(DevEnvironment):
     required_commands = ()
 
 
-class MissingSimulationProvider(DevEnvironment):
+class MissingSimulationProvider(EnvironmentSetupOption):
     provider_id = "missing_simulation"
     display_name = "Missing Simulation"
     description = "missing simulation"
@@ -84,7 +84,7 @@ class MissingSimulationProvider(DevEnvironment):
     required_commands = ("missing-sim-command",)
 
 
-class TargetAccessProvider(DevEnvironment):
+class TargetAccessProvider(EnvironmentSetupOption):
     provider_id = "device_test"
     display_name = "Device Test"
     description = "target"
@@ -93,7 +93,7 @@ class TargetAccessProvider(DevEnvironment):
     required_commands = ()
 
 
-class MissingTargetAccessProvider(DevEnvironment):
+class MissingTargetAccessProvider(EnvironmentSetupOption):
     provider_id = "missing_test"
     display_name = "Missing Test"
     description = "missing"
@@ -1674,62 +1674,31 @@ class GarCliTest(unittest.TestCase):
             shutdown=False,
         )
 
-    def test_code_command_uses_selected_development_provider(self) -> None:
-        class SelectedDevelopmentProvider(DevelopmentProvider):
-            provider_id = "selected_development"
-
-            @classmethod
-            def code_command(cls, command: str, **kwargs) -> int:
-                self.assertEqual("boot", command)
-                self.assertEqual("selected-target", kwargs["target"])
-                return 0
-
+    def test_code_command_uses_selected_codespaces_environment(self) -> None:
         with (
             mock.patch(
-                "scripts.gar_lib.config.load_config",
-                return_value={"selected_providers": {"codespace": "selected_development"}},
+                "scripts.gar_lib.commands.code.load_config",
+                return_value={"selected_providers": {"codespace": "github_codespaces"}},
             ),
             mock.patch(
-                "scripts.gar_lib.commands.code.discover_environment_providers",
-                return_value=[SelectedDevelopmentProvider],
-            ),
+                "scripts.gar_lib.commands.code.boot_code_codespace",
+                return_value=0,
+            ) as boot,
         ):
             result = run_code_command("boot", codespace="selected-target")
 
         self.assertEqual(0, result)
+        boot.assert_called_once_with(codespace="selected-target", gh_timeout=None)
 
-    def test_code_command_defaults_to_local_provider(self) -> None:
-        class LocalDevelopmentProvider(DevelopmentProvider):
-            provider_id = "local"
-            display_name = "Local Docker"
-
-            @classmethod
-            def code_command(cls, command: str, **kwargs) -> int:
-                self.assertEqual("status", command)
-                self.assertIsNone(kwargs["target"])
-                return 0
-
-        class GitHubDevelopmentProvider(DevelopmentProvider):
-            provider_id = "github_codespaces"
-            display_name = "GitHub Codespaces"
-
-            @classmethod
-            def code_command(cls, command: str, **kwargs) -> int:
-                raise AssertionError("github_codespaces should not be the default")
-
-        with (
-            mock.patch(
-                "scripts.gar_lib.config.load_config",
-                return_value={"selected_providers": {}},
-            ),
-            mock.patch(
-                "scripts.gar_lib.commands.code.discover_environment_providers",
-                return_value=[GitHubDevelopmentProvider, LocalDevelopmentProvider],
-            ),
-        ):
+    def test_code_command_defaults_to_local_environment(self) -> None:
+        with mock.patch(
+            "scripts.gar_lib.commands.code.load_config",
+            return_value={"selected_providers": {}},
+        ), contextlib.redirect_stdout(io.StringIO()) as output:
             result = run_code_command("status")
 
         self.assertEqual(0, result)
+        self.assertIn("Local development environment: available", output.getvalue())
 
     def test_code_start_writes_codespace_state_and_terminal_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

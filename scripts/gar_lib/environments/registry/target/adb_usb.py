@@ -3,10 +3,11 @@ from __future__ import annotations
 import platform
 import shutil
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
+from scripts.gar_lib.environments.install import print_user_terminal_handoff, sudo_block_reason
 
 
-class AdbUsbEnvironment(DevEnvironment):
+class AdbUsbEnvironment(EnvironmentSetupOption):
     provider_id = "adb_usb"
     display_name = "ADB USB-C"
     description = "adb コマンドで USB-C 接続の実機へ接続します"
@@ -31,51 +32,23 @@ class AdbUsbEnvironment(DevEnvironment):
             print(cls.install_hint(missing))
             return 1
 
-        sudo_block_reason = cls.sudo_block_reason()
-        if sudo_block_reason:
-            cls.print_user_terminal_handoff(
+        blocked = sudo_block_reason()
+        if blocked:
+            print_user_terminal_handoff(
                 "adb のインストールには sudo が必要です。",
                 [
                     "sudo apt-get update",
                     "sudo apt-get install -y adb",
                 ],
-                reason=sudo_block_reason,
+                reason=blocked,
             )
             return 1
 
         print("adb を apt-get でインストールします。")
         print("sudo のパスワードを求められたら、このターミナルで入力してください。")
 
-        update_result = cls.run_subprocess(["sudo", "apt-get", "update"])
+        update_result = cls.run_install_command(["sudo", "apt-get", "update"])
         if update_result != 0:
             return update_result
 
-        return cls.run_subprocess(["sudo", "apt-get", "install", "-y", "adb"])
-
-
-    @classmethod
-    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
-        import subprocess
-        cmd = ["adb"]
-        if target:
-            cmd.extend(["-s", target])
-        cmd.extend(["shell", command])
-        return subprocess.run(cmd, capture_output=capture_output, text=text, check=check)
-
-    @classmethod
-    def push_file(cls, target: str, src, dest) -> int:
-        import subprocess
-        cmd = ["adb"]
-        if target:
-            cmd.extend(["-s", target])
-        cmd.extend(["push", str(src), str(dest)])
-        return subprocess.run(cmd, check=False).returncode
-
-    @classmethod
-    def pull_file(cls, target: str, src, dest) -> int:
-        import subprocess
-        cmd = ["adb"]
-        if target:
-            cmd.extend(["-s", target])
-        cmd.extend(["pull", str(src), str(dest)])
-        return subprocess.run(cmd, check=False).returncode
+        return cls.run_install_command(["sudo", "apt-get", "install", "-y", "adb"])

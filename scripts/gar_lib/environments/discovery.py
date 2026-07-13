@@ -5,7 +5,7 @@ import pkgutil
 from pathlib import Path
 
 import scripts.gar_lib.environments.registry as registry_pkg
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 
 
 class ProviderDiscoveryError(RuntimeError):
@@ -28,9 +28,9 @@ CATEGORY_METADATA = {
 }
 
 
-def discover_environment_providers() -> list[type[DevEnvironment]]:
-    providers: list[type[DevEnvironment]] = []
-    provider_ids: dict[str, type[DevEnvironment]] = {}
+def discover_environment_providers() -> list[type[EnvironmentSetupOption]]:
+    providers: list[type[EnvironmentSetupOption]] = []
+    provider_ids: dict[str, type[EnvironmentSetupOption]] = {}
 
     for module_info in pkgutil.walk_packages(
         registry_pkg.__path__,
@@ -44,9 +44,9 @@ def discover_environment_providers() -> list[type[DevEnvironment]]:
         category = CATEGORY_METADATA.get(category_id, {})
 
         for _, obj in inspect.getmembers(module, inspect.isclass):
-            if obj is DevEnvironment:
+            if obj is EnvironmentSetupOption:
                 continue
-            if not issubclass(obj, DevEnvironment):
+            if not issubclass(obj, EnvironmentSetupOption):
                 continue
             if obj.__module__ != module.__name__:
                 continue
@@ -74,7 +74,7 @@ def discover_environment_providers() -> list[type[DevEnvironment]]:
     )
 
 
-def _validate_provider(provider: type[DevEnvironment]) -> None:
+def _validate_provider(provider: type[EnvironmentSetupOption]) -> None:
     for attr in ("provider_id", "display_name", "description"):
         value = getattr(provider, attr, None)
         if not isinstance(value, str) or not value.strip():

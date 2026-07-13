@@ -23,7 +23,7 @@ from scripts.gar_lib.config import (
     set_saved_target_setting,
     set_saved_workspaces,
 )
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
 from scripts.gar_lib.environments.discovery import discover_environment_providers
 from scripts.gar_lib.environments.registry.simulator.wokwi import WokwiEnvironment  # noqa: F401
 from scripts.gar_lib.gar_tools import (
@@ -622,7 +622,7 @@ def print_target_next_steps(config: dict) -> None:
 def configure_target(
     config: dict,
     targets: Sequence[TargetManifest],
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
 ) -> None:
     print(style("1. Target", BOLD, CYAN))
 
@@ -693,7 +693,7 @@ def prepare_target_backend(target: TargetManifest) -> None:
 
 def select_target(
     targets: Sequence[TargetManifest],
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
 ) -> TargetManifest | None:
     print()
     print(style("[Target]", BOLD, CYAN))
@@ -712,7 +712,7 @@ def select_target(
 
 def print_target_summary(
     target: TargetManifest,
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
     *,
     indent: str,
     include_name: bool = True,
@@ -776,7 +776,7 @@ def _select_target_index(count: int) -> int | None:
 
 
 def ensure_provider_dependencies(
-    provider: type[DevEnvironment],
+    provider: type[EnvironmentSetupOption],
     *,
     no_install: bool = False,
 ) -> int:
@@ -829,13 +829,13 @@ def ensure_provider_dependencies(
 
 
 def print_provider_overview(
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
     config: dict[str, dict[str, str]],
     *,
     optional_categories: set[str] | None = None,
     start_index: int = 1,
-) -> list[tuple[str, str, list[type[DevEnvironment]]]]:
-    categories: list[tuple[str, str, list[type[DevEnvironment]]]] = []
+) -> list[tuple[str, str, list[type[EnvironmentSetupOption]]]]:
+    categories: list[tuple[str, str, list[type[EnvironmentSetupOption]]]] = []
     selected_providers = config["selected_providers"]
     optional_categories = optional_categories or set()
 
@@ -869,13 +869,13 @@ def print_provider_overview(
 
 
 def select_setup_category(
-    categories: Sequence[tuple[str, str, list[type[DevEnvironment]]]],
+    categories: Sequence[tuple[str, str, list[type[EnvironmentSetupOption]]]],
     config: dict[str, dict[str, str]],
     *,
     optional_categories: set[str] | None = None,
     start_index: int = 1,
     target_configured: bool = True,
-) -> tuple[str, str, list[type[DevEnvironment]]] | None:
+) -> tuple[str, str, list[type[EnvironmentSetupOption]]] | None:
     default_index = None if not target_configured else first_unconfigured_category_index(categories, config, optional_categories=optional_categories or set())
     if default_index is None:
         if not target_configured:
@@ -922,9 +922,9 @@ def select_setup_category(
 
 
 def select_provider_for_category(
-    category: tuple[str, str, list[type[DevEnvironment]]],
+    category: tuple[str, str, list[type[EnvironmentSetupOption]]],
     config: dict[str, dict[str, str]],
-) -> type[DevEnvironment] | None | object:
+) -> type[EnvironmentSetupOption] | None | object:
     category_id, category_name, providers = category
     selected = provider_by_id(providers, config["selected_providers"].get(category_id))
 
@@ -975,7 +975,7 @@ def select_provider_for_category(
 
 
 def unconfigured_categories(
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
     config: dict[str, dict[str, str]],
     *,
     optional_categories: set[str] | None = None,
@@ -998,7 +998,7 @@ def unconfigured_categories(
 
 
 def first_unconfigured_category_index(
-    categories: Sequence[tuple[str, str, list[type[DevEnvironment]]]],
+    categories: Sequence[tuple[str, str, list[type[EnvironmentSetupOption]]]],
     config: dict[str, dict[str, str]],
     *,
     optional_categories: set[str] | None = None,
@@ -1024,9 +1024,9 @@ def first_unconfigured_category_index(
 
 
 def grouped_providers(
-    providers: Sequence[type[DevEnvironment]],
-) -> list[tuple[str, str, list[type[DevEnvironment]]]]:
-    groups: list[tuple[str, str, list[type[DevEnvironment]]]] = []
+    providers: Sequence[type[EnvironmentSetupOption]],
+) -> list[tuple[str, str, list[type[EnvironmentSetupOption]]]]:
+    groups: list[tuple[str, str, list[type[EnvironmentSetupOption]]]] = []
 
     for provider in providers:
         if groups and groups[-1][0] == provider.category_id:
@@ -1038,9 +1038,9 @@ def grouped_providers(
 
 
 def provider_by_id(
-    providers: Sequence[type[DevEnvironment]],
+    providers: Sequence[type[EnvironmentSetupOption]],
     provider_id: str | None,
-) -> type[DevEnvironment] | None:
+) -> type[EnvironmentSetupOption] | None:
     if provider_id is None:
         return None
 
@@ -1050,7 +1050,7 @@ def provider_by_id(
     return None
 
 
-def _dependency_summary(provider: type[DevEnvironment]) -> str:
+def _dependency_summary(provider: type[EnvironmentSetupOption]) -> str:
     statuses = provider.dependency_status()
     if not statuses:
         return style("なし", DIM)

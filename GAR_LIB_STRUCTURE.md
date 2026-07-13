@@ -30,10 +30,10 @@ gar_lib/
 | `build/` | Local・Codespaces等のbuild environmentを選び、製品build hookからartifactを生成する。 |
 | `access/` | SSH command、scp、ADB、serial、AWS CLI、local process、SSH config更新などの個別アクセス能力。simulation固有の判断は持たない。 |
 | `recovery/` | 構造化された接続失敗を利用者向けの復旧操作へ変換し、必要な場合だけTerminal Bridgeへ渡す。 |
-| `environments/` | `gar setup` に表示するenvironment候補、依存コマンド、導入方法を自動発見する仕組み。実行時の標準sim経路は `simulation/` が担う。 |
-| `environments/registry/codespace/` | Local と GitHub Codespaces の、開発・ビルド環境 provider。 |
-| `environments/registry/simulator/` | SSH Remote、Wokwi、Renode、MuJoCo、QEMU 等のシミュレータ provider。`aws_ec2` は SSH transport ではなく、EC2 の起動停止・Public IP 解決を担う補助実装。 |
-| `environments/registry/target/` | adb、SSH/scp、esptool 等の実機到達 provider。 |
+| `environments/` | `gar setup` に表示するenvironment候補、依存コマンド、導入方法を自動発見する仕組み。`EnvironmentSetupOption` はruntime操作を持たない。 |
+| `environments/registry/codespace/` | Local と GitHub Codespaces をsetupで選択するためのメタデータと導入処理。 |
+| `environments/registry/simulator/` | SSH Remote、Wokwi、Renode、MuJoCo、QEMU 等をsetupで選択するためのメタデータと導入処理。 |
+| `environments/registry/target/` | adb、SSH/scp、esptool 等をsetupで選択するためのメタデータと導入処理。 |
 | `simulation/` | Linux systemd/CUSE・Wokwi・MuJoCoのruntime操作、Bridge/GPIOのhardware control、診断結果、EC2等のsimulation host lifecycleを表現する。SSHやlocal process等のアクセス手段は `access/` から注入する。 |
 | `target/` | ADB・serial・SSH/scpを組み合わせ、`TARGET_APP` artifactを実機へ配置する。実行先はworkspaceの実機環境設定から解決する。 |
 | `artifacts/` | artifact manifest の検証、成果物配置先の解決、Codespaces からの取得。 |

@@ -4,10 +4,11 @@ import getpass
 import platform
 import shutil
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
+from scripts.gar_lib.environments.install import print_user_terminal_handoff, sudo_block_reason
 
 
-class LocalEnvironment(DevEnvironment):
+class LocalEnvironment(EnvironmentSetupOption):
     provider_id = "local"
     display_name = "Local Docker"
     description = "このマシン上のローカル Docker/devcontainer 環境を使います"
@@ -48,9 +49,9 @@ class LocalEnvironment(DevEnvironment):
             print(cls.install_hint(missing))
             return 1
 
-        sudo_block_reason = cls.sudo_block_reason()
-        if sudo_block_reason:
-            cls.print_user_terminal_handoff(
+        blocked = sudo_block_reason()
+        if blocked:
+            print_user_terminal_handoff(
                 "Local Docker のインストールには sudo が必要です。",
                 [
                     "sudo apt-get update",
@@ -59,60 +60,32 @@ class LocalEnvironment(DevEnvironment):
                     "sudo usermod -aG docker $USER",
                     "sudo service docker start || true",
                 ],
-                reason=sudo_block_reason,
+                reason=blocked,
             )
             return 1
 
         print("Local Docker を apt-get でインストールします。")
         print("sudo のパスワードを求められたら、このターミナルで入力してください。")
 
-        update_result = cls.run_subprocess(["sudo", "apt-get", "update"])
+        update_result = cls.run_install_command(["sudo", "apt-get", "update"])
         if update_result != 0:
             return update_result
 
-        install_result = cls.run_subprocess(["sudo", "apt-get", "install", "-y", "docker.io"])
+        install_result = cls.run_install_command(["sudo", "apt-get", "install", "-y", "docker.io"])
         if install_result != 0:
             return install_result
 
-        group_result = cls.run_subprocess(["sudo", "groupadd", "-f", "docker"])
+        group_result = cls.run_install_command(["sudo", "groupadd", "-f", "docker"])
         if group_result != 0:
             return group_result
 
-        user_result = cls.run_subprocess(["sudo", "usermod", "-aG", "docker", getpass.getuser()])
+        user_result = cls.run_install_command(["sudo", "usermod", "-aG", "docker", getpass.getuser()])
         if user_result != 0:
             return user_result
 
-        cls.run_subprocess(["sudo", "service", "docker", "start"])
+        cls.run_install_command(["sudo", "service", "docker", "start"])
         print("docker group の反映にはログアウト/再ログインが必要です。")
         return 0
-
-    @classmethod
-    def code_command(
-        cls,
-        command: str,
-        *,
-        target: str | None = None,
-        remote_path: str | None = None,
-        mount_dir: str | None = None,
-        settings: str | None = None,
-        profile_name: str | None = None,
-        no_mount: bool = False,
-        shutdown: bool = False,
-        timeout: int | None = None,
-    ) -> int:
-        del target, remote_path, mount_dir, settings, profile_name, no_mount, shutdown, timeout
-        if command in ("boot", "start"):
-            print("Local development environment is already available.")
-            return 0
-        if command in ("stop", "shutdown"):
-            print("Local development environment does not need to be stopped.")
-            return 0
-        if command == "status":
-            print("Local development environment: available")
-            return 0
-
-        raise NotImplementedError(f"{cls.__name__} does not implement gar code {command}")
-
 
 def _is_wsl_or_linux() -> bool:
     release = platform.release().lower()

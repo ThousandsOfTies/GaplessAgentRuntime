@@ -10,27 +10,11 @@ import sys
 from pathlib import Path
 
 from scripts.gar_lib.access.codespaces import codespace_list_rows, select_codespace_from_list
-from scripts.gar_lib.environments.base import DevEnvironment
-from scripts.gar_lib.environments.discovery import discover_environment_providers
+from scripts.gar_lib.config import load_config
 from scripts.gar_lib.vscode.profile_manage import (
     remove_vscode_terminal_profile,
     write_vscode_terminal_profile,
 )
-
-
-def _get_dev_provider() -> type[DevEnvironment]:
-    from scripts.gar_lib.config import load_config
-    config = load_config()
-    pid = config.get("selected_providers", {}).get("codespace")
-    providers = discover_environment_providers()
-    if pid:
-        for p in providers:
-            if p.provider_id == pid:
-                return p
-    for p in providers:
-        if p.provider_id == "local":
-            return p
-    raise RuntimeError("No development provider found")
 
 DEFAULT_GH_TIMEOUT_SECONDS = 60
 DEFAULT_CODESPACE_REMOTE_PATH = "/workspaces/gar-build-env"
@@ -48,27 +32,64 @@ def run_code_command(
     shutdown: bool = False,
     gh_timeout: int | None = None,
 ) -> int:
-    provider = _get_dev_provider()
-    try:
-        return provider.code_command(
-            command,
-            target=codespace,
-            remote_path=remote_path,
-            mount_dir=mount_dir,
-            settings=settings,
-            profile_name=profile_name,
-            no_mount=no_mount,
-            shutdown=shutdown,
-            timeout=gh_timeout,
-        )
-    except NotImplementedError:
-        print(
-            f"gar code {command}: 現在の setup では対応する development target が見つかりません。\n"
-            f"  development: {provider.display_name}\n"
-            "  Run `gar setup` and choose a supported development provider.",
-            file=sys.stderr,
-        )
-        return 1
+    environment_id = load_config().get("selected_providers", {}).get("codespace", "local")
+    if environment_id == "local":
+        return run_local_code_command(command)
+    if environment_id == "github_codespaces":
+        if command == "boot":
+            return boot_code_codespace(codespace=codespace, gh_timeout=gh_timeout)
+        if command == "start":
+            return start_code_codespace(
+                codespace=codespace,
+                remote_path=remote_path,
+                mount_dir=mount_dir,
+                settings=settings,
+                profile_name=profile_name,
+                no_mount=no_mount,
+                gh_timeout=gh_timeout,
+            )
+        if command == "stop":
+            return stop_code_codespace(
+                codespace=codespace,
+                mount_dir=mount_dir,
+                settings=settings,
+                profile_name=profile_name,
+                shutdown=shutdown,
+                gh_timeout=gh_timeout,
+            )
+        if command == "shutdown":
+            return shutdown_code_codespace(codespace=codespace, gh_timeout=gh_timeout)
+        if command == "status":
+            return status_code_codespace(
+                codespace=codespace,
+                mount_dir=mount_dir,
+                gh_timeout=gh_timeout,
+            )
+
+    print(
+        f"gar code {command}: 現在のsetupでは対応する開発環境が見つかりません。\n"
+        f"  development: {environment_id}\n"
+        "  `gar setup` でLocalまたはGitHub Codespacesを選択してください。",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def run_local_code_command(command: str) -> int:
+    if command in ("boot", "start"):
+        print("Local development environment is already available.")
+        return 0
+    if command in ("stop", "shutdown"):
+        print("Local development environment does not need to be stopped.")
+        return 0
+    if command == "status":
+        print("Local development environment: available")
+        return 0
+    print(
+        f"gar code {command}: Local development environmentでは未対応です。",
+        file=sys.stderr,
+    )
+    return 1
 
 def boot_code_codespace(
     *,
@@ -532,26 +553,38 @@ def first_ssh_host(config_text: str) -> str | None:
 
 
 def remote_path_exists(host: str, remote_path: str) -> bool:
-    from scripts.gar_lib.environments.registry.codespace.github_codespaces import GitHubCodespacesEnvironment
-    provider = GitHubCodespacesEnvironment
-    result = provider.run_remote(host, f"test -d {shlex.quote(remote_path)}", capture_output=True, check=False)
+    result = run_codespace_remote(
+        host,
+        f"test -d {shlex.quote(remote_path)}",
+        capture_output=True,
+    )
     return result.returncode == 0
 
 
 def detect_codespace_workspace(host: str) -> str | None:
-    from scripts.gar_lib.environments.registry.codespace.github_codespaces import GitHubCodespacesEnvironment
-    provider = GitHubCodespacesEnvironment
-    result = provider.run_remote(
+    result = run_codespace_remote(
         host,
         'find /workspaces -mindepth 1 -maxdepth 1 -type d ! -name ".*" 2>/dev/null | sort | head -n 1',
         capture_output=True,
-        text=True,
-        check=False,
     )
     if result.returncode != 0:
         return None
     detected = result.stdout.strip()
     return detected or None
+
+
+def run_codespace_remote(
+    codespace: str,
+    command: str,
+    *,
+    capture_output: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["gh", "codespace", "ssh", "-c", codespace, "--", command],
+        check=False,
+        capture_output=capture_output,
+        text=True,
+    )
 
 
 def mount_codespace_code(*, host: str, remote_path: str, mount_dir: Path) -> int:

@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import platform
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
+from scripts.gar_lib.environments.install import print_user_terminal_handoff, sudo_block_reason
 
 
-class AwsSsmEnvironment(DevEnvironment):
+class AwsSsmEnvironment(EnvironmentSetupOption):
     provider_id = "aws_ssm"
     display_name = "AWS SSM (非推奨)"
     description = "現時点では Gapless Agent Runtime runtime 操作には未対応です。simulation は SSH Remote を使ってください"
@@ -33,12 +32,12 @@ class AwsSsmEnvironment(DevEnvironment):
             print(unsupported)
             return 1
 
-        sudo_block_reason = cls.sudo_block_reason()
-        if sudo_block_reason:
-            cls.print_user_terminal_handoff(
+        blocked = sudo_block_reason()
+        if blocked:
+            print_user_terminal_handoff(
                 "AWS SSM 接続ツールのインストールには sudo が必要です。",
                 _manual_install_commands(missing),
-                reason=sudo_block_reason,
+                reason=blocked,
             )
             return 1
 
@@ -61,94 +60,12 @@ class AwsSsmEnvironment(DevEnvironment):
 
         return 0
 
-    @classmethod
-    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
-        message = _runtime_unsupported_message()
-        if not capture_output:
-            print(message, file=sys.stderr)
-        result = subprocess.CompletedProcess(
-            args=["aws_ssm", "run_remote", target],
-            returncode=1,
-            stdout="" if text else b"",
-            stderr=message if text else message.encode(),
-        )
-        if check:
-            raise subprocess.CalledProcessError(
-                result.returncode,
-                result.args,
-                output=result.stdout,
-                stderr=result.stderr,
-            )
-        return result
-
-    @classmethod
-    def push_file(cls, target: str, src, dest) -> int:
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def pull_file(cls, target: str, src, dest) -> int:
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def start_port_forward(cls, target: str) -> int:
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def stop_port_forward(cls, target: str) -> int:
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def status_port_forward(cls, target: str) -> int:
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-    @classmethod
-    def interactive_shell_script(cls, target: str) -> str:
-        return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-cat >&2 <<'EOF'
-{_runtime_unsupported_message()}
-EOF
-exit 1
-"""
-
-    @classmethod
-    def host_command(
-        cls,
-        command: str,
-        *,
-        host: str | None = None,
-        instance_id: str | None = None,
-        region: str | None = None,
-        update_ssh: bool = True,
-        pull: bool = False,
-        json_output: bool = False,
-    ) -> int:
-        del host, instance_id, region, update_ssh, pull, json_output
-        print(_runtime_unsupported_message(), file=sys.stderr)
-        return 1
-
-
-
-
 def _unsupported_reason() -> str | None:
     if platform.system() != "Linux":
         return "自動インストールは Linux のみ対応です。"
     if _arch_id() is None:
         return f"未対応の CPU アーキテクチャです: {platform.machine()}"
     return None
-
-
-def _runtime_unsupported_message() -> str:
-    return (
-        "AWS SSM provider is currently deprecated for Gapless Agent Runtime runtime operations. "
-        "Use the ssh_remote simulation provider for gar sim env deploy/start/status/log."
-    )
 
 
 def _ensure_helper_commands() -> int:
@@ -168,11 +85,11 @@ def _ensure_helper_commands() -> int:
     for command in missing_helpers:
         print(f"  - {command}")
 
-    update_result = AwsSsmEnvironment.run_subprocess(["sudo", "apt-get", "update"])
+    update_result = AwsSsmEnvironment.run_install_command(["sudo", "apt-get", "update"])
     if update_result != 0:
         return update_result
 
-    return AwsSsmEnvironment.run_subprocess(
+    return AwsSsmEnvironment.run_install_command(
         ["sudo", "apt-get", "install", "-y", *missing_helpers]
     )
 
@@ -186,19 +103,19 @@ def _install_aws_cli(work_dir: Path) -> int:
     url = f"https://awscli.amazonaws.com/awscli-exe-linux-{arch}.zip"
 
     print("AWS CLI v2 をインストールします。")
-    result = AwsSsmEnvironment.run_subprocess(
+    result = AwsSsmEnvironment.run_install_command(
         ["curl", url, "-o", str(zip_path)]
     )
     if result != 0:
         return result
 
-    result = AwsSsmEnvironment.run_subprocess(
+    result = AwsSsmEnvironment.run_install_command(
         ["unzip", "-q", str(zip_path), "-d", str(work_dir)]
     )
     if result != 0:
         return result
 
-    return AwsSsmEnvironment.run_subprocess(
+    return AwsSsmEnvironment.run_install_command(
         ["sudo", str(work_dir / "aws" / "install")]
     )
 
@@ -216,13 +133,13 @@ def _install_session_manager_plugin(work_dir: Path) -> int:
     )
 
     print("Session Manager Plugin をインストールします。")
-    result = AwsSsmEnvironment.run_subprocess(
+    result = AwsSsmEnvironment.run_install_command(
         ["curl", url, "-o", str(deb_path)]
     )
     if result != 0:
         return result
 
-    return AwsSsmEnvironment.run_subprocess(
+    return AwsSsmEnvironment.run_install_command(
         ["sudo", "dpkg", "-i", str(deb_path)]
     )
 

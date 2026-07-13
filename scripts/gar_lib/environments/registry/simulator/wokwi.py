@@ -6,10 +6,10 @@ import os
 import shutil
 from pathlib import Path
 
-from scripts.gar_lib.environments.base import CommandStatus, DevEnvironment
+from scripts.gar_lib.environments.base import CommandStatus, EnvironmentSetupOption
 
 
-class WokwiEnvironment(DevEnvironment):
+class WokwiEnvironment(EnvironmentSetupOption):
     provider_id = "wokwi"
     display_name = "Wokwi"
     description = "ローカルCLIから Wokwi CI のクラウドESP32/M5StackCシミュレーションを実行します"
@@ -40,47 +40,10 @@ class WokwiEnvironment(DevEnvironment):
 
         print("Wokwi CLI をインストールします。")
         print("インストールスクリプト: https://wokwi.com/ci/install.sh")
-        result = cls.run_subprocess(["sh", "-c", "curl -L https://wokwi.com/ci/install.sh | sh"])
+        result = cls.run_install_command(["sh", "-c", "curl -L https://wokwi.com/ci/install.sh | sh"])
         if result == 0:
             _refresh_wokwi_path()
         return result
-
-    @classmethod
-    def list_instances(cls) -> int:
-        print("target: local Wokwi project directory / firmware artifact")
-        print("runtime: Wokwi CI cloud simulation (uses WOKWI_CLI_TOKEN)")
-        print("default project: GaplessAgentRuntime/.gar/wokwi/m5stackc")
-        return 0
-
-    @classmethod
-    def shell(cls, target: str | None = None) -> int:
-        del target
-        print("Wokwi simulation provider is configured.")
-        print("Run: gar sim env start --no-port-forward")
-        return 0
-
-    @classmethod
-    def start_port_forward(cls, target: str) -> int:
-        return 0
-
-    @classmethod
-    def stop_port_forward(cls, target: str) -> int:
-        return 0
-
-    @classmethod
-    def status_port_forward(cls, target: str) -> int:
-        return 0
-
-    @classmethod
-    def interactive_shell_script(cls, target: str) -> str:
-        return """#!/usr/bin/env bash
-set -euo pipefail
-
-echo "Wokwi simulation provider is configured."
-echo "Runtime: Wokwi CI cloud simulation via local wokwi-cli."
-echo "Project: ${GAR_WOKWI_PROJECT_DIR:-$PWD/.gar/wokwi/m5stackc}"
-echo "Run: gar sim env start --no-port-forward"
-"""
 
 
 def _find_wokwi_cli() -> str | None:

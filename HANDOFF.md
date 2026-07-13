@@ -57,12 +57,11 @@ DEFAULT_EC2_REGION = None
 - `NotImplementedError` を catch してユーザーガイダンスを出すパターンは良いが、一部のコマンド（`target build`、`target flash`）ではメッセージが英語混在（`Run \`gar setup\` and choose ESP32 esptool.`）。
 - **提案**: エラーメッセージの日英混在を統一する（日本語ベースなら日本語に揃える）。`gar` 全体で共通のエラー出力ヘルパーを用意すると良い。
 
-### 6. `DevEnvironment` 基底クラスのメソッドシグネチャ過多
+### 6. setup候補とruntime environmentの分離（完了）
 
-[base.py](file:///home/user/Yurufuwa/GaplessAgentRuntime/scripts/gar_lib/environments/base.py) の `DevEnvironment` は 311 行で、`run_remote`、`push_file`、`pull_file`、`deploy`、`build`、`flash`、`host_command`、`start_port_forward` 等、**全く異なる責務のメソッドが 1 クラスに集約**されている。TODO.md にも「ターゲット抽象の引き直し」として言及済み。
-
-- **現状の問題**: `build()` のシグネチャに `pio_env`、`baud`、`chip`、`verify`、`install_esptool` など ESP32 固有のパラメータが入っており、基底クラスのインターフェースが特定実装に汚染されている。
-- **提案**: TODO に書かれている「What と How の分離」を先にインターフェースだけ切り出す（実装は段階的でよい）。最低限、`build()` / `flash()` の ESP32 固有パラメータは `**kwargs` にするか、ビルダー固有の Config dataclass に包む。
+旧`DevEnvironment`のruntime操作を削除し、`EnvironmentSetupOption`へ改名した。
+現在はsetup表示用メタデータ・依存確認・導入処理だけを持つ。build、simulation、target、
+accessの実行契約はそれぞれの専用層へ分離済み。
 
 ### 7. `pyproject.toml` にプロジェクトメタデータがない
 
@@ -165,7 +164,7 @@ DEFAULT_EC2_REGION = None
             └──────────────────┼──────────────────┘
                                │
                     ┌──────────┴──────────┐
-                    │  environments/base  │  ← DevEnvironment 基底
+                    │  environments/base  │  ← EnvironmentSetupOption
                     │  environments/      │     provider discovery
                     │    registry/        │     (pkgutil.walk_packages)
                     └──────────┬──────────┘
@@ -200,7 +199,7 @@ DEFAULT_EC2_REGION = None
 | 3 | config.py のハードコード除去 | 🔴 高 | 小 | 安全性・汎用性 |
 | 4 | テストファイル分割 | 🔴 高 | 中 | 開発体験 |
 | 5 | エラーメッセージの日英統一 | 🟡 中 | 小 | ユーザー体験 |
-| 6 | DevEnvironment のインターフェース整理 | 🟡 中 | 大 | 拡張性（Renode 配線時） |
+| 6 | setup候補とruntime environmentの分離 | ✅ 完了 | - | 責務分離 |
 | 7 | pyproject.toml 整備 | 🟡 中 | 小 | 標準化 |
 | 8 | config の TypedDict 化 | 🟡 中 | 中 | 型安全性 |
 | 9 | logging 導入 | 🟡 中 | 中 | 診断性 |
@@ -287,7 +286,8 @@ Phase 3:  繋ぐ（← ここで初めて 2 台協調の問題が出る）
 
 Phase 1・2 は今の GAR がそのまま使える（`gar target build` → `gar target flash-esp32` の 1 対 1 モデル）。GAR の拡張が要るのは Phase 3。そのときに初めて「TX を焼いて、RX も焼いて、通信を確認する」という 1 セッション内マルチターゲットの需要が実際の痛みとして出る。その痛みを感じてから抽象を引き直すのが YAGNI の正しい使い方。
 
-HANDOFF.md の #6（DevEnvironment のインターフェース整理）と TODO.md の「ターゲット抽象の引き直し」が、Phase 3 で実際の痛みとして顕在化する見込み。
+setup候補とruntime environmentの分離は完了済み。Phase 3でマルチターゲットの需要が
+具体化した場合は、現在の`TargetEnvironment`を土台にセッション単位の構成を検討する。
 
 Phase 1・2 の間にやっておくと Phase 3 で楽になるもの：
 - **#3** config.py のハードコード除去

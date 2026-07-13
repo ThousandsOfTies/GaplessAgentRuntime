@@ -3,10 +3,11 @@ from __future__ import annotations
 import platform
 import shutil
 
-from scripts.gar_lib.environments.base import DevEnvironment
+from scripts.gar_lib.environments.base import EnvironmentSetupOption
+from scripts.gar_lib.environments.install import print_user_terminal_handoff, sudo_block_reason
 
 
-class GitHubCodespacesEnvironment(DevEnvironment):
+class GitHubCodespacesEnvironment(EnvironmentSetupOption):
     provider_id = "github_codespaces"
     display_name = "GitHub Codespaces"
     description = "GitHub CLI を使って Codespaces に接続します"
@@ -45,105 +46,26 @@ class GitHubCodespacesEnvironment(DevEnvironment):
             print(cls.install_hint(missing))
             return 1
 
-        sudo_block_reason = cls.sudo_block_reason()
-        if sudo_block_reason:
-            cls.print_user_terminal_handoff(
+        blocked = sudo_block_reason()
+        if blocked:
+            print_user_terminal_handoff(
                 "GitHub Codespaces 連携ツールのインストールには sudo が必要です。",
                 [
                     "sudo apt-get update",
                     "sudo apt-get install -y " + " ".join(installable),
                 ],
-                reason=sudo_block_reason,
+                reason=blocked,
             )
             return 1
 
         print("GitHub Codespaces 連携ツールを apt-get でインストールします。")
         print("sudo のパスワードを求められたら、このターミナルで入力してください。")
 
-        update_result = cls.run_subprocess(["sudo", "apt-get", "update"])
+        update_result = cls.run_install_command(["sudo", "apt-get", "update"])
         if update_result != 0:
             return update_result
 
-        return cls.run_subprocess(["sudo", "apt-get", "install", "-y", *installable])
-
-    @classmethod
-    def login(cls) -> int:
-        return cls.run_subprocess(["gh", "auth", "login"])
-
-    @classmethod
-    def list_instances(cls) -> int:
-        return cls.run_subprocess(["gh", "codespace", "list"])
-
-    @classmethod
-    def shell(cls, target: str | None = None) -> int:
-        argv = ["gh", "codespace", "ssh"]
-        if target:
-            argv.extend(["-c", target])
-        return cls.run_subprocess(argv)
-
-    @classmethod
-    def code_command(
-        cls,
-        command: str,
-        *,
-        target: str | None = None,
-        remote_path: str | None = None,
-        mount_dir: str | None = None,
-        settings: str | None = None,
-        profile_name: str | None = None,
-        no_mount: bool = False,
-        shutdown: bool = False,
-        timeout: int | None = None,
-    ) -> int:
-        from scripts.gar_lib.commands import code as code_command
-
-        if command == "boot":
-            return code_command.boot_code_codespace(codespace=target, gh_timeout=timeout)
-        if command == "start":
-            return code_command.start_code_codespace(
-                codespace=target,
-                remote_path=remote_path,
-                mount_dir=mount_dir,
-                settings=settings,
-                profile_name=profile_name,
-                no_mount=no_mount,
-                gh_timeout=timeout,
-            )
-        if command == "stop":
-            return code_command.stop_code_codespace(
-                codespace=target,
-                mount_dir=mount_dir,
-                settings=settings,
-                profile_name=profile_name,
-                shutdown=shutdown,
-                gh_timeout=timeout,
-            )
-        if command == "shutdown":
-            return code_command.shutdown_code_codespace(codespace=target, gh_timeout=timeout)
-        if command == "status":
-            return code_command.status_code_codespace(
-                codespace=target,
-                mount_dir=mount_dir,
-                gh_timeout=timeout,
-            )
-
-        raise NotImplementedError(f"{cls.__name__} does not implement gar code {command}")
-
-    @classmethod
-    def run_remote(cls, target: str, command: str, *, capture_output: bool = False, text: bool = True, check: bool = False):
-        import subprocess
-        argv = ["gh", "codespace", "ssh", "-c", target, "--", command]
-        return subprocess.run(argv, capture_output=capture_output, text=text, check=check)
-
-    @classmethod
-    def interactive_shell_script(cls, target: str) -> str:
-        import shlex
-        quoted_target = shlex.quote(target)
-        return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-exec gh codespace ssh -c {quoted_target}
-"""
+        return cls.run_install_command(["sudo", "apt-get", "install", "-y", *installable])
 
 
 def _is_wsl_or_linux() -> bool:
