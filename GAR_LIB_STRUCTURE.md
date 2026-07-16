@@ -56,10 +56,9 @@ scripts/gar_lib/
 ├─ access/                     接続手段ごとの小さなcapability
 │  ├─ base.py                  Command/File/ArtifactInstaller/Console protocol
 │  ├─ ssh.py                   SSH command / scp file channel
-│  ├─ ssh_config.py            SSH configのHostName更新
 │  ├─ adb.py                   ADB shell / file channel
 │  ├─ aws.py                   AWS CLI command channelと認証失敗分類
-│  ├─ process.py               local background processの起動・停止
+│  ├─ local.py                 local background processの起動・停止
 │  ├─ serial.py                汎用serial installer / console channel
 │  └─ codespaces.py            gh codespace list出力の解析だけを共有
 │
@@ -81,6 +80,7 @@ scripts/gar_lib/
 │  ├─ host.py                  SimulationHostController protocolと結果
 │  ├─ host_resolver.py         workspaceのEC2設定からhost controllerを生成
 │  ├─ aws_ec2.py               AWS EC2 host lifecycle
+│  ├─ ssh_config.py            EC2 host用SSH configのHostName更新
 │  ├─ session.py               SimulationSessionManager protocolとVS Code adapter
 │  └─ remote_session.py        SSH port forwardとVS Code terminal profileの実処理
 │

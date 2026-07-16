@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from scripts.gar_lib.access.process import LocalProcessChannel, ProcessChannel
+from scripts.gar_lib.access.local import LocalProcessChannel, ProcessChannel
 from scripts.gar_lib.config import PROJECT_ROOT
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError

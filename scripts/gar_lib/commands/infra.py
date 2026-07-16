@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.gar_lib.access.ssh_config import SshConfigHostAddressUpdater
+from scripts.gar_lib.simulation.ssh_config import SshConfigHostAddressUpdater
 from scripts.gar_lib.config import (
     PROJECT_ROOT,
     default_ec2_host,

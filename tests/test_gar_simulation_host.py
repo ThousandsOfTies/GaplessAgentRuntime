@@ -7,7 +7,7 @@ from unittest import mock
 
 from scripts.gar_lib.access.aws import AwsCliChannel
 from scripts.gar_lib.access.base import CommandResult
-from scripts.gar_lib.access.ssh_config import SshConfigHostAddressUpdater
+from scripts.gar_lib.simulation.ssh_config import SshConfigHostAddressUpdater
 from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.aws_ec2 import AwsEc2SimulationHostController

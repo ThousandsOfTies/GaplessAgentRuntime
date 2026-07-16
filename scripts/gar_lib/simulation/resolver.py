@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from scripts.gar_lib.access.aws import AwsCliChannel
-from scripts.gar_lib.access.process import LocalProcessChannel
+from scripts.gar_lib.access.local import LocalProcessChannel
 from scripts.gar_lib.access.ssh import ScpFileChannel, SshCommandChannel
 from scripts.gar_lib.config import PROJECT_ROOT
 from scripts.gar_lib.core.errors import GarDomainError

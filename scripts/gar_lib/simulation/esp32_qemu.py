@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.gar_lib.access.process import ProcessChannel
+from scripts.gar_lib.access.local import ProcessChannel
 from scripts.gar_lib.simulation.pending import PendingSimulationEnvironment
 
 

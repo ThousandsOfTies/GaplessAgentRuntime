@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from scripts.gar_lib.access.ssh_config import SshConfigHostAddressUpdater
+from scripts.gar_lib.simulation.ssh_config import SshConfigHostAddressUpdater
 from scripts.gar_lib.artifacts.manifest import fetch_codespace_artifacts
 from scripts.gar_lib.cli import (
     completion_bash_script,

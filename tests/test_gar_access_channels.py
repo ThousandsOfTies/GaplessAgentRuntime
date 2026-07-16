@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gar_lib.access.adb import AdbFileChannel, AdbShellChannel
-from scripts.gar_lib.access.process import LocalProcessChannel
+from scripts.gar_lib.access.local import LocalProcessChannel
 from scripts.gar_lib.access.serial import SerialArtifactInstaller, SerialConsoleChannel
 from scripts.gar_lib.access.ssh import ScpFileChannel, SshCommandChannel
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
@@ -22,7 +22,7 @@ class GarAccessChannelsTest(unittest.TestCase):
             log_path = root / "runtime.log"
             process = mock.Mock(pid=1234)
             with mock.patch(
-                "scripts.gar_lib.access.process.subprocess.Popen", return_value=process
+                "scripts.gar_lib.access.local.subprocess.Popen", return_value=process
             ) as popen:
                 result = LocalProcessChannel().start(
                     ("simulator", "--project", str(root)),

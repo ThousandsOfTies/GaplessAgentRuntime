@@ -6,7 +6,7 @@ import shlex
 
 from scripts.gar_lib.access.aws import AwsCommandChannel
 from scripts.gar_lib.access.base import CommandChannel, CommandResult
-from scripts.gar_lib.access.ssh_config import HostAddressUpdater
+from scripts.gar_lib.simulation.ssh_config import HostAddressUpdater
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.simulation.host import SimulationHostStartResult, SimulationHostState
 
