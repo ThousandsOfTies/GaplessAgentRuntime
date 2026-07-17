@@ -43,8 +43,7 @@ scripts/gar_lib/
 │  └─ registry.py              WorkspaceRegistry / ConfigWorkspaceRegistry
 │
 ├─ build/                      product buildの実行環境
-│  ├─ base.py                  BuildEnvironment protocol
-│  ├─ spec.py                  artifact種別からproduct hookを選ぶBuildSpec
+│  ├─ base.py                  BuildEnvironment / Resolver protocol、artifact種別からproduct hookを選ぶBuildSpec
 │  ├─ local.py                 local product hook実行
 │  ├─ codespaces.py            Codespaces上のhook実行とartifact同期
 │  └─ resolver.py              workspace設定から具体BuildEnvironmentを選択

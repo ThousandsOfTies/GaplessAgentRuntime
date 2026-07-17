@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from scripts.gar_lib.artifacts.store import ArtifactStore
-from scripts.gar_lib.build.resolver import BuildEnvironmentResolver
+from scripts.gar_lib.build.base import BuildEnvironmentResolver
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.command import (
     SIM_BUILD,

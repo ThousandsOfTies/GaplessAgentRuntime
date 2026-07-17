@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 
 from scripts.gar_lib.artifacts.store import ArtifactStore
-from scripts.gar_lib.build.spec import ProductBuildSpecResolver
+from scripts.gar_lib.build.base import ProductBuildSpecResolver
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace

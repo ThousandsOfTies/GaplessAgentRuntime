@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
 from scripts.gar_lib.build.base import BuildEnvironment
 from scripts.gar_lib.build.codespaces import CodespacesBuildEnvironment
 from scripts.gar_lib.build.local import LocalBuildEnvironment
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
-
-
-class BuildEnvironmentResolver(Protocol):
-    def for_workspace(self, workspace: Workspace) -> BuildEnvironment: ...
 
 
 class ConfigBuildEnvironmentResolver:
