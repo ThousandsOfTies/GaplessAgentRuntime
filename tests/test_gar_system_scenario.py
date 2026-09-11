@@ -476,7 +476,7 @@ class GarSystemScenarioTest(unittest.TestCase):
         gar_instances = []
         for node in ("tx", "rx"):
             gar = mock.MagicMock()
-            gar.sim.runtime.diag.return_value = SimpleNamespace(exit_code=0, to_payload=lambda: {"ok": True})
+            gar.sim.diag.return_value = SimpleNamespace(exit_code=0, to_payload=lambda: {"ok": True})
             gar.sim.artifacts.latest.side_effect = lambda kind, workspace, node=node: Artifact(
                 kind=kind, workspace=workspace, bundle_path=Path(f"/tmp/{node}/{kind.value}")
             )

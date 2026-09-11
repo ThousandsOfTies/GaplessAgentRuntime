@@ -12,6 +12,7 @@ import sys
 import venv
 from pathlib import Path
 
+from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.target.esp32_firmware import (
     FLASH_LAYOUT,
     resolve_esp32_artifact_dir,
@@ -141,8 +142,9 @@ def ensure_esptool_python(*, install: bool = True) -> Path | None:
     print(f"Installing esptool into GAR-managed venv: {ESPTOOL_VENV}")
     ESPTOOL_VENV.parent.mkdir(parents=True, exist_ok=True)
     venv.EnvBuilder(with_pip=True).create(ESPTOOL_VENV)
-    result = subprocess.run(
+    result = run_displayed(
         [str(python), "-m", "pip", "install", "--upgrade", "pip", "esptool"],
+        runner=subprocess.run,
         check=False,
     )
     if result.returncode != 0:
@@ -212,7 +214,7 @@ def run_esp32_flash_command(
 
     print(f"Artifact: {resolved_artifact_dir}")
     print(f"Port: {resolved_port}")
-    result = subprocess.run(args, check=False)
+    result = run_displayed(args, runner=subprocess.run, check=False)
     if result.returncode == 0:
         print("Flash complete.")
     else:

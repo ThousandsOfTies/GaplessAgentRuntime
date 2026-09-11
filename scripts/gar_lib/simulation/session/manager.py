@@ -23,9 +23,9 @@ class SimulationSessionManager(Protocol):
 
     def start(self, host: str, *, panel_port: int = 8080) -> int: ...
 
-    def stop(self, host: str) -> int: ...
+    def stop(self, host: str, *, panel_port: int = 8080) -> int: ...
 
-    def status(self, host: str) -> int: ...
+    def status(self, host: str, *, panel_port: int = 8080) -> int: ...
 
 
 class VsCodeSimulationSessionManager:
@@ -41,8 +41,12 @@ class VsCodeSimulationSessionManager:
     def start(self, host: str, *, panel_port: int = 8080) -> int:
         return start_sim_port_forward(host, panel_port=panel_port)
 
-    def stop(self, host: str) -> int:
-        return stop_sim_port_forward(host)
+    def stop(self, host: str, *, panel_port: int = 8080) -> int:
+        return stop_sim_port_forward(host, panel_port=panel_port) if panel_port != 8080 else stop_sim_port_forward(host)
 
-    def status(self, host: str) -> int:
-        return status_sim_port_forward(host)
+    def status(self, host: str, *, panel_port: int = 8080) -> int:
+        return (
+            status_sim_port_forward(host, panel_port=panel_port)
+            if panel_port != 8080
+            else status_sim_port_forward(host)
+        )

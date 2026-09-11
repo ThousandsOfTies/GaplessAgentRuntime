@@ -4,7 +4,7 @@ import io
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 from scripts.gar_lib.bootstrap import VENV, VENV_PYTHON, relaunch_in_venv
@@ -23,18 +23,16 @@ class TtyInput(io.StringIO):
 
 class GarLauncherSetupTest(unittest.TestCase):
     def test_current_path_duplicate_skips_without_prompt(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            scripts = Path(temporary_directory) / "scripts"
-            scripts.mkdir()
-            output = io.StringIO()
-
-            result = offer_scripts_path_registration(
-                scripts,
-                stdin=TtyInput("\n"),
-                stdout=output,
-                environ={"PATH": f'"{scripts.resolve()}/"'},
-                platform="posix",
-            )
+        scripts = mock.Mock(spec=Path)
+        scripts.resolve.return_value = PurePosixPath("/tmp/product/scripts")
+        output = io.StringIO()
+        result = offer_scripts_path_registration(
+            scripts,
+            stdin=TtyInput("\n"),
+            stdout=output,
+            environ={"PATH": f'"{scripts.resolve()}/"'},
+            platform="posix",
+        )
 
         self.assertEqual(0, result)
         self.assertIn("現在のPATHでgarを使用できます", output.getvalue())
@@ -160,7 +158,7 @@ class GarLauncherSetupTest(unittest.TestCase):
 
     def test_bash_completion_is_generated_and_registered_from_setup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory) / "repo"
+            root = Path(temporary_directory).resolve() / "repo"
             scripts = root / "scripts"
             scripts.mkdir(parents=True)
             home = Path(temporary_directory) / "home"

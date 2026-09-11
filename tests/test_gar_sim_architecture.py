@@ -21,13 +21,13 @@ from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 
 
-def local_workspace(root: Path) -> Workspace:
+def local_workspace(root: Path, *, simulator: str = "local_docker") -> Workspace:
     return Workspace(
         id="ws_test",
         name="Local/Product",
         branch="Product",
         connection={"type": "local", "path": str(root)},
-        selected_environments={"codespace": "local"},
+        selected_environments={"codespace": "local", "simulator": simulator},
     )
 
 
@@ -122,7 +122,7 @@ class GarSimulationArchitectureTest(unittest.TestCase):
 
     def test_workspace_lookup_prefers_product_hardware_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            product_root = Path(tmp) / "product"
+            product_root = Path(tmp).resolve() / "product"
             product_hardware = product_root / "hardware"
             product_hardware.mkdir(parents=True)
             bundled_hardware = product_root / "sources" / "gar-tools" / "targets" / "linux-device" / "hardware"
@@ -176,7 +176,7 @@ class GarSimulationArchitectureTest(unittest.TestCase):
 
     def test_workspace_lookup_honours_explicit_hardware_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            product_root = Path(tmp) / "product"
+            product_root = Path(tmp).resolve() / "product"
             explicit_hardware = product_root / "config" / "hardware"
             entry = {
                 "id": "ws_test",
@@ -219,7 +219,7 @@ class GarSimulationArchitectureTest(unittest.TestCase):
 
     def test_local_build_environment_runs_product_hook_and_returns_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             hook = root / "scripts" / "product-sim-build.sh"
             hook.parent.mkdir()
             hook.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -359,7 +359,7 @@ class GarSimulationArchitectureTest(unittest.TestCase):
         artifacts.latest.assert_not_called()
 
     def test_wokwi_runtime_build_does_not_invoke_a_product_runtime_hook(self) -> None:
-        workspace = local_workspace(Path("/tmp/product"))
+        workspace = local_workspace(Path("/tmp/product"), simulator="wokwi")
 
         with (
             mock.patch(
@@ -375,7 +375,7 @@ class GarSimulationArchitectureTest(unittest.TestCase):
         build_for.assert_not_called()
 
     def test_wokwi_runtime_deploy_does_not_require_an_artifact(self) -> None:
-        workspace = local_workspace(Path("/tmp/product"))
+        workspace = local_workspace(Path("/tmp/product"), simulator="wokwi")
         environment = mock.Mock(requires_runtime_artifact=False)
         artifacts = mock.Mock()
 

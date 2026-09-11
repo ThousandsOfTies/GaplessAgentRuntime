@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from scripts.gar_lib.artifacts.manifest import fetch_codespace_artifacts
@@ -63,15 +64,20 @@ class GarTargetCliTest(unittest.TestCase):
         self.assertEqual(4, cp.call_count)
 
     def test_esp32_serial_port_maps_windows_com_to_wsl_tty(self) -> None:
-        self.assertEqual("/dev/ttyS3", normalize_esp32_serial_port("COM3"))
+        for platform_name, expected in (("posix", "/dev/ttyS3"), ("nt", "COM3")):
+            with (
+                self.subTest(platform=platform_name),
+                mock.patch("scripts.gar_lib.target.esptool.os", SimpleNamespace(name=platform_name)),
+            ):
+                self.assertEqual(expected, normalize_esp32_serial_port("COM3"))
 
     def test_esp32_serial_port_uses_environment_fallback(self) -> None:
         with mock.patch.dict(os.environ, {"GAR_ESP32_PORT": "COM4"}):
-            self.assertEqual("/dev/ttyS4", normalize_esp32_serial_port(None))
+            self.assertEqual("COM4" if os.name == "nt" else "/dev/ttyS4", normalize_esp32_serial_port(None))
 
     def test_esp32_flash_verifies_and_invokes_esptool(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             for filename in (
                 "bootloader.bin",
                 "partitions.bin",
@@ -115,9 +121,9 @@ class GarTargetCliTest(unittest.TestCase):
 
         self.assertEqual(0, result)
         args = run.call_args.args[0]
-        self.assertEqual("/opt/gar-esptool/bin/python", args[0])
+        self.assertEqual(str(Path("/opt/gar-esptool/bin/python")), args[0])
         self.assertIn("--port", args)
-        self.assertEqual("/dev/ttyS3", args[args.index("--port") + 1])
+        self.assertEqual("COM3" if os.name == "nt" else "/dev/ttyS3", args[args.index("--port") + 1])
         self.assertIn("--baud", args)
         self.assertEqual("460800", args[args.index("--baud") + 1])
         self.assertIn("0x10000", args)
@@ -168,6 +174,7 @@ class GarTargetCliTest(unittest.TestCase):
 
             completed = mock.Mock(returncode=2)
             with (
+                mock.patch("scripts.gar_lib.target.esptool.os", SimpleNamespace(name="posix")),
                 mock.patch(
                     "scripts.gar_lib.target.esptool.ensure_esptool_python",
                     return_value=Path("/opt/gar-esptool/bin/python"),

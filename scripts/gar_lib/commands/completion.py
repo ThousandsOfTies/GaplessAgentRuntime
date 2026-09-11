@@ -112,21 +112,38 @@ def parser_completion_words(
     tokens = list(words[1:cword])
 
     index = 0
+    positional_tokens: list[str] = []
     while index < len(tokens):
         token = tokens[index]
         subparsers = _subparser_action(parser)
         if subparsers and token in subparsers.choices:
             parser = subparsers.choices[token]
+            positional_tokens = []
             index += 1
             continue
         if token.startswith("-"):
-            option_action = parser._option_string_actions.get(token)
-            if option_action and option_action.nargs in (None, 1) and index + 1 < len(tokens):
+            option_name, separator, _ = token.partition("=")
+            option_action = parser._option_string_actions.get(option_name)
+            if option_action and option_action.nargs in (None, 1) and not separator:
+                if index + 1 == len(tokens):
+                    return [str(choice) for choice in option_action.choices or () if str(choice).startswith(current)]
                 index += 2
                 continue
+        else:
+            positional_tokens.append(token)
         index += 1
 
     candidates = _parser_options(parser)
+    positionals = [action for action in parser._actions if not action.option_strings]
+    scoped_options = parser.get_default("_gar_scoped_options") or {}
+    if scoped_options and positionals:
+        subject = positional_tokens[0] if positional_tokens else positionals[0].default
+        candidates = [
+            candidate
+            for candidate in candidates
+            if parser._option_string_actions[candidate].dest not in scoped_options
+            or subject in scoped_options[parser._option_string_actions[candidate].dest][1]
+        ]
     subparsers = _subparser_action(parser)
     if subparsers:
         hidden = {choice.dest for choice in subparsers._choices_actions if choice.help == argparse.SUPPRESS}
@@ -136,6 +153,9 @@ def parser_completion_words(
             if getattr(choice_parser, "_gar_hidden_completion", False)
         )
         candidates.extend(name for name in subparsers.choices if name not in hidden)
+    else:
+        if len(positional_tokens) < len(positionals):
+            candidates.extend(str(choice) for choice in positionals[len(positional_tokens)].choices or ())
 
     return sorted(candidate for candidate in candidates if candidate.startswith(current))
 

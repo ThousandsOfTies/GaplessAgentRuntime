@@ -48,7 +48,7 @@ class WorkspaceSetupTests(unittest.TestCase):
 
     def test_empty_local_path_keeps_existing_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            existing_path = Path(tmp)
+            existing_path = Path(tmp).resolve()
             with (
                 mock.patch(
                     "scripts.gar_lib.commands.setup.workspace_setup.safe_input",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 
+from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.artifacts.store import BuildArtifactStore
 from scripts.gar_lib.build.spec import ProductBuildSpecResolver
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
@@ -22,10 +23,11 @@ class LocalBuildEnvironment:
         script = workspace.local_root / spec.script
         if not script.is_file():
             raise GarDomainError(f"product build hook が見つかりません: {script}")
-        result = subprocess.run(
+        result = run_displayed(
             [str(script)],
             cwd=workspace.local_root,
             env={**os.environ, **spec.variables},
+            runner=subprocess.run,
             check=False,
         )
         if result.returncode != 0:
@@ -37,10 +39,11 @@ class LocalBuildEnvironment:
         script = workspace.local_root / spec.script
         if not script.is_file():
             raise GarDomainError(f"product build hook が見つかりません: {script}")
-        result = subprocess.run(
+        result = run_displayed(
             [str(script), "clean"],
             cwd=workspace.local_root,
             env={**os.environ, **spec.variables},
+            runner=subprocess.run,
             check=False,
         )
         if result.returncode != 0:

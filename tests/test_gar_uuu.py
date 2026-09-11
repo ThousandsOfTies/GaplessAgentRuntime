@@ -41,7 +41,7 @@ class UuuTargetEnvironmentTests(unittest.TestCase):
 
     def test_deploy_expands_configured_image_command_without_a_shell(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             artifact = _artifact(root)
             manifest = TargetManifest(
                 id="frdm-imx91s",

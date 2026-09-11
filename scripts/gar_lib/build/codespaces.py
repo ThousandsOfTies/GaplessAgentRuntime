@@ -21,8 +21,7 @@ class CodespacesBuildEnvironment:
     def build(self, kind: ArtifactKind, workspace: Workspace) -> Artifact:
         spec = self.specs.for_artifact(kind, workspace)
         command = (
-            f"cd {shlex.quote(workspace.remote_root)} && "
-            f"{_assignments(spec.variables)}{shlex.quote(spec.script)}"
+            f"cd {shlex.quote(workspace.remote_root)} && " f"{_assignments(spec.variables)}{shlex.quote(spec.script)}"
         )
         result = subprocess.run(
             ["gh", "codespace", "ssh", "-c", workspace.codespace_name, "--", command],
@@ -51,6 +50,4 @@ class CodespacesBuildEnvironment:
 
 
 def _assignments(variables: Mapping[str, str]) -> str:
-    return "".join(
-        f"{name}={shlex.quote(value)} " for name, value in sorted(variables.items())
-    )
+    return "".join(f"{name}={shlex.quote(value)} " for name, value in sorted(variables.items()))

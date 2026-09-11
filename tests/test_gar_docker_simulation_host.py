@@ -179,7 +179,7 @@ class DockerAccessChannelTest(unittest.TestCase):
             DockerFileChannel("gar-sim").push(Path("/tmp/bundle"), "/tmp/staged")
 
         self.assertEqual(
-            ("/usr/bin/docker", "cp", "/tmp/bundle", "gar-sim:/tmp/staged"),
+            ("/usr/bin/docker", "cp", str(Path("/tmp/bundle")), "gar-sim:/tmp/staged"),
             run.call_args.args[0],
         )
 
@@ -540,7 +540,7 @@ class DockerBackendTest(unittest.TestCase):
         self.assertIn("--device", controller.spec.run_options)
         self.assertIn("/dev/cuse", controller.spec.run_options)
         self.assertEqual(("/sbin/init",), controller.spec.init_command)
-        self.assertTrue(controller.spec.build_context.endswith("targets/linux-device"))
+        self.assertEqual(("targets", "linux-device"), Path(controller.spec.build_context).parts[-2:])
 
     def test_host_honours_workspace_docker_settings(self) -> None:
         workspace = docker_workspace(container="poc", image="poc:dev", bridge_port=9090)

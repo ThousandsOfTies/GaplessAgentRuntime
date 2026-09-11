@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from scripts.gar_lib.core.errors import GarDomainError
@@ -22,6 +22,7 @@ class TargetLifecycleCapability:
 
     type: str
     command: str
+    stop: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ class TargetManifest:
         command = raw.get("command")
         if not isinstance(lifecycle_type, str) or not isinstance(command, str):
             return None
-        return TargetLifecycleCapability(type=lifecycle_type, command=command)
+        return TargetLifecycleCapability(type=lifecycle_type, command=command, stop=raw.get("stop") is True)
 
     def recipe_version(self, backend_id: str) -> int | None:
         value = self.provisioning_settings(backend_id).get("recipeVersion")
@@ -523,7 +524,7 @@ def _validate_lifecycle_capability(
     path: Path,
     provisioning_field: str,
     issues: list[TargetManifestValidationIssue],
-) -> dict[str, str] | None:
+) -> dict[str, object] | None:
     field = f"{provisioning_field}.lifecycle"
     if not isinstance(value, dict):
         issues.append(TargetManifestValidationIssue(path, field, "must be an object"))
@@ -541,13 +542,16 @@ def _validate_lifecycle_capability(
         return None
 
     command = value.get("command")
-    if not isinstance(command, str) or not command or not Path(command).is_absolute():
+    if not isinstance(command, str) or not command or not PurePosixPath(command).is_absolute():
         issues.append(TargetManifestValidationIssue(path, f"{field}.command", "must be an absolute path"))
         return None
-    if any(character in command for character in ("\x00", "\n", "\r")) or ".." in Path(command).parts:
+    if any(character in command for character in ("\x00", "\n", "\r")) or ".." in PurePosixPath(command).parts:
         issues.append(TargetManifestValidationIssue(path, f"{field}.command", "must be a safe normalized path"))
         return None
-    return {"type": lifecycle_type, "command": command}
+    if "stop" in value and not isinstance(value["stop"], bool):
+        issues.append(TargetManifestValidationIssue(path, f"{field}.stop", "must be a boolean"))
+        return None
+    return {"type": lifecycle_type, "command": command, "stop": value.get("stop", False)}
 
 
 def _validate_compatibility_settings(

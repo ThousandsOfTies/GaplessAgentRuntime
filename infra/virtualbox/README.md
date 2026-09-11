@@ -26,7 +26,7 @@ Host gar-sim-local
 ```powershell
 VBoxManage showvminfo "GAR Ubuntu Sim" --machinereadable
 ssh gar-sim-local 'sudo modprobe gpio-sim && test -d /sys/kernel/config'
-gar sim host status --workspace Local/Product
+gar sim status host --workspace Local/Product
 ```
 
 VMのOS、package、kernel設定はsnapshotだけに依存させず、共通bootstrapまたはgar-toolsの

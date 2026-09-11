@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class UnsafeArchiveError(ValueError):
@@ -33,7 +33,7 @@ def _validate_tar_member(member: tarfile.TarInfo, destination_root: Path) -> Non
         raise UnsafeArchiveError(f"unsupported tar member type: {member.name}")
 
     member_path = Path(member.name)
-    if member_path.is_absolute():
+    if PurePosixPath(member.name).is_absolute() or member_path.is_absolute():
         raise UnsafeArchiveError(f"absolute path is not allowed: {member.name}")
 
     extracted_path = (destination_root / member_path).resolve()

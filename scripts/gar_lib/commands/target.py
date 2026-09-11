@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
-import io
-import json
 import sys
 from argparse import Namespace
 from collections.abc import Mapping
 
 from scripts.gar_lib.api import Gar, TargetPreflightResult
+from scripts.gar_lib.commands.capabilities import add_capability_options
 from scripts.gar_lib.commands.recovery import report_access_failure
+from scripts.gar_lib.commands.result import json_boundary
 from scripts.gar_lib.commands.terminal import run_terminal_run_command
 from scripts.gar_lib.commands.workspace_resolver import resolve_workspace
 from scripts.gar_lib.core.command import GarCommand
 from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
+from scripts.gar_lib.core.observation import component, unavailable
+from scripts.gar_lib.core.output import JSON_OUTPUT, emit_json
 from scripts.gar_lib.target.file_transfer import TargetConfigurationReport
 from scripts.gar_lib.target.lifecycle import (
     TargetDeploymentConvergenceError,
@@ -30,6 +31,8 @@ TARGET_ACTIONS = {
     "build": "config済みtargetの実機用artifactをビルドします",
     "preflight": "最新artifactと接続Targetの互換性を配置前に読み取り専用で検証します",
     "deploy": "target runtime へ成果物を配置します",
+    "start": "配置済みapplicationをTarget recipe経由で起動・再収束し、healthとbuild IDを確認します",
+    "stop": "stop対応recipeでapplicationを停止します（Targetの電源は操作しません）",
     "fetch": "BuildEnvironment から artifact store へbundleを取得します",
     "status": "Target recipe経由でapplicationの稼働状態を取得します",
     "log": "Target recipe経由でapplication logを取得します",
@@ -45,7 +48,7 @@ def add_target_parser(
     workspace_option = argparse.ArgumentParser(add_help=False)
     workspace_option.add_argument(
         "--workspace",
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="NAME",
         help="gar config で登録した workspace 名。登録が1件なら省略できます",
     )
@@ -54,6 +57,7 @@ def add_target_parser(
         help="接続先が提供する I/O を使う実機 target を操作します",
     )
     target_parser.set_defaults(help_target="target")
+    add_capability_options(target_parser, group="target")
     action_parsers = target_parser.add_subparsers(dest="action", metavar="action")
     for action, help_text in TARGET_ACTIONS.items():
         action_parser = action_parsers.add_parser(
@@ -62,17 +66,18 @@ def add_target_parser(
             parents=[workspace_option],
         )
         action_parser.set_defaults(gar_command=GarCommand("target", None, action))
-        if action in {"configure", "preflight", "deploy", "status", "log", "diag"}:
+        if action in TARGET_ACTIONS:
             action_parser.add_argument(
                 "--json",
                 dest="json_output",
                 action="store_true",
+                default=argparse.SUPPRESS,
                 help="結果を機械可読な JSON で出力します（AI / CI 向け）",
             )
         if action == "configure":
             action_parser.add_argument("--app", required=True, metavar="NAME", help="設定するapplication名")
             action_parser.add_argument("--file", required=True, metavar="PATH", help="配置するenv形式の設定ファイル")
-        if action in {"preflight", "status", "log", "diag"}:
+        if action in {"preflight", "start", "stop", "status", "log", "diag"}:
             action_parser.add_argument(
                 "--app",
                 default=None,
@@ -97,49 +102,9 @@ def run_target_command(
 ) -> int:
     """Run a target command, enforcing the stdout-only JSON boundary."""
 
-    command = getattr(args, "gar_command", None)
-    json_action = (
-        bool(getattr(args, "json_output", False))
-        and isinstance(command, GarCommand)
-        and command.group == "target"
-        and command.action in {"configure", "preflight", "deploy", "status", "log", "diag"}
-    )
-    if not json_action:
-        return _run_target_command(args, subcommand_parsers=subcommand_parsers)
-
-    output = io.StringIO()
-    diagnostics = io.StringIO()
-    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(diagnostics):
-        exit_code = _run_target_command(args, subcommand_parsers=subcommand_parsers)
-
-    rendered = output.getvalue()
-    diagnostic_text = diagnostics.getvalue().strip()
-    if not diagnostic_text:
-        print(rendered, end="")
-        return exit_code
-
-    try:
-        payload = json.loads(rendered)
-    except json.JSONDecodeError:
-        payload = {
-            "schema_version": 1,
-            "command": f"target.{command.action}",
-            "workspace": getattr(args, "workspace", None),
-            "target_id": None,
-            "ok": False,
-            "error": f"machine-readable target outputを生成できません: {diagnostic_text}",
-        }
-        exit_code = 1
-    if isinstance(payload, dict):
-        error = payload.get("error")
-        if isinstance(error, str) and error:
-            payload["error"] = f"{error}: {diagnostic_text}"
-        else:
-            payload["diagnostics"] = diagnostic_text
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-    else:
-        print(rendered, end="")
-    return exit_code
+    if getattr(args, "json_output", False) and not JSON_OUTPUT.get():
+        return json_boundary(args, lambda: _run_target_command(args, subcommand_parsers=subcommand_parsers))
+    return _run_target_command(args, subcommand_parsers=subcommand_parsers)
 
 
 def _run_target_command(
@@ -162,8 +127,9 @@ def _run_target_command(
     json_output = bool(getattr(args, "json_output", False))
     try:
         workspace = resolve_workspace(workspace_selector)
+        args._gar_workspace = workspace
     except GarDomainError as error:
-        if json_output and command.action in {"configure", "preflight", "deploy", "status", "log", "diag"}:
+        if json_output and command.action in TARGET_ACTIONS:
             _render_error(
                 command.action,
                 str(error),
@@ -220,8 +186,22 @@ def _run_target_command(
                 artifact = target_api.deploy()
             case "fetch":
                 artifact = target_api.fetch()
-            case "status":
-                result = target_api.status(app=getattr(args, "app", None))
+            case "start":
+                report = target_api.start(app=getattr(args, "app", None))
+                _render_deployment(
+                    report,
+                    workspace=workspace.name,
+                    target_id=workspace.selected_target,
+                    json_output=json_output,
+                    action="start",
+                )
+                return report.exit_code
+            case "status" | "stop":
+                result = (
+                    target_api.status(app=getattr(args, "app", None))
+                    if command.action == "status"
+                    else target_api.stop(app=getattr(args, "app", None))
+                )
                 _render_lifecycle_result(
                     result,
                     workspace=workspace.name,
@@ -287,6 +267,7 @@ def _run_target_command(
             workspace=workspace.name,
             target_id=workspace.selected_target,
             json_output=json_output,
+            action=command.action,
         )
         if not json_output:
             print(f"gar: {error}", file=sys.stderr)
@@ -329,9 +310,11 @@ def _render_lifecycle_result(
 ) -> None:
     if json_output:
         payload = result.to_payload()
+        if result.action == "status":
+            payload["components"] = _target_components(result.ok, verification="service_state")
         payload["workspace"] = workspace
         payload["target_id"] = target_id
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
@@ -362,7 +345,7 @@ def _render_preflight(
         "compatibility": result.compatibility.as_dict(),
     }
     if json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     print(f"Artifact: {result.artifact.bundle_path}")
     print(f"Application: {result.application.name}")
@@ -390,7 +373,7 @@ def _render_configuration(
         "ok": report.ok,
     }
     if json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     print(f"Application: {report.application}")
     print(f"Source: {report.source}")
@@ -407,8 +390,9 @@ def _render_diagnostic(
     json_output: bool,
 ) -> None:
     payload = report.to_payload(workspace=workspace, target_id=target_id)
+    payload["components"] = _target_components(report.ok, verification="health_and_build_id")
     if json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     print(f"application      : {report.application.name}")
     print(f"status           : {'running' if report.status.ok else 'not running'}")
@@ -418,22 +402,37 @@ def _render_diagnostic(
     print(f"result           : {'OK' if report.ok else 'FAIL'}")
 
 
+def _target_components(ok: bool, *, verification: str) -> dict[str, object]:
+    return {
+        "host": unavailable("physical Targetの電源状態は管理しません"),
+        "connection": component("reachable", True),
+        "runtime": unavailable("process managerはTarget recipeが所有します"),
+        "app": component("running" if ok else "degraded", ok, verification=verification),
+    }
+
+
 def _render_deployment(
     report: TargetDeploymentReport,
     *,
     workspace: str,
     target_id: str | None,
     json_output: bool,
+    action: str = "deploy",
 ) -> None:
     payload = report.to_payload(workspace=workspace, target_id=target_id)
+    if action == "start":
+        payload["command"] = "target.start"
+        for field in ("placed", "partial", "placed_destinations", "rollback"):
+            payload.pop(field, None)
     if json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     print(f"Artifact: {report.artifact_path}")
-    placement = "partial" if report.partial else "complete" if report.placed else "not placed"
-    print(f"Placement: {placement}")
-    if report.placed_destinations:
-        print(f"Placed destinations: {', '.join(report.placed_destinations)}")
+    if action == "deploy":
+        placement = "partial" if report.partial else "complete" if report.placed else "not placed"
+        print(f"Placement: {placement}")
+        if report.placed_destinations:
+            print(f"Placed destinations: {', '.join(report.placed_destinations)}")
     if report.diagnostic is None:
         print("Target lifecycle verification: unavailable")
         return
@@ -492,7 +491,14 @@ def _render_error(
             }
         )
     payload.update(details)
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if action in {"status", "diag"}:
+        components = _target_components(False, verification="not_checked")
+        components["connection"] = component(
+            "unreachable" if details.get("channel") else "unknown", False, error=message
+        )
+        components["app"] = component("unknown", False, verification="not_checked")
+        payload["components"] = components
+    emit_json(payload)
 
 
 def _caused_by_access_failure(error: BaseException) -> AccessConnectionError | None:

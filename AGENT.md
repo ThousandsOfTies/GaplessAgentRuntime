@@ -69,12 +69,10 @@ Sim Host provider、TargetEnvironment、SSH Host／COM設定が保持された�
 ### Simulation
 
 ```bash
-gar sim runtime build --workspace Local/Product
-gar sim runtime deploy --workspace Local/Product
-gar sim app build --workspace Local/Product
-gar sim app deploy --workspace Local/Product
-gar sim runtime start --workspace Local/Product
-gar sim runtime diag --workspace Local/Product --json
+gar sim build --workspace Local/Product
+gar sim deploy --workspace Local/Product
+gar sim start --workspace Local/Product
+gar sim diag --workspace Local/Product --json
 ```
 
 人間向けPanelの目視だけで完了にしない。可能ならBridge API、metrics、scenario、logで機械的に確認する。
@@ -125,7 +123,8 @@ cleanupを担当し、PnPやmedia protocolはProductが所有する。
 - build後のsnapshotを変更しない。
 - source commit、gar-tools commit、recipe、architecture、ABI、libc、checksumを保持する。
 - dirty source／tools、legacy metadata、checksum不一致、Target identity driftを無視しない。
-- deploy完了はfile転送ではなく、healthとrunning build ID一致まで確認する。
+- Targetのrecipe-backed deployはhealthとrunning build ID一致まで確認する。
+- Simulation deployは配置結果。続くstart／diagで最新snapshotと起動時receiptのbuild IDを照合し、Productのmetrics・scenarioで稼働を確認する。IDがunknownのケースや実環境未検証の範囲を保証したと報告しない。
 
 ## Terminal操作とhost native tool
 

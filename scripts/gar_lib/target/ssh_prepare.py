@@ -9,8 +9,10 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.access.ssh import SSH_CONNECTION_OPTIONS
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.core.output import JSON_OUTPUT
 
 
 def prepare_ssh_target(
@@ -81,6 +83,28 @@ def _prepare_ssh_target(
     ):
         raise GarDomainError("target prepare: SSH接続ユーザー名を安全に取得できません")
 
+    if JSON_OUTPUT.get() and remote_user != "root":
+        privilege = subprocess.run(
+            (
+                "ssh",
+                "-T",
+                "-F",
+                str(config),
+                *SSH_CONNECTION_OPTIONS,
+                "-o",
+                f"HostKeyAlias={host}",
+                host,
+                "sudo -n /bin/sh -c true",
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if privilege.returncode != 0:
+            raise GarDomainError(
+                "target prepare --jsonには非対話sudo権限が必要です。対話認証はJSONなしで実行してください"
+            )
+
     stage = f"/tmp/gar-prepare-{uuid4().hex}"
     create = subprocess.run(
         (
@@ -129,10 +153,12 @@ def _prepare_ssh_target(
         if include_lifecycle:
             remote += f" {shlex.quote(stage + '/gar-target-lifecycle')}"
         remote += f" {shlex.quote(stage + '/recipe-version')}"
-        result = subprocess.run(
+        if JSON_OUTPUT.get() and remote_user != "root":
+            remote = "sudo -n " + remote
+        result = run_displayed(
             (
                 "ssh",
-                "-tt",
+                "-T" if JSON_OUTPUT.get() else "-tt",
                 "-F",
                 str(config),
                 *SSH_CONNECTION_OPTIONS,
@@ -141,6 +167,7 @@ def _prepare_ssh_target(
                 host,
                 remote,
             ),
+            runner=subprocess.run,
             check=False,
         )
         if result.returncode != 0:

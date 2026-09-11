@@ -104,7 +104,10 @@ class GarTargetSystemEnvironmentTest(unittest.TestCase):
         environment = mock.create_autospec(FileTransferTargetEnvironment, instance=True)
         environment.validate_deployment.side_effect = GarDomainError("installed recipe mismatch")
 
-        with mock.patch("scripts.gar_lib.api.target_environment_for", return_value=environment):
+        with (
+            mock.patch("scripts.gar_lib.api.target_environment_for", return_value=environment),
+            mock.patch("scripts.gar_lib.api.target_lifecycle_for", return_value=mock.Mock()),
+        ):
             with self.assertRaisesRegex(GarDomainError, "recipe mismatch"):
                 target.start(app="demo", system_env={"PORT": "5600"})
 

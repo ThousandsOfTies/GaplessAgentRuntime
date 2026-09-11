@@ -10,20 +10,24 @@ from scripts.gar_lib.artifacts.metadata import load_artifact_metadata
 from scripts.gar_lib.artifacts.store import BuildArtifactStore, LocalArtifactStore
 from scripts.gar_lib.build.environment import build_environment_for
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
+from scripts.gar_lib.core.capabilities import require_simulation_action
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.hardware import HardwareDefinition, load_hw_definition
+from scripts.gar_lib.core.observation import EnvironmentObservation
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.simulation.composition import (
     hardware_control_for,
     simulation_environment_for,
     simulation_host_for,
 )
+from scripts.gar_lib.simulation.deployment import SimulationDeploymentError
 from scripts.gar_lib.simulation.diagnostics.model import SimulationDiagnosticReport
 from scripts.gar_lib.simulation.hardware.control import HardwareControlResult
 from scripts.gar_lib.simulation.host.contract import (
     SimulationHostStartResult,
     SimulationHostState,
 )
+from scripts.gar_lib.simulation.observation import observe_simulation
 from scripts.gar_lib.simulation.session.manager import VsCodeSimulationSessionManager
 from scripts.gar_lib.target.application import target_application_from_artifact
 from scripts.gar_lib.target.compatibility import CompatibilityReport
@@ -92,6 +96,53 @@ class Simulation:
         self.gpio = SimulationGpio(workspace)
         self.io = SimulationIo(workspace)
 
+    def status(self) -> EnvironmentObservation:
+        require_simulation_action(self.workspace, "status")
+        return observe_simulation(
+            self.workspace, _workspace_hardware(self.workspace), diagnostic=False, artifacts=self.artifacts
+        )
+
+    def diag(self) -> EnvironmentObservation:
+        require_simulation_action(self.workspace, "diag")
+        return observe_simulation(
+            self.workspace, _workspace_hardware(self.workspace), diagnostic=True, artifacts=self.artifacts
+        )
+
+    def build(self) -> tuple[Artifact, ...]:
+        """Build the artifacts required by this backend, retaining separate snapshots."""
+
+        require_simulation_action(self.workspace, "build")
+        environment = simulation_environment_for(self.workspace)
+        build = build_environment_for(self.workspace, self.artifacts)
+        kinds = (
+            (ArtifactKind.SIM_RUNTIME, ArtifactKind.SIM_APP)
+            if environment.requires_runtime_artifact
+            else (ArtifactKind.SIM_APP,)
+        )
+        return tuple(build.build(kind, self.workspace) for kind in kinds)
+
+    def deploy(self) -> tuple[Artifact, ...]:
+        """Validate the entire selected set before stopping services or transferring files."""
+
+        require_simulation_action(self.workspace, "deploy")
+        environment = simulation_environment_for(self.workspace)
+        kinds = (
+            (ArtifactKind.SIM_RUNTIME, ArtifactKind.SIM_APP)
+            if environment.requires_runtime_artifact
+            else (ArtifactKind.SIM_APP,)
+        )
+        artifacts = tuple(self.artifacts.latest(kind, self.workspace) for kind in kinds)
+        for artifact in artifacts:
+            _validate_simulation_architecture(artifact, self.workspace, require_snapshot=True)
+        completed: list[Artifact] = []
+        for artifact in artifacts:
+            try:
+                environment.deploy(artifact)
+            except (GarDomainError, OSError) as error:
+                raise SimulationDeploymentError(str(error), completed=completed, failed=artifact) from error
+            completed.append(artifact)
+        return artifacts
+
 
 class SimulationApp:
     def __init__(self, workspace: Workspace, artifacts: BuildArtifactStore):
@@ -99,13 +150,16 @@ class SimulationApp:
         self.artifacts = artifacts
 
     def build(self) -> Artifact:
+        require_simulation_action(self.workspace, "build")
         build = build_environment_for(self.workspace, self.artifacts)
         return build.build(ArtifactKind.SIM_APP, self.workspace)
 
     def clean(self) -> None:
+        require_simulation_action(self.workspace, "clean")
         build_environment_for(self.workspace, self.artifacts).clean(ArtifactKind.SIM_APP, self.workspace)
 
     def deploy(self) -> Artifact:
+        require_simulation_action(self.workspace, "deploy")
         artifact = self.artifacts.latest(ArtifactKind.SIM_APP, self.workspace)
         _validate_simulation_architecture(artifact, self.workspace)
         simulation_environment_for(self.workspace).deploy(artifact)
@@ -122,11 +176,13 @@ class SimulationRuntime:
         return simulation_environment_for(self.workspace).session_host
 
     def build(self) -> Artifact | None:
+        require_simulation_action(self.workspace, "build")
         if not simulation_environment_for(self.workspace).requires_runtime_artifact:
             return None
         return build_environment_for(self.workspace, self.artifacts).build(ArtifactKind.SIM_RUNTIME, self.workspace)
 
     def deploy(self) -> Artifact | None:
+        require_simulation_action(self.workspace, "deploy")
         environment = simulation_environment_for(self.workspace)
         if not environment.requires_runtime_artifact:
             return None
@@ -150,6 +206,7 @@ class SimulationRuntime:
         no_port_forward: bool = False,
         panel_port: int = 8080,
     ) -> int:
+        require_simulation_action(self.workspace, "start")
         environment = simulation_environment_for(self.workspace)
         exit_code = environment.start(_workspace_hardware(self.workspace))
         host = environment.session_host
@@ -162,25 +219,32 @@ class SimulationRuntime:
             return 0
         return sessions.start(host, panel_port=panel_port)
 
-    def stop(self, *, keep_port_forward: bool = False) -> int:
+    def stop(self, *, keep_port_forward: bool = False, panel_port: int = 8080) -> int:
+        require_simulation_action(self.workspace, "stop")
         environment = simulation_environment_for(self.workspace)
         exit_code = environment.stop(_workspace_hardware(self.workspace))
         host = environment.session_host
         if exit_code != 0 or host is None or keep_port_forward:
             return exit_code
-        return VsCodeSimulationSessionManager().stop(host)
+        sessions = VsCodeSimulationSessionManager()
+        return sessions.stop(host, panel_port=panel_port) if panel_port != 8080 else sessions.stop(host)
 
-    def status(self) -> int:
+    def status(self, *, panel_port: int = 8080) -> int:
+        require_simulation_action(self.workspace, "status")
         environment = simulation_environment_for(self.workspace)
         host = environment.session_host
-        session_exit = VsCodeSimulationSessionManager().status(host) if host is not None else 0
+        sessions = VsCodeSimulationSessionManager()
+        options = {"panel_port": panel_port} if panel_port != 8080 else {}
+        session_exit = sessions.status(host, **options) if host is not None else 0
         runtime_exit = environment.status(_workspace_hardware(self.workspace))
         return session_exit or runtime_exit
 
     def log(self) -> int:
+        require_simulation_action(self.workspace, "log")
         return simulation_environment_for(self.workspace).log()
 
     def diag(self) -> SimulationDiagnosticReport:
+        require_simulation_action(self.workspace, "diag")
         environment = simulation_environment_for(self.workspace)
         return environment.diag(_workspace_hardware(self.workspace))
 
@@ -261,13 +325,19 @@ def _workspace_hardware(workspace: Workspace) -> HardwareDefinition:
     return load_hw_definition(hw_dir=hardware_dir)
 
 
-def _validate_simulation_architecture(artifact: Artifact, workspace: Workspace) -> None:
+def _validate_simulation_architecture(
+    artifact: Artifact, workspace: Workspace, *, require_snapshot: bool = False
+) -> None:
     expected = workspace.simulation_architecture
-    if expected is None:
+    if expected is None and not require_snapshot:
         return
     metadata = load_artifact_metadata(artifact.bundle_path)
+    if require_snapshot and (metadata is None or metadata.is_legacy):
+        raise GarDomainError(
+            f"sim deployの一括配置にはchecksum付きsnapshotが必要です: {artifact.kind.value}。gar sim buildを実行してください"
+        )
     actual = metadata.target.architecture if metadata is not None else None
-    if actual is not None and actual != expected:
+    if expected is not None and (require_snapshot or actual is not None) and actual != expected:
         raise GarDomainError(
             f"simulation artifactのarchitectureが現在のSim Hostと一致しません: "
             f"{actual} != {expected}。現在のprofileで再buildしてください"
@@ -423,6 +493,10 @@ class Target:
         lifecycle, application = self._lifecycle_application(app)
         return lifecycle.status(application)
 
+    def stop(self, *, app: str | None = None) -> TargetLifecycleResult:
+        lifecycle, application = self._lifecycle_application(app)
+        return lifecycle.stop(application)
+
     def start(
         self,
         *,
@@ -436,6 +510,12 @@ class Target:
         matching the convergence performed by target deployment.
         """
 
+        lifecycle = target_lifecycle_for(self.workspace)
+        if lifecycle is None:
+            raise GarDomainError(
+                "選択したTargetはapplication lifecycle capabilityを提供していません。"
+                "Target recipeを更新してgar target prepareを実行してください"
+            )
         artifact = self.artifacts.latest(ArtifactKind.TARGET_APP, self.workspace)
         environment = target_environment_for(self.workspace)
         # Starting is a physical convergence operation.  Preserve deploy's
@@ -444,12 +524,6 @@ class Target:
         application = target_application_from_artifact(artifact, require_build_id=True)
         if app is not None and app != application.name:
             raise GarDomainError(f"latest target artifactのappが一致しません: {application.name} != {app}")
-        lifecycle = target_lifecycle_for(self.workspace)
-        if lifecycle is None:
-            raise GarDomainError(
-                "選択したTargetはapplication lifecycle capabilityを提供していません。"
-                "Target recipeを更新してgar target prepareを実行してください"
-            )
         if system_env is not None:
             if app is None:
                 raise GarDomainError("target system envにはappが必要です")
@@ -467,7 +541,7 @@ class Target:
             verification="lifecycle-v1",
         )
         if not reload_result.ok or not report.ok:
-            raise GarDomainError("target applicationのstart/convergenceに失敗しました")
+            raise TargetDeploymentConvergenceError(report, action="start")
         return report
 
     def log(self, *, app: str | None = None, lines: int = 200) -> TargetLifecycleResult:

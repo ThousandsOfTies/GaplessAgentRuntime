@@ -29,14 +29,14 @@ class GarAccessRecoveryTest(unittest.TestCase):
         action = plan_access_recovery(
             error,
             workspace=self.workspace,
-            retry_command="gar sim app deploy --workspace Local/Product",
+            retry_command="gar sim deploy app --workspace Local/Product",
         )
 
         self.assertEqual(
             ("aws", "login", "--remote", "--region", "ap-northeast-1"),
             action.terminal_command,
         )
-        self.assertTrue(any("gar sim host start" in instruction for instruction in action.instructions))
+        self.assertTrue(any("gar sim start host" in instruction for instruction in action.instructions))
 
     def test_adb_failure_does_not_request_cloud_login(self) -> None:
         error = AccessConnectionError(
@@ -46,7 +46,7 @@ class GarAccessRecoveryTest(unittest.TestCase):
             returncode=1,
         )
 
-        action = plan_access_recovery(error, workspace=self.workspace, retry_command="gar sim app deploy")
+        action = plan_access_recovery(error, workspace=self.workspace, retry_command="gar sim deploy app")
 
         self.assertIsNone(action.terminal_command)
         self.assertTrue(any("gar usb attach" in instruction for instruction in action.instructions))
@@ -62,14 +62,14 @@ class GarAccessRecoveryTest(unittest.TestCase):
         action = plan_access_recovery(
             error,
             workspace=self.workspace,
-            retry_command="gar sim host start --workspace Local/Product",
+            retry_command="gar sim start host --workspace Local/Product",
         )
 
         self.assertEqual(
             ("aws", "login", "--remote", "--region", "ap-northeast-1"),
             action.terminal_command,
         )
-        self.assertTrue(any("gar sim host start" in instruction for instruction in action.instructions))
+        self.assertTrue(any("gar sim start host" in instruction for instruction in action.instructions))
 
     def test_planned_command_is_handed_to_the_visible_terminal(self) -> None:
         error = AccessConnectionError(
@@ -83,7 +83,7 @@ class GarAccessRecoveryTest(unittest.TestCase):
         exit_code = report_access_failure(
             error,
             workspace=self.workspace,
-            retry_command="gar sim host start --workspace Local/Product",
+            retry_command="gar sim start host --workspace Local/Product",
             run_terminal=requester,
         )
 

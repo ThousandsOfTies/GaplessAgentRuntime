@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -64,7 +66,10 @@ class GarSimulationProcessTest(unittest.TestCase):
         self.assertEqual(("simulator", "--project", str(root)), result.argv)
         self.assertEqual(9876, result.start_time_ticks)
         self.assertEqual(root, popen.call_args.kwargs["cwd"])
-        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        if os.name == "nt":
+            self.assertEqual(subprocess.CREATE_NEW_PROCESS_GROUP, popen.call_args.kwargs["creationflags"])
+        else:
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
     def test_process_ownership_requires_argv_and_start_time_to_match(self) -> None:
         channel = LocalProcessChannel()
@@ -97,9 +102,13 @@ class GarSimulationProcessTest(unittest.TestCase):
 
         with (
             mock.patch.object(channel, "owns", return_value=False),
-            mock.patch("scripts.gar_lib.simulation.runtime.process.os.killpg") as killpg,
+            mock.patch(
+                "scripts.gar_lib.simulation.runtime.process.psutil.Process"
+                if os.name == "nt"
+                else "scripts.gar_lib.simulation.runtime.process.os.killpg"
+            ) as terminate,
         ):
             terminated = channel.terminate_group(process)
 
         self.assertFalse(terminated)
-        killpg.assert_not_called()
+        terminate.assert_not_called()

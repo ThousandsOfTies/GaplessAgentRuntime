@@ -123,7 +123,7 @@ def plan_access_recovery(
             terminal_command=("aws", "login", "--remote", "--region", region),
             instructions=(
                 "表示されたURLをブラウザで開き、認証コードはそのterminalに入力してください。",
-                f"認証後: gar sim host start --workspace {workspace_arg}",
+                f"認証後: gar sim start host --workspace {workspace_arg}",
                 f"起動完了後に再実行: {retry_command}",
             ),
         )
@@ -146,7 +146,7 @@ def plan_access_recovery(
             terminal_command=None,
             instructions=(
                 f"container {error.endpoint} が起動していません。",
-                f"起動: gar sim host start --workspace {workspace_arg}",
+                f"起動: gar sim start host --workspace {workspace_arg}",
                 f"起動完了後に再実行: {retry_command}",
             ),
         )

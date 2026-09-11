@@ -1,83 +1,73 @@
-# 検証済み範囲と既知の制約
+# 検証状態
 
-この文書は、履歴や作業予定ではなく、現在のGARがどこまで機械的に検証されているかを示す。
-完了した作業の記録はGit履歴とCIへ任せ、ここには利用判断に必要な事実だけを残す。
+この文書は、現在の実装で機械的に確認できる範囲と、実環境で未確認の範囲を示します。
 
-## 自動検証される契約
+## 自動検証
 
-`make check`は次をまとめて検証する。
+`make check`は主に次を確認します。
 
-- Python lint／format
-- GAR coreのunit test
-- artifact schema v2、checksum、provenance、互換性拒否
-- Target prepare／deploy／configure／lifecycle／preflightの契約
-- system topology、hardware contract、Golden scenario schema
-- simulation process identity、diagnostic、Bridge adapter
-- Windowsからimport可能なCLI、`.cmd` launcher smoke test、PowerShell Tab補完、Windows process lifecycle adapter
-- Docker BuildEnvironmentのargv／mount／artifact capture契約
-- VirtualBox Sim Host providerのVM state／start／ACPI stop／SSH composition
-- host native UUU command channel、pyserial pattern verification、SIM artifactのarchitecture整合性
-- shell構文、VS Code Terminal BridgeのNode test
+- Python lint／formatとunit test
+- CLI、Windows `.cmd` launcher、PowerShell補完
+- action-first構文と旧構文の互換性、subjectに応じたオプション検証
+- コマンドリファレンスのトップレベル・共通action・code／sim／target対応表と、docs内の実行例・ローカルリンク
+- 未対応backendのbuild／転送／接続開始前の拒否と、capability表示との整合
+- Simulationの一括build／deployと全snapshotの転送前検証
+- code／sim／targetの共通JSON、環境の層ごとの観測、capability表示
+- code prepare／log／diag、sim prepare、Target recipeのstopと稼働ID無効化
+- Simulationの途中配置失敗、空app serviceの識別、別portの接続停止
+- Simulationの配置IDと起動IDの分離、最新snapshot照合、再起動・停止・PID再利用・health失敗
+- Wokwi／MuJoCoの起動入力固定、Linuxの実processとartifactの照合
+- systemの一括接続・切断、port衝突、所有権、途中失敗時の後片付け、実ローカルprocessの開始・停止
+- artifact schema、checksum、provenance、architecture guard
+- Docker BuildEnvironment
+- Target prepare／deploy／configure／lifecycle／preflight
+- host native UUUとserial verificationのadapter
+- VirtualBox host controller
+- simulation process、Bridge、diagnostic
+- hardware contract、system topology、scenario
+- VS Code Terminal Bridge
 
-テスト件数は実装追加で変わるため、この文書では固定しない。
+テスト件数は変化するため固定しません。
+文書の照合だけを行う場合は `python tools/check_command_reference.py` を実行します。
+対応表の説明文は手で編集し、action・subject・既定subjectとの構造的な整合を検査します。
+この検査はunit testに含まれるため、`make check` とLinux／Windows CIの両方で実行されます。
 
-## Reference経路
+Windowsでも全unit testを実行します。POSIXのmode bitはPOSIXで確認し、Windowsのprocess起動・停止と
+COM portはWindowsの契約で確認します。シンボリックリンク作成権限のないWindowsでは該当検査を明示的に
+skipし、Linuxで実リンクを使って検証します。WindowsのACL検証や実機E2Eを代替するものではありません。
 
-| 経路 | 確認内容 | 段階 |
-|---|---|---|
-| Local Docker／Codespaces build | Product hookから用途別artifact snapshotを生成 | adapter自動test／従来経路の実運用 |
-| Windows native CLI | `scripts\\gar.cmd`、Python import、PowerShell `TabExpansion2`、host-native processのOS分岐 | Windows CI smoke／unit test |
-| VirtualBox Ubuntu Linux simulation | `VBoxManage` lifecycle、SSH host composition、architecture guard | controller unit test。実VM E2Eは未実施 |
-| EC2 Graviton Linux simulation | CUSE I2C/SPI、gpio-sim、Web Bridge、application deploy | 実機会話で確認済み |
-| Raspberry Pi 5 | SSH、Raspberry Pi OS systemd recipe、boot service、real GPIO/SPI/video | 実機確認済み |
-| Luckfox Lyra Plus RK3506 | armv7 cross-build、Buildroot／BusyBox recipe、real GPIO/SPI | 実機確認済み |
-| GarStreamTx/Rx | discovery、lease、RTP映像、display、rotary、metrics | simulation／実機で確認済み |
-| GarStream Golden scenario | 複数workspace topologyとBridge metricsによるE2E判定 | parser／orchestrator／CI契約を自動test |
+## 実環境で確認済み
 
-Raspberry Pi 5とEC2はともにaarch64／glibcで、対応Productでは同一binaryを利用できる。
-Lyraはarmv7l／gnueabihfなのでbinaryは別だが、GarStreamRxでは同じC++ source、Linux device I/F、
-network protocol、state behaviorを使う。
-
-## CIとHILの境界
-
-- GARの通常CIは、実機や秘密情報を必要としないcontract testを実行する。
-- GarStream EC2 workflowは、保護された接続設定が存在するときだけ実環境scenarioを実行する。
-  設定がなければstructured `skipped`を成果として残す。
-- Physical HIL workflowはmanual-onlyかつread-onlyで、`preflight`と`diag`までを対象とする。
-  physical deployやBridge-driven Golden HILを実行したとは主張しない。
-- Product child CIはnative unit testを実行する。Luckfox SDKが必要なproduction buildと、
-  CI上のarmhf contract stubは区別して記録する。
-- Windows CIはCLIがimportでき`.cmd` launcherがhelpを表示できることまでを確認する。
-  Docker Desktop daemon、VirtualBox VM、COM／USB device、NXP BoardはCIに接続しない。
-
-workflow固有のsecret、runner、成果物契約は[workflow README](../.github/workflows/README.md)を参照する。
-
-## 既知の制約
-
-| 領域 | 現在の状態 |
+| 経路 | 状態 |
 |---|---|
-| Windows統合経路 | launcher、PowerShell補完、cross-platform process／serial／UUU adapterを実装。補完候補はWindows CIで検証するが、実ChatGPT App／Windows Terminalのprofile読込みはmachine E2E未実施 |
-| Local Docker build | Docker executorと既定imageを実装。Docker DesktopのWindows bind mount／socket mount／大規模I/O性能は未計測 |
-| VirtualBox Sim Host | provider、共通Ubuntu bootstrap、architecture guardを実装。実VMの`gpio_sim`／CUSE／Bridge E2Eは未実施 |
-| Renode MCU | setup／installerとerror-only runtimeまで。`.resc`生成と共通lifecycleは未実装 |
-| ESP32 QEMU | setupと手動runnerの足場まで。GAR runtime lifecycleは未実装 |
-| AWS SSM simulation | setup optionのみ。通常はSSH Remoteを使用 |
-| Wokwi scenario | Product所有のWokwi形式を使用。共通Bridge scenarioへの統一途中 |
-| Physical Golden HIL | read-only preflight／diagまで。自動deployと物理操作adapterは未実装 |
-| Full-image provisioning | Target manifestで選択するhost-native NXP UUU backendとpyserial起動確認を実装済み。Windows UUU／COM実機HILは未実施 |
-| Target資産の純化 | RK3506 capabilityはProduct-neutral化済み。Linux simulation runtimeや旧RV1106資産にはGarStream由来の名称・周辺構成が残る |
+| Windows CLI | 全unit testと実gar.cmdの照会・未対応拒否・補完を確認。リンク作成権限がない場合の検査はLinuxで補完 |
+| EC2 Graviton Linux simulation | CUSE／gpio-sim／Bridge／application deployを確認 |
+| Raspberry Pi 5 | SSH、systemd recipe、GPIO／SPI／videoを確認 |
+| Luckfox Lyra Plus RK3506 | armv7 build、BusyBox recipe、GPIO／SPIを確認 |
+| GarStreamTx/Rx | discovery、RTP映像、display、rotary、metricsを確認 |
 
-最後の項目は重要な設計負債である。Target Packが保持するのはBoard capability、OS、toolchain、
-provisioning、lifecycleまでとし、ILI9341、KY-040、menu、TX/RX用途、配線はPeripheral／Product／Bindingへ
-分離する。完了条件は[Target Pack戦略](../info/06_TARGET_PACK_STRATEGY.md)を正本とする。
+## 未確認または未実装
 
-## 完了判定
+| 領域 | 現在地 |
+|---|---|
+| Windows + Docker Desktop | adapter実装済み。bind mount性能を含む一連のmachine E2Eは限定的 |
+| VirtualBox Linux simulation | controller実装済み。実VMのCUSE／gpio-sim／Bridge E2Eは未完了 |
+| NXP UUU + COM | backend実装済み。自動HILとしての継続検証は未整備 |
+| Renode | setupのみ。GAR runtime lifecycleは未実装 |
+| ESP32 QEMU | setupと手動runnerのみ。GAR runtime lifecycleは未実装 |
+| AWS SSM simulation | setup optionのみ |
+| Wokwi scenario | Product形式を利用。共通Bridge scenarioへ統一途中 |
+| Physical Golden HIL | read-only preflight／diagまで。自動deployと物理操作は未実装 |
+| CLI収束 | 構文・対応表・実行前の拒否・recipe sandboxを自動検証。prepare／stop／状態集約の実環境E2Eは未実施 |
+| Simulation running build ID | protocolとbackend実装、自動テストあり。Sim Host／Wokwi／MuJoCo実サービスでのE2Eは未実施 |
+| systemのBridge接続準備 | SSH Remote simの一括接続・切断を実装。所有権・rollbackとローカルprocessで検証。実SSH複数nodeのE2Eは未実施 |
 
-変更を「完了」と呼ぶには、該当する層で次を満たす。
+## 完了の基準
 
-1. `make check`または該当repositoryの品質チェックが通る。
-2. artifact／diagnostic／scenario結果が機械可読である。
-3. deployした場合は、稼働build IDと配置artifactのbuild IDが一致する。
-4. 実機を主張する場合は、simulation結果ではなく対象Targetで確認している。
+1. 対象repositoryのcheckが通る。
+2. artifact、diagnostic、scenario結果を機械的に確認できる。
+3. Targetはdeploy後、Simulationはdeployとstart後にrunning build IDがartifactと一致する。
+4. 実機動作を主張する場合は、そのTargetで確認する。
 5. 未実装backendやskipped CIを成功扱いしない。
-6. Windows／Docker Desktop／VirtualBox／NXP実機を主張する場合は、対象machineのE2E結果を残す。
+
+workflow固有の条件は[workflow README](../.github/workflows/README.md)を参照してください。

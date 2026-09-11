@@ -216,18 +216,22 @@ class TargetDeploymentReport:
 class TargetDeploymentConvergenceError(GarDomainError):
     """Artifact placement succeeded but the new application did not converge."""
 
-    def __init__(self, report: TargetDeploymentReport):
+    def __init__(self, report: TargetDeploymentReport, *, action: str = "deploy"):
         self.report = report
         app = report.application.name if report.application is not None else "unknown"
         expected = report.application.expected_build_id if report.application is not None else None
         detail = f": {report.failure}" if report.failure else ""
-        super().__init__(
-            f"target applicationは配置済みですが稼働確認に失敗しました: {app} "
-            f"(expected build ID: {expected or 'unknown'}){detail}"
+        outcome = (
+            "target applicationのstart稼働確認に失敗しました"
+            if action == "start"
+            else "target applicationは配置済みですが稼働確認に失敗しました"
         )
+        super().__init__(f"{outcome}: {app} " f"(expected build ID: {expected or 'unknown'}){detail}")
 
 
 class TargetLifecycle(Protocol):
+    def stop(self, application: TargetApplication) -> TargetLifecycleResult: ...
+
     def status(self, application: TargetApplication) -> TargetLifecycleResult: ...
 
     def log(self, application: TargetApplication, *, lines: int = 200) -> TargetLifecycleResult: ...
@@ -244,15 +248,21 @@ class TargetLifecycle(Protocol):
 class CommandTargetLifecycle:
     """Invoke the lifecycle-v1 command installed by a Target recipe."""
 
-    def __init__(self, command_channel: CommandChannel, command: str):
+    def __init__(self, command_channel: CommandChannel, command: str, *, supports_stop: bool = False):
         if not command.startswith("/") or any(character in command for character in ("\x00", "\n", "\r")):
             raise GarDomainError(f"target lifecycle commandが不正です: {command!r}")
         self.command_channel = command_channel
         self.command = command
+        self.supports_stop = supports_stop
         self._privilege_prefix: str | None = None
 
     def status(self, application: TargetApplication) -> TargetLifecycleResult:
         return self._run("status", application)
+
+    def stop(self, application: TargetApplication) -> TargetLifecycleResult:
+        if not self.supports_stop:
+            raise GarDomainError("選択したTarget recipeはstop capabilityを提供していません")
+        return self._run("stop", application)
 
     def log(self, application: TargetApplication, *, lines: int = 200) -> TargetLifecycleResult:
         if lines < 1 or lines > 10000:

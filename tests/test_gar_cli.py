@@ -144,11 +144,13 @@ class GarCliRootParserTest(GarCliDispatchAssertions, unittest.TestCase):
             result = main(["completion", "words", "--cword", "2", "--", "gar", "sim", ""])
 
         self.assertEqual(0, result)
-        self.assertIn("app", output.getvalue().splitlines())
-        self.assertIn("runtime", output.getvalue().splitlines())
-        self.assertIn("host", output.getvalue().splitlines())
+        self.assertIn("build", output.getvalue().splitlines())
+        self.assertIn("deploy", output.getvalue().splitlines())
+        self.assertIn("start", output.getvalue().splitlines())
         self.assertIn("infra", output.getvalue().splitlines())
-        self.assertNotIn("start", output.getvalue().splitlines())
+        self.assertNotIn("app", output.getvalue().splitlines())
+        self.assertNotIn("runtime", output.getvalue().splitlines())
+        self.assertNotIn("host", output.getvalue().splitlines())
         self.assertNotIn("ui", output.getvalue().splitlines())
 
     def test_completion_words_lists_sim_host_commands(self) -> None:
@@ -183,8 +185,9 @@ class GarCliRootParserTest(GarCliDispatchAssertions, unittest.TestCase):
                 args = parser.parse_args(invocation)
                 self.assertEqual(command, args.gar_command)
                 self.assertFalse(hasattr(args, "action_handler"))
+                canonical = [argv[0], argv[2], argv[1]] if argv[0] == "sim" else argv
                 self.assertEqual(
-                    " ".join(["gar", *invocation]),
+                    " ".join(["gar", *canonical, "--workspace", "Local/Product"]),
                     command.to_cli(workspace="Local/Product"),
                 )
                 if command.group == "target":

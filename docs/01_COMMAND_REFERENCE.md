@@ -1,197 +1,271 @@
 # コマンドリファレンス
 
-GARの公開コマンド、構文、主要optionを一覧する。環境の準備手順は
-[0から実機まで](00_ZERO_TO_TARGET_TUTORIAL.md)、実行場所と設定データの説明は
-[開発環境](03_DEVELOPMENT_ENVIRONMENT.md)、simulationの運用手順は
-[シミュレーション](06_SIMULATION.md)を参照する。
+正確な引数はCLI自身を正本とします。
 
-## 呼び出し方
+```bash
+gar --help
+gar target --help
+gar sim start --help
+```
 
-初回だけGAR repositoryをCWDにしてlauncherを明示する。
+WindowsでPATH登録前は`gar`を`.\scripts\gar.cmd`へ読み替えてください。
 
-```powershell
-# Windows
-.\scripts\setup.cmd
-.\scripts\gar.cmd config
+## 共通
+
+通常操作の構文は `gar <code|sim|target> <action> [subject] [options]` です。
+第二引数に動詞を置き、必要な場合だけ第三引数でhostやruntimeを指定します。
+
+- `--workspace NAME`: `gar config`で登録したworkspaceを選択
+- `--json`: code・sim・targetの通常actionを単一JSONで出力
+- buildとdeployは別操作。deployはbuild／fetchを暗黙実行しない
+- startは配置済みの対象を開始する。build／deployを暗黙実行しない
+- stopの既定対象はsession／runtime。VMの停止は `stop host` で明示する
+
+現時点の通常操作の対応:
+
+| Action | code | sim | target |
+|---|---|---|---|
+| `prepare` | tool・workspace・認証の前提確認 | Linux hostの依存を準備 | 対応recipeの初期準備 |
+| `build` | 対象外 | 必要なapp・runtimeをbuild | TARGET_APPをbuild |
+| `deploy` | 対象外 | 必要なapp・runtimeを配置 | 最新artifactを配置／flash |
+| `start` | local接続を準備 | 配置済みruntimeを開始 | 対応recipeでapplicationを再収束 |
+| `stop` | local接続を停止 | runtimeと接続を停止 | stop対応recipeでapplication停止 |
+| `status` | hostと接続状態 | host・接続・runtime・app | 対応recipeでapplication状態 |
+| `log` | Codespace作成log | runtime log | 対応recipeでapplication log |
+| `diag` | hostと接続を診断 | host・接続・runtime・appを診断 | 対応recipeでhealth・build ID確認 |
+
+設定したbackend／recipeの対応可否は、接続や設定変更を行わず確認できます。
+`--capabilities` とactionは同時指定できません。対応表示は実際の接続・認証・導入済みversionの保証ではありません。
+未対応Simulationの通常actionは、build・artifact読出し・host接続へ進む前に失敗します。
+Renode／ESP32 QEMU／AWS SSMのruntimeはこの対象です。明示的なhost操作の対応範囲とは別に判定します。
+
+```bash
+gar code --capabilities --workspace Local/Product --json
+gar sim --capabilities --workspace Local/Product --json
+gar target --capabilities --workspace Local/Product --json
+```
+
+通常actionのJSONは `schema_version`, `command`, `workspace`, `ok`, `exit_code` を共通に持ちます。
+`command` は `sim.status` などの形式で、明示した対象は `subject` に入ります。
+`exit_code` はCLIの終了値、外部commandの終了値が異なる場合は `backend_exit_code` へ保持します。
+進捗や子processの出力は `output`、補足診断は `diagnostics` に入り、構造化結果へ混ざりません。
+引数の構文エラーと `--help` は従来のargparse出力です。
+
+通常の `status / diag` は `components.host / connection / runtime / app` を報告します。
+対象外の層は `state: not_applicable, ok: null`、確認できない層は `unknown, false` です。
+appの停止・未配置や診断失敗は全体も非成功となります。Simulationの接続観測はhostへの到達性で、
+ローカルのPanel tunnelは `sim status runtime --panel-port PORT` で個別に確認します。
+移行状況は[CLI収束 TODO](09_CLI_CONVERGENCE_TODO.md)を参照してください。
+
+## トップレベル
+
+| コマンド | 用途 |
+|---|---|
+| `gar config` | workspace、Target、各environment、接続先を設定 |
+| `gar code` | Codespacesの起動と接続を管理 |
+| `gar sim` | simulationをbuild、deploy、操作、診断 |
+| `gar target` | 実機を準備、build、deploy、診断 |
+| `gar system` | 複数workspaceを一つのsystemとして操作 |
+| `gar hw` | hardware contractを作成、検証 |
+| `gar terminal` | VS Code terminalへの実行要求を管理 |
+| `gar usb` | legacy WSL2 USB passthrough |
+| `gar completion` | shell補完scriptを出力 |
+
+## `gar config`
+
+```bash
+gar config
+gar config --no-install
+gar config --ec2-host HOST
+gar config --esp32-port PORT
+```
+
+設定はrepository直下の`.gar/config.json`へ保存されます。
+
+## `gar code`
+
+| Action | 内容 |
+|---|---|
+| `prepare` | tool・workspace・認証を検証。tool導入・VM起動・接続設定変更は行わない |
+| `start [session]` | SSH接続とVS Code terminal profileを準備 |
+| `start host` | Codespace VMを起動 |
+| `stop [session]` | local接続を停止 |
+| `stop host` | Codespace VMを停止 |
+| `status` | VMと接続状態を表示 |
+| `log` | Codespaceの作成logを取得（Localでは対象外） |
+| `diag` | hostと接続を診断。AvailableなCodespaceだけSSH probeを行う |
+
+各actionは`--workspace NAME`、`--target TARGET`、`--json`に対応します。Windowsではsshfs mountを使いません。
+`--codespace` は `--target` の別名です。Local環境では利用可能／停止不要という既存の結果を返します。
+`start host / stop host` は接続用の `--settings`、`--mount-dir` などを受け付けません。
+`prepare` のtool確認はLocalではgit、Codespacesではgit・gh・sshです。Codespacesでは認証と対象名の設定も確認します。
+`status` の接続状態は保存済み設定の確認、`diag` は起動済みCodespaceへの到達確認まで行います。
+この観測で接続設定の修復や古いstateの移行は行いません。runtime／appはcode環境の観測対象外です。
+
+旧 `code boot / shutdown` はそれぞれ `code start host / stop host` の互換aliasです。
+既存の `code stop --shutdown` も互換性を維持します（接続の後片付け後にVM停止）。
+
+## `gar sim`
+
+構文は `gar sim <action> [subject]` です。
+
+| Action | 対象省略時 | 指定できるsubject |
+|---|---|---|
+| `prepare` | Linux Sim Hostの初期準備 | なし |
+| `build` | backendに必要なruntimeとappをbuild | `app`, `runtime` |
+| `deploy` | 必要なsnapshotをすべて検証後、runtime・appの順に配置 | `app`, `runtime` |
+| `start` | runtimeを起動し、接続を準備 | `runtime`, `host` |
+| `stop` | runtimeと接続を停止 | `runtime`, `host` |
+| `status` | host・接続・runtime・appの状態を取得 | `runtime`, `host` |
+| `log` | runtime logを取得 | `runtime` |
+| `diag` | host・接続・runtime・appを診断 | `runtime` |
+| `clean` | Product hookでappのbuild成果物を削除 | `app` |
+
+Wokwi／MuJoCoでは個別runtime artifactを必要とせず、対象省略のbuild／deployはappだけを処理します。
+`build runtime / deploy runtime` は不要である旨を表示します。
+Linux simulationではruntimeとappを別snapshotとして管理します。
+一括deployはsnapshotの存在・checksum・設定architectureを転送前に検証しますが、転送途中の障害を巻き戻す機能はありません。
+検証できない旧形式のartifactは一括deployの対象にせず、`sim build` での再生成を案内します。
+
+`prepare` はSSH Remoteでは起動済みUbuntu hostと非対話sudoを前提に共通bootstrapを実行します。
+Local DockerではTarget Packのhost定義でimage・containerを準備し、hostを開始します。
+app／runtime artifactのbuild・deployは行いません。Wokwi／MuJoCoにはこのprepareは不要で、明示指定は未対応として拒否します。
+
+通常actionはすべて `--json` に対応します。`diag runtime` は従来のruntime診断形式を保持します。
+Linuxではapp未配置時の空serviceを識別します。Wokwi／MuJoCoでは準備済みprojectとprocessの稼働を区別します。
+対象省略の `status / diag` はappの `expected_build_id`（最新snapshot）、`deployed_build_id`、
+`running_build_id` と `build_id_match` を報告します。配備だけではrunning IDを更新しません。
+起動時の入力検証とprocessの識別ができない場合はunknownとし、全体の成功扱いにはしません。
+ID一致とruntimeのhealthは独立して判定します。backendごとの範囲は[Simulation](06_SIMULATION.md)を参照してください。
+一括 `deploy --json` は `placed_artifacts`、失敗したartifact、一部反映の可能性を報告します。
+成功時も `running: null`, `verification: not_checked`, `requires_start: true` で、続くstartとdiagが必要です。
+個別 `deploy app / runtime` は従来のartifact単位の結果です。
+`sim start` の `--panel-port` などはruntime専用、`--pull / --no-update-ssh` はhost専用です。
+別portで開始した接続は、停止時にも `sim stop --panel-port PORT` を指定します。
+
+専門操作は独自の構文を維持します:
+
+| Subject | Actions |
+|---|---|
+| `gpio` | `install`, `start`, `stop`, `plan`, `status`, `check` |
+| `io` | `state`, `press`, `set`, `clear` |
+| `infra` | `setup`, `apply`, `destroy` |
+
+主な例:
+
+```bash
+gar sim build --workspace Local/Product
+gar sim deploy --workspace Local/Product
+gar sim start --workspace Local/Product
+gar sim diag --workspace Local/Product --json
+gar sim build app --workspace Local/Product
+gar sim io press --workspace Local/Product --device button --line 17
+gar sim start host --workspace Local/Product --pull
+```
+
+旧 `sim app build`、`sim runtime start`、`sim host start` などは互換aliasとして引き続き利用できます。
+help・補完・再試行案内は新構文を優先します。
+旧構文の削除時期は設けず、既存scriptの実行互換性をテストで維持します。新しい手順・コマンド例には
+action-first構文を使います。将来の削除は利用者への移行案内を伴う別の互換性変更として判断します。
+この方針は `code boot / shutdown` にも適用します。
+
+`sim infra apply`と`destroy`はAWS resourceを変更します。対象と課金を確認してください。
+
+## `gar target`
+
+| Action | 内容 |
+|---|---|
+| `prepare` | recipe-backed Targetを初期準備 |
+| `configure` | applicationの永続envを配置 |
+| `build` | TARGET_APP artifactをbuild |
+| `fetch` | BuildEnvironmentからartifactを取得 |
+| `preflight` | artifactと接続Targetの互換性をread-only検証 |
+| `deploy` | 最新artifactを配置またはflash |
+| `start` | 配置済みapplicationをrecipe経由で起動・再収束し、healthとbuild IDを確認 |
+| `stop` | 明示的なstop capabilityを持つrecipeでapplicationを停止 |
+| `status` | application状態を取得 |
+| `log` | application logを取得 |
+| `diag` | healthと稼働build IDを診断 |
+
+```bash
+gar target configure --workspace Local/Product --app APP --file app.env --json
+gar target log --workspace Local/Product --app APP --lines 200 --json
+gar target start --workspace Local/Product --app APP --json
+gar target stop --workspace Local/Product --app APP --json
+```
+
+全actionは `--workspace / --json` に対応します。
+`prepare`、`preflight`、`start`、`stop`、`status`、`log`、`diag`は、対応capabilityを持つTargetだけで利用できます。UUU Targetでは通常`build`と`deploy`だけを使います。
+`start` は最新TARGET_APP snapshotとの互換性を確認して既存lifecycleのreloadを呼びます。
+既に稼働しているapplicationもrecipeにより再起動されることがあります。build／fetch／artifact転送は行いません。
+`stop` は `provisioning.ssh_scp.lifecycle.stop: true` を宣言したrecipeだけが提供します。
+Raspberry Pi 5はrecipe 7、RK3506はrecipe 6から対応します。Productが参照するgar-toolsを更新し、
+`target prepare` でhelperを導入してください。recipe更新後のbuild・preflightではprovenanceも揃える必要があります。
+停止は冪等で、稼働build IDを無効化して停止状態を確認します。Targetの電源やboot時の自動起動設定は変更しません。
+`prepare --json` は非対話権限が不足すれば転送前に失敗します。passwordを必要とする初回準備はJSONなしで実行します。
+
+## `gar system`
+
+| Action | 内容 |
+|---|---|
+| `build` | 宣言順に各nodeをbuild。simは通常の一括buildを利用 |
+| `deploy` | 宣言順に配置。simは必要な全snapshotを検証後に配置 |
+| `start` | 宣言順にruntime／applicationを開始 |
+| `stop` | 逆順にruntime／applicationを停止。接続は保持 |
+| `status` | 各nodeの状態を照会 |
+| `status connections` | このsystemが開始したBridge接続を照会 |
+| `diag` | 各nodeのhealthとbuild IDを診断 |
+| `test` | 診断後に任意のscenarioを実行 |
+| `connect` | nodeごとのSSH Bridge tunnelを一括開始 |
+| `disconnect` | このsystemが開始したBridge tunnelを一括停止 |
+
+```bash
+gar system connect --file gar-system.json --port tx=8081 --port rx=8082 --json
+gar system status connections --file gar-system.json --json
+gar system start --file gar-system.json
+gar system stop --file gar-system.json
+gar system disconnect --file gar-system.json --json
 ```
 
 ```bash
-# Linux / macOS
-./scripts/setup
-./scripts/gar config
+gar system test \
+  --file gar-system.json \
+  --scenario scenarios/e2e.json \
+  --bridge tx=http://127.0.0.1:8081 \
+  --bridge rx=http://127.0.0.1:8080 \
+  --json
 ```
 
-setup launcherで`scripts`をPATHへ登録した後は、terminal hostを完全終了して起動し直すと
-OSにかかわらず`gar <command>`と呼び出せる。ChatGPT Appはwindowの×ではなく、
-「ファイル」→「終了」でApp自体を終了する。<br>
-個別commandの正確なusageは`gar <command> --help`、
-さらに下位groupがある場合は`gar <command> <subject> --help`で確認する。
+`--file`の既定値は`gar-system.json`です。
+`system start` はnodeのruntime／applicationとtopology由来envを扱い、SSH tunnelを自動作成しません。
+`system connect` はSSH Remote Simulationに対応します。全nodeの対応可否とportを検証してから接続を開始し、
+remoteのBridge port 8080を異なるloopback portへ転送します。`--port NODE=PORT` を省略したnodeは
+`simulation_host.bridge_port` を使います。Targetやhostless backendの一括接続は未対応として開始前に拒否します。
+接続が途中で失敗した場合は今回作ったtunnelを停止し、以前から存在する接続を保持します。
+所有権はsystem fileの絶対pathとprocessの起動識別情報で管理します。同じfileを指定すれば、
+内容やworkspace設定が変わった後、fileを削除した後でも `disconnect` できます。
+異なるportへ変更するときは一度disconnectしてください。外部tunnelやnodeのapplicationはdisconnectの対象外です。
+停止確認に失敗した接続は記録を残してエラーを返します。`status connections` の成功はBridgeのhealthを保証しません。
+`--bridge` は既存の接続先を指定するだけで、接続開始の指示ではありません。
+`system test` のURLは `--bridge`、同じfileの稼働中接続、workspaceのbridge portの順で解決します。
+接続後にworkspaceやSSH hostを変更した場合は、古い接続の再利用を拒否します。
+`system test` が後片付けするのはscenarioの操作状態で、別途開始したruntimeやtunnelの停止は利用者側で行います。
 
-複数workspaceを登録している場合は`--workspace NAME`で対象を指定する。登録が1件だけなら
-多くのcommandで省略でき、Product workspace内からの実行時はそのpathに一致する設定が優先される。
-`--json`対応commandはAI／CI向けにstdoutへ機械可読結果を出力する。
+## `gar hw`
 
-## 1. Runtime準備と設定
+```bash
+gar hw init --dir hardware
+gar hw validate --workspace Local/Product --json
+```
 
-| コマンド | 内容 |
-|---|---|
-| `gar config` | Product workspace、Target、Build、Simulation、Sim Host、Target接続を対話設定 |
-| `gar config --no-install` | environment固有toolを導入せず、不足内容だけを表示 |
-| `gar config --ec2-host HOST` | AWS互換用のSSH config Host aliasを保存 |
-| `gar config --esp32-port PORT` | esptoolが使うserial portを保存（例: `COM3`、`/dev/ttyUSB0`） |
+`validate`はrequirements、capabilities、bindingをoffline検証し、SSHや実機書込みは行いません。
 
-初期準備はGAR commandではなくsetup launcherが担当する。設定は`config`がGAR repository直下の
-`.gar/config.json`へworkspace単位で保存する。
+## 補助コマンド
 
-## 2. Build workspace接続 (`gar code`)
+```bash
+gar terminal run --title "GAR" --command "gar config"
+gar terminal gc --dry-run
+gar completion powershell
+```
 
-| コマンド | 内容 |
-|---|---|
-| `gar code boot [--workspace NAME] [--target TARGET]` | Codespacesのdevelopment targetを起動 |
-| `gar code start [--workspace NAME] [--target TARGET]` | CodespaceへのSSH設定とVS Code terminal profileを作成 |
-| `gar code stop [--workspace NAME] [--target TARGET] [--shutdown]` | local接続を解除し、必要ならCodespace VMも停止 |
-| `gar code shutdown [--workspace NAME] [--target TARGET]` | Codespace VMを停止 |
-| `gar code status [--workspace NAME] [--target TARGET]` | VMとlocal接続の状態を表示 |
-
-`--codespace TARGET`は`--target TARGET`の互換aliasである。`start`は`--remote-path`、
-`--mount-dir`、`--settings`、`--profile-name`、`--no-mount`、`stop`は`--mount-dir`、
-`--settings`、`--profile-name`、`status`は`--mount-dir`にも対応する。
-Windowsの`start`は常にno-mountで、POSIX hostだけが既定でsshfs mountを使う。
-
-## 3. シミュレーション (`gar sim`)
-
-構文は`gar sim <subject> <action> [options]`である。
-
-### Host (`gar sim host`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim host start [--workspace NAME] [--pull] [--no-update-ssh]` | 選択したVirtualBox／AWS／legacy Docker hostを起動 |
-| `gar sim host stop [--workspace NAME]` | 選択hostを停止 |
-| `gar sim host status [--workspace NAME] [--json]` | providerの実状態を表示 |
-
-### Runtime (`gar sim runtime`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim runtime build [--workspace NAME]` | device stubやBridge等のruntime artifactをbuild |
-| `gar sim runtime deploy [--workspace NAME]` | runtime artifactをSim Hostへ配置 |
-| `gar sim runtime start [--workspace NAME]` | runtimeを起動し、既定ではHardware Panelのport forwardも開始 |
-| `gar sim runtime stop [--workspace NAME]` | runtimeを停止し、既定ではport forwardも停止 |
-| `gar sim runtime status [--workspace NAME]` | runtimeの状態を表示 |
-| `gar sim runtime log [--workspace NAME]` | runtime logを表示 |
-| `gar sim runtime diag [--workspace NAME] [--json]` | process、virtual device、APIを診断 |
-
-`runtime start`は`--settings PATH`、`--profile-name NAME`、`--panel-port PORT`、
-`--no-port-forward`、`runtime stop`は`--keep-port-forward`にも対応する。
-
-### Application (`gar sim app`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim app build [--workspace NAME]` | `product-sim-build.sh`を選択BuildEnvironmentで実行 |
-| `gar sim app clean [--workspace NAME]` | Product workspaceのsimulation build artifactを削除 |
-| `gar sim app deploy [--workspace NAME]` | 最新のSIM_APP artifactをruntimeへ配置 |
-
-### GPIO (`gar sim gpio`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim gpio plan [--workspace NAME] [--json]` | hardware定義から生成するGPIO runtimeを表示 |
-| `gar sim gpio install [--workspace NAME]` | GPIO dummy runtimeをhostへ配置 |
-| `gar sim gpio start [--workspace NAME]` | GPIO dummy runtimeを起動 |
-| `gar sim gpio stop [--workspace NAME]` | GPIO dummy runtimeを停止 |
-| `gar sim gpio status [--workspace NAME] [--json]` | GPIO runtimeの状態を表示 |
-| `gar sim gpio check [--workspace NAME] [--json]` | kernel側の前提条件を確認 |
-
-### Virtual H/W (`gar sim io`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim io state [--workspace NAME] [--json]` | Bridgeからvirtual H/Wの現在値を取得 |
-| `gar sim io press --device button [--button ID] [--line LINE] [--duration-ms N]` | button押下を注入 |
-| `gar sim io set --device {button,rfid,range} [--button ID] [--line LINE] [--value VALUE] [--uid UID]` | device値を設定 |
-| `gar sim io clear --device rfid` | RFID値を解除 |
-
-`press`、`set`、`clear`も`--workspace NAME`と`--json`に対応する。
-
-### Infrastructure (`gar sim infra`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar sim infra setup` | AWS Sim HostのTerraform作成計画を確認 |
-| `gar sim infra apply` | Terraformを適用し、GAR設定とSSH configを更新 |
-| `gar sim infra destroy` | Terraform管理resourceを破棄 |
-
-すべてのactionが`--key-name NAME`、`--region REGION`、`--ssh-cidr CIDR`、
-`--auto-approve`に対応する。`apply`と`destroy`は外部resourceを変更するため、対象と課金を確認して実行する。
-
-## 4. 複数workspace system (`gar system`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar system build [--file PATH] [--json]` | topologyの各nodeを宣言順にbuild |
-| `gar system deploy [--file PATH] [--json]` | 各nodeへartifactとruntime環境値を配置 |
-| `gar system start [--file PATH] [--json]` | 各nodeを起動 |
-| `gar system status [--file PATH] [--json]` | 各nodeの状態を取得 |
-| `gar system diag [--file PATH] [--json]` | 各nodeを診断 |
-| `gar system test [--file PATH] [--scenario PATH] [--bridge NODE=URL]... [--json]` | 診断、artifact確認、Product所有scenarioを実行 |
-
-`--file`の既定値は`gar-system.json`。topologyとscenarioのschemaは
-[アーキテクチャ](02_ARCHITECTURE.md#system-topology-v1)、運用例は
-[シミュレーション](06_SIMULATION.md#multi-node-scenario)を参照する。
-
-## 5. Hardware contract (`gar hw`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar hw init [--dir DIR] [--force]` | Product所有の空のhardware CSV schemaを生成 |
-| `gar hw validate [--workspace NAME] [--requirements PATH] [--capabilities PATH] [--binding PATH] [--json]` | Product requirements、Target capabilities、Bindingをoffline検証 |
-
-`hw init --target ID`は互換optionでありCSV schemaには影響しない。`validate`はSSHや実機への
-書込みを行わず、適合時0、不適合または入力不正時は非0で終了する。
-
-## 6. 実機 (`gar target`)
-
-| コマンド | 内容 |
-|---|---|
-| `gar target prepare [--workspace NAME]` | recipe-backed SSH TargetへOS recipeを初回適用 |
-| `gar target configure [--workspace NAME] --app NAME --file PATH [--json]` | applicationの永続env設定を配置 |
-| `gar target build [--workspace NAME]` | `product-target-build.sh`を実行してTARGET_APP artifactを作成 |
-| `gar target preflight [--workspace NAME] [--app NAME] [--json]` | artifactとLinux file-transfer Targetの互換性をread-only検証 |
-| `gar target deploy [--workspace NAME] [--json]` | ADB、esptool、SSH/SCP、UUU等で最新artifactを配置またはflash |
-| `gar target fetch [--workspace NAME]` | BuildEnvironmentからartifact storeへbundleを取得 |
-| `gar target status [--workspace NAME] [--app NAME] [--json]` | lifecycle対応Targetの稼働状態を取得 |
-| `gar target log [--workspace NAME] [--app NAME] [--lines N] [--json]` | lifecycle対応Targetの末尾logを取得（既定200行） |
-| `gar target diag [--workspace NAME] [--app NAME] [--json]` | healthと稼働build IDを診断 |
-
-`prepare`、`preflight`、`status`、`log`、`diag`は対応capabilityを持たないUUU Targetでは使わない。
-UUUの標準フローは`target build`、Board／boot mode／USB／書込み先の人間確認、`target deploy`である。
-esptool／UUUの`deploy`は既存dataを失い得る。SSH／ADBでも稼働applicationを置換・restartし得る。
-
-## 7. Legacy WSL2 USB passthrough (`gar usb`)
-
-Windows native UUU／COMでは使わず、Linux版しかないUSB toolをWSL2で実行する既存環境向けである。
-
-| コマンド | 内容 |
-|---|---|
-| `gar usb list [--json]` | usbipd-winが認識するdeviceを一覧 |
-| `gar usb bind [--busid ID] [--match TEXT] [--no-remember]` | deviceをusbipd-winへshare登録 |
-| `gar usb attach [--busid ID] [--match TEXT] [--no-remember]` | deviceをWSL2へattach |
-| `gar usb detach [--busid ID] [--match TEXT]` | deviceをWSL2からdetach |
-| `gar usb status [--busid ID] [--match TEXT] [--json]` | deviceの状態を表示 |
-
-attach中のdeviceはWindows native toolから利用できない。対象deviceを確認してから所有権を移す。
-
-## 8. Terminal bridgeと補助command
-
-| コマンド | 内容 |
-|---|---|
-| `gar terminal run [--title TITLE] [--cwd DIR] -- COMMAND...` | VS Code integrated terminalへ実行要求を作成 |
-| `gar terminal run --command "COMMAND"` | 実行要求を1つのcommand文字列で指定 |
-| `gar terminal gc [--keep-days N] [--dry-run]` | 古いterminal request／statusを削除（既定7日） |
-| `gar completion bash` | Bash completion scriptをstdoutへ出力 |
-| `gar completion zsh` | Zsh completion scriptをstdoutへ出力 |
-| `gar completion powershell` | PowerShell completion scriptをstdoutへ出力 |
-
-通常はsetup launcherがOS／shellを判定してprofileへ登録するため、これらを直接実行する必要はない。
+`gar usb`はLinux-only USB toolをWSL2で使う旧環境向けです。Windows native UUU／COMでは使いません。

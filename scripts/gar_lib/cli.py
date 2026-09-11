@@ -13,9 +13,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from scripts.gar_lib.commands import code, completion, hw, setup, sim, system, target, terminal, usb
+from scripts.gar_lib.commands.capabilities import run_capabilities
 from scripts.gar_lib.commands.completion import completion_bash_script as completion_bash_script
 from scripts.gar_lib.commands.completion import completion_powershell_script as completion_powershell_script
 from scripts.gar_lib.commands.completion import completion_zsh_script as completion_zsh_script
+from scripts.gar_lib.commands.result import json_boundary
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_cli_command(args: argparse.Namespace, bundle: CliParserBundle) -> int:
     """Dispatch parsed arguments to one command module's explicit CLI adapter."""
+
+    if args.command in {"code", "sim", "target"} and getattr(args, "json_output", False):
+        return json_boundary(args, lambda: _dispatch(args, bundle))
+    return _dispatch(args, bundle)
+
+
+def _dispatch(args: argparse.Namespace, bundle: CliParserBundle) -> int:
+    if getattr(args, "capabilities", False):
+        return run_capabilities(args)
 
     if args.command == "config":
         return setup.run_config_cli(args)

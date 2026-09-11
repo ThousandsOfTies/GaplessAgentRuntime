@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from support.filesystem import symlink_or_skip
+
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
@@ -41,7 +43,7 @@ class GarWokwiEnvironmentTest(unittest.TestCase):
 
     def test_resolver_selects_local_wokwi_without_simulation_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
 
             environment = simulation_environment_for(self._workspace(root))
 
@@ -224,7 +226,7 @@ class GarWokwiEnvironmentTest(unittest.TestCase):
             project.mkdir()
             outside = root / "outside"
             outside.mkdir()
-            (project / ".pio").symlink_to(outside, target_is_directory=True)
+            symlink_or_skip(project / ".pio", outside, target_is_directory=True)
             environment = WokwiSimulationEnvironment(project, mock.Mock())
 
             with self.assertRaisesRegex(GarDomainError, "symlink"):
@@ -239,7 +241,7 @@ class GarWokwiEnvironmentTest(unittest.TestCase):
             files = bundle / "files"
             files.mkdir(parents=True)
             (files / "real.bin").write_bytes(b"firmware")
-            (files / "firmware.bin").symlink_to("real.bin")
+            symlink_or_skip(files / "firmware.bin", "real.bin")
             (bundle / "artifact.json").write_text(
                 json.dumps(
                     {

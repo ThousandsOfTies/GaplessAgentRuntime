@@ -185,6 +185,7 @@ class PortForwardStateTest(unittest.TestCase):
                     side_effect=lambda _state: next(ownership_checks),
                 ),
                 mock.patch.object(forward_ec2_ports.os, "kill") as kill,
+                mock.patch("psutil.Process") as process,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 result = forward_ec2_ports.stop_forward(
@@ -193,7 +194,13 @@ class PortForwardStateTest(unittest.TestCase):
                 )
 
             self.assertEqual(0, result)
-            kill.assert_called_once_with(4321, signal.SIGTERM)
+            if forward_ec2_ports.os.name == "nt":
+                process.assert_called_once_with(4321)
+                process.return_value.terminate.assert_called_once_with()
+                kill.assert_not_called()
+            else:
+                kill.assert_called_once_with(4321, signal.SIGTERM)
+                process.assert_not_called()
             self.assertFalse(store.state_path.exists())
 
 

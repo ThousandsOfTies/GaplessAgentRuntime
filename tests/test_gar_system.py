@@ -110,22 +110,20 @@ class GarSystemOrchestratorTest(unittest.TestCase):
     def test_build_is_ordered_and_never_resolves_private_ip(self) -> None:
         calls: list[str] = []
         tx, rx = mock.MagicMock(), mock.MagicMock()
-        tx.sim.app.build.side_effect = lambda: calls.append("tx.app.build")
-        tx.sim.runtime.build.side_effect = lambda: calls.append("tx.runtime.build")
+        tx.sim.build.side_effect = lambda: calls.append("tx.sim.build")
         rx.target.build.side_effect = lambda: calls.append("rx.target.build")
         factory = mock.Mock(side_effect=[tx, rx])
         self.workspaces["Local/TX"] = workspace("Local/TX", "")
         self.workspaces["Local/RX"] = workspace("Local/RX", "")
         report = self._orchestrator(factory).run("build")
         self.assertTrue(report.ok)
-        self.assertEqual(["tx.app.build", "tx.runtime.build", "rx.target.build"], calls)
+        self.assertEqual(["tx.sim.build", "rx.target.build"], calls)
         tx.sim.runtime.configure_system_env.assert_not_called()
 
     def test_deploy_injects_resolved_env_in_declared_order(self) -> None:
         calls: list[str] = []
         tx, rx = mock.MagicMock(), mock.MagicMock()
-        tx.sim.runtime.deploy.side_effect = lambda: calls.append("runtime.deploy")
-        tx.sim.app.deploy.side_effect = lambda: calls.append("app.deploy")
+        tx.sim.deploy.side_effect = lambda: calls.append("sim.deploy")
         tx.sim.runtime.configure_system_env.side_effect = lambda app, values: calls.append(
             f"env:{app}:{values['PEER_IP']}"
         )
@@ -141,8 +139,7 @@ class GarSystemOrchestratorTest(unittest.TestCase):
         self.assertTrue(report.ok)
         self.assertEqual(
             [
-                "runtime.deploy",
-                "app.deploy",
+                "sim.deploy",
                 "env:stream-tx:10.0.0.11",
                 "target.deploy:stream-rx:10.0.0.10",
             ],
@@ -157,8 +154,7 @@ class GarSystemOrchestratorTest(unittest.TestCase):
         report = self._orchestrator(mock.Mock(side_effect=[tx, rx])).run("deploy")
 
         self.assertFalse(report.ok)
-        tx.sim.runtime.deploy.assert_not_called()
-        tx.sim.app.deploy.assert_not_called()
+        tx.sim.deploy.assert_not_called()
         tx.sim.runtime.configure_system_env.assert_not_called()
 
     def test_start_uses_no_port_forward_and_converges_target_after_runtime_env(self) -> None:
@@ -173,8 +169,8 @@ class GarSystemOrchestratorTest(unittest.TestCase):
 
     def test_test_reports_diagnostics_without_resolving_runtime_env_or_private_ips(self) -> None:
         tx, rx = mock.MagicMock(), mock.MagicMock()
-        tx.sim.runtime.diag.return_value.exit_code = 0
-        tx.sim.runtime.diag.return_value.as_dict.return_value = {"ok": True}
+        tx.sim.diag.return_value.exit_code = 0
+        tx.sim.diag.return_value.as_dict.return_value = {"ok": True}
         rx.target.diag.return_value.exit_code = 0
         rx.target.diag.return_value.as_dict.return_value = {"ok": True}
         self.workspaces["Local/TX"] = workspace("Local/TX", "")
@@ -186,7 +182,7 @@ class GarSystemOrchestratorTest(unittest.TestCase):
 
     def test_links_generate_firewall_and_diagnostic_plans(self) -> None:
         tx, rx = mock.MagicMock(), mock.MagicMock()
-        tx.sim.runtime.status.return_value = 0
+        tx.sim.status.return_value.exit_code = 0
         rx.target.status.return_value.exit_code = 0
 
         report = self._orchestrator(mock.Mock(side_effect=[tx, rx])).run("status")

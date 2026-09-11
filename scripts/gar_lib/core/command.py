@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from scripts.gar_lib.core.command_surface import action_first
+
 
 @dataclass(frozen=True)
 class GarCommand:
@@ -17,9 +19,15 @@ class GarCommand:
     def to_cli(self, *, workspace: str | None = None, options: Sequence[str] = ()) -> str:
         """このcommandを再実行するCLI文字列。retry案内はすべてここから生成する。"""
         parts = ["gar", self.group]
-        if self.subject:
-            parts.append(self.subject)
-        parts.extend((self.action, *options))
+        if action_first(self.group, self.action, self.subject):
+            parts.append(self.action)
+            if self.subject:
+                parts.append(self.subject)
+        else:
+            if self.subject:
+                parts.append(self.subject)
+            parts.append(self.action)
+        parts.extend(options)
         if workspace:
             parts.extend(("--workspace", workspace))
         return " ".join(parts)

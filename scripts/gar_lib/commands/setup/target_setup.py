@@ -92,7 +92,7 @@ def prepare_target_backend(target: TargetManifest) -> None:
     print(style("Wokwi build:", BOLD, BLUE))
     build_hook_message = (
         "製品 workspace の scripts/product-sim-build.sh が "
-        "gar sim app build 実行時にfirmwareとartifactを生成します。"
+        "gar sim build app 実行時にfirmwareとartifactを生成します。"
     )
     print(f"  {style(build_hook_message, DIM)}")
 
@@ -333,18 +333,18 @@ def print_target_next_steps(config: dict) -> None:
 
     print(style("次の操作フェーズ:", BOLD, BLUE))
     print(f"  {style('1. 製品の Wokwi firmware をビルド:', BOLD)}")
-    print("    scripts/gar sim app build")
+    print("    scripts/gar sim build app")
     firmware_build_message = (
         "製品 workspace の product-sim-build hook が firmware をビルドし、実行用 artifact を作成します。"
     )
     print(f"     {style(firmware_build_message, DIM)}")
     print(f"  {style('2. Wokwi project を配置:', BOLD)}")
-    print("    scripts/gar sim app deploy")
+    print("    scripts/gar sim deploy app")
     print(f"     {style('artifact を選択中の runtime workspace に展開します。', DIM)}")
     print(f"  {style('3. Wokwi simulation を起動:', BOLD)}")
-    print('    PATH="$HOME/bin:$HOME/.venvs/platformio/bin:$PATH" ' "scripts/gar sim runtime start --no-port-forward")
+    print('    PATH="$HOME/bin:$HOME/.venvs/platformio/bin:$PATH" ' "scripts/gar sim start --no-port-forward")
     print(f"  {style('4. 人間がUIを確認:', BOLD)}")
-    print("    scripts/gar sim runtime diag --json  # project_dir を確認")
+    print("    scripts/gar sim diag --json  # project_dir を確認")
     print("    code /path/from/project_dir")
     print(f"     {style('VS Codeで diagram.json を開き、Wokwi の再生ボタンで確認します。', DIM)}")
     phase_guidance_message = "AIはこのフェーズ表を見て、未定義のgarコマンドではなく現在の実装済み入口を選びます。"

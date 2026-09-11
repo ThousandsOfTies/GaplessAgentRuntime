@@ -22,8 +22,8 @@ jobs:
 
       - name: Run ruff
         run: |
-          ruff check scripts tests tools/*.py tools/gar-mcp/server.py
-          ruff format --check scripts tests tools/*.py tools/gar-mcp/server.py
+          ruff check scripts scripts/gar_lib/build tests tools/*.py tools/gar-mcp/server.py
+          ruff format --check scripts scripts/gar_lib/build tests tools/*.py tools/gar-mcp/server.py
 
       - name: Check shell and VS Code extension syntax
         run: |
@@ -68,14 +68,24 @@ jobs:
         shell: pwsh
         run: |
           python -m scripts.gar_lib --help
+          if ($LASTEXITCODE -ne 0) { throw "CLI help failed" }
           python -m scripts.gar_lib target --help
+          if ($LASTEXITCODE -ne 0) { throw "Target help failed" }
           cmd /c scripts\setup.cmd
+          if ($LASTEXITCODE -ne 0) { throw "Windows setup smoke failed" }
           cmd /c scripts\gar.cmd --help
+          if ($LASTEXITCODE -ne 0) { throw "Windows launcher help failed" }
           $completionScript = (& .\scripts\gar.cmd completion powershell --command "$PWD\scripts\gar.cmd") | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell completion generation failed" }
           Invoke-Expression $completionScript
           $completionCandidates = (TabExpansion2 "gar sim " 8).CompletionMatches.CompletionText
-          if ($completionCandidates -notcontains "runtime") {
-            throw "PowerShell completion did not return gar sim runtime"
+          if ($completionCandidates -notcontains "start") {
+            throw "PowerShell completion did not return gar sim start"
           }
-          python -m unittest discover -s tests -p test_gar_windows_host.py -v
-          python -m unittest discover -s tests -p test_gar_uuu.py -v
+          $subjectCandidates = (TabExpansion2 "gar sim start " 14).CompletionMatches.CompletionText
+          if ($subjectCandidates -notcontains "host") {
+            throw "PowerShell completion did not return gar sim start host"
+          }
+
+      - name: Run all Windows unit tests including command reference checks
+        run: python -m unittest discover -s tests -v

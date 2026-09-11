@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.gar_lib.access.codespaces import codespace_list_rows, select_codespace_from_list
+from scripts.gar_lib.commands.action_surface import hide_compatibility_parsers, validate_action_options
+from scripts.gar_lib.commands.capabilities import add_capability_options
 from scripts.gar_lib.commands.code_connection import (
     detect_codespace_workspace,
     gh_timeout_seconds,
@@ -22,6 +24,7 @@ from scripts.gar_lib.commands.code_connection import (
     run_gh_captured,
     unmount_codespace_code,
 )
+from scripts.gar_lib.commands.code_observation import code_logs, observe_code, prepare_code
 from scripts.gar_lib.commands.code_state import (
     CodespaceConnectionState,
     codespace_state_path,
@@ -29,7 +32,10 @@ from scripts.gar_lib.commands.code_state import (
     load_connection_state,
     load_legacy_codespace_state,
 )
+from scripts.gar_lib.commands.result import render_observation
 from scripts.gar_lib.commands.workspace_resolver import resolve_workspace
+from scripts.gar_lib.core.command import GarCommand
+from scripts.gar_lib.core.command_surface import CODE_HOST_ACTIONS
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.core.workspace import Workspace
 from scripts.gar_lib.vscode.profile_manage import (
@@ -63,7 +69,7 @@ class CodeStartOptions:
 def _add_workspace_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--workspace",
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="NAME",
         help="gar config で登録した product workspace 名",
     )
@@ -87,7 +93,9 @@ def add_code_parser(
         "code",
         help="Build Artifacts workspace との接続を管理します",
     )
-    commands = parser.add_subparsers(dest="code_command", metavar="command")
+    commands = parser.add_subparsers(dest="code_command", metavar="action")
+    parser.epilog = "互換: code boot / shutdown は code start host / stop host と同じ操作です。"
+    add_capability_options(parser, group="code")
 
     boot_parser = commands.add_parser("boot", help="development target を起動します")
     _add_workspace_argument(boot_parser)
@@ -132,6 +140,39 @@ def add_code_parser(
     _add_workspace_argument(status_parser)
     _add_codespace_argument(status_parser, purpose="確認する")
     status_parser.add_argument("--mount-dir", default=None, help="POSIX host側のsshfs mount path")
+    for action_parser in (start_parser, stop_parser):
+        action_parser.add_argument(
+            "code_subject",
+            nargs="?",
+            choices=("session", "host"),
+            default="session",
+            metavar="subject",
+            help="対象: session（既定: local接続） / host（Codespace VM）",
+        )
+        scoped_options = {}
+        for option in action_parser._actions:
+            if option.option_strings and option.dest not in {"help", "workspace", "codespace"}:
+                option.default = argparse.SUPPRESS
+                option.help = f"{option.help}（session 専用）"
+                scoped_options[option.dest] = (option.option_strings[0], {"session"})
+        action_parser.set_defaults(_gar_scoped_options=scoped_options)
+    hide_compatibility_parsers(commands, ("boot", "shutdown"))
+    for action, description in (
+        ("prepare", "開発用tool・workspace・認証の前提条件を検証します（VM起動・設定変更なし）"),
+        ("log", "Codespaceの作成logを取得します"),
+        ("diag", "開発環境のhostと接続を診断します（停止中VMは起動しません）"),
+    ):
+        leaf = commands.add_parser(action, help=description)
+        _add_workspace_argument(leaf)
+        _add_codespace_argument(leaf, purpose="操作する")
+    for leaf in commands.choices.values():
+        leaf.add_argument(
+            "--json",
+            dest="json_output",
+            action="store_true",
+            default=argparse.SUPPRESS,
+            help="結果を単一JSONで表示します",
+        )
     return {"code": parser}
 
 
@@ -139,8 +180,39 @@ def run_code_cli(args: Namespace, *, help_parser: argparse.ArgumentParser) -> in
     if args.code_command is None:
         help_parser.print_help()
         return 1
+    if args.code_command in {"prepare", "diag", "log", "status"}:
+        try:
+            workspace = resolve_workspace(getattr(args, "workspace", None))
+            args._gar_workspace = workspace
+            codespace = getattr(args, "codespace", None)
+            if args.code_command == "log":
+                return code_logs(workspace, codespace=codespace)
+            report = (
+                prepare_code(workspace, codespace=codespace)
+                if args.code_command == "prepare"
+                else observe_code(
+                    workspace, action=args.code_command, codespace=codespace, mount_dir=getattr(args, "mount_dir", None)
+                )
+            )
+            return render_observation(report, json_output=getattr(args, "json_output", False))
+        except (GarDomainError, OSError, ValueError) as error:
+            print(f"gar: {error}", file=sys.stderr)
+            return 1
+    command = args.code_command
+    subject = getattr(args, "code_subject", None)
+    try:
+        validate_action_options(args, command=GarCommand("code", subject, command))
+    except GarDomainError as error:
+        print(f"gar: {error}", file=sys.stderr)
+        return 1
+    if subject == "host":
+        command = CODE_HOST_ACTIONS[command]
+    resolved = {}
+    if getattr(args, "json_output", False):
+        args._gar_workspace = resolve_workspace(getattr(args, "workspace", None))
+        resolved["workspace"] = args._gar_workspace
     return run_code_command(
-        args.code_command,
+        command,
         workspace_selector=getattr(args, "workspace", None),
         codespace=getattr(args, "codespace", None),
         remote_path=getattr(args, "remote_path", None),
@@ -149,6 +221,7 @@ def run_code_cli(args: Namespace, *, help_parser: argparse.ArgumentParser) -> in
         profile_name=getattr(args, "profile_name", None),
         no_mount=getattr(args, "no_mount", False),
         shutdown=getattr(args, "shutdown", False),
+        **resolved,
     )
 
 
@@ -164,9 +237,10 @@ def run_code_command(
     no_mount: bool = False,
     shutdown: bool = False,
     gh_timeout: int | None = None,
+    workspace: Workspace | None = None,
 ) -> int:
     try:
-        workspace = resolve_workspace(workspace_selector)
+        workspace = workspace or resolve_workspace(workspace_selector)
     except GarDomainError as error:
         print(f"gar code {command}: {error}", file=sys.stderr)
         return 1
@@ -253,16 +327,16 @@ def boot_code_codespace(
     gh_timeout: int | None = None,
 ) -> int:
     if shutil.which("gh") is None:
-        print("gar code boot: missing required command: gh", file=sys.stderr)
+        print("gar code start host: missing required command: gh", file=sys.stderr)
         return 1
     if shutil.which("ssh") is None:
-        print("gar code boot: missing required command: ssh", file=sys.stderr)
+        print("gar code start host: missing required command: ssh", file=sys.stderr)
         return 1
 
-    selected_gh_timeout = gh_timeout_seconds(gh_timeout, command_name="gar code boot")
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout, command_name="gar code start host")
     selected_codespace = select_code_codespace(
         codespace,
-        command_name="gar code boot",
+        command_name="gar code start host",
         gh_timeout=selected_gh_timeout,
     )
     if not selected_codespace:
@@ -273,7 +347,7 @@ def boot_code_codespace(
         ["gh", "codespace", "ssh", "-c", selected_codespace, "--", "true"],
         timeout=selected_gh_timeout,
         label=f"start Codespace {selected_codespace}",
-        command_name="gar code boot",
+        command_name="gar code start host",
     )
     if result is None:
         return 1
@@ -626,14 +700,14 @@ def shutdown_code_codespace(
         or os.environ.get("CODESPACE_NAME")
         or (saved_state.codespace_name if saved_state else None)
     )
-    selected_gh_timeout = gh_timeout_seconds(gh_timeout, command_name="gar code shutdown")
+    selected_gh_timeout = gh_timeout_seconds(gh_timeout, command_name="gar code stop host")
 
     if not selected_codespace:
         list_result = run_gh_captured(
             ["gh", "codespace", "list"],
             timeout=selected_gh_timeout,
             label="list Codespaces",
-            command_name="gar code shutdown",
+            command_name="gar code stop host",
         )
         if list_result is None:
             return 1
@@ -643,8 +717,8 @@ def shutdown_code_codespace(
         selected_codespace = select_codespace_from_list(list_result.stdout)
 
     if not selected_codespace:
-        print("gar code shutdown: no Codespace found", file=sys.stderr)
-        print("Pass one explicitly: gar code shutdown --codespace NAME", file=sys.stderr)
+        print("gar code stop host: no Codespace found", file=sys.stderr)
+        print("Pass one explicitly: gar code stop host --codespace NAME", file=sys.stderr)
         return 1
 
     print(f"Stopping Codespace VM: {selected_codespace}")
@@ -652,7 +726,7 @@ def shutdown_code_codespace(
         ["gh", "codespace", "stop", "-c", selected_codespace],
         timeout=selected_gh_timeout,
         label=f"stop Codespace {selected_codespace}",
-        command_name="gar code shutdown",
+        command_name="gar code stop host",
     )
     if result is None:
         return 1

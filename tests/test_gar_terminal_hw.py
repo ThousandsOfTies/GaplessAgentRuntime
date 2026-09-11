@@ -16,7 +16,7 @@ from scripts.gar_lib.core.hardware import HW_TEMPLATE_FILES, write_hw_template
 class GarTerminalHardwareTest(unittest.TestCase):
     def test_terminal_run_creates_vscode_terminal_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
+            tmp_path = Path(tmp).resolve()
             with (
                 mock.patch("scripts.gar_lib.commands.terminal.CONFIG_PATH", tmp_path / ".gar" / "config.json"),
                 mock.patch("scripts.gar_lib.commands.terminal.Path.cwd", return_value=tmp_path),

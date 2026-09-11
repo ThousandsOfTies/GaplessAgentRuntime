@@ -100,7 +100,9 @@ def target_lifecycle_for(workspace: Workspace) -> TargetLifecycle | None:
     capability = manifest.lifecycle_capability(backend)
     if capability is None:
         return None
-    return CommandTargetLifecycle(SshCommandChannel(_ssh_host(workspace)), capability.command)
+    return CommandTargetLifecycle(
+        SshCommandChannel(_ssh_host(workspace)), capability.command, supports_stop=capability.stop
+    )
 
 
 def _selected_target_manifest(workspace: Workspace) -> TargetManifest | None:

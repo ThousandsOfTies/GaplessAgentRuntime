@@ -1,4 +1,4 @@
-"""CLI definition and adapter for ``gar sim <subject> <action>``."""
+"""Action-first simulation CLI, with subject-first compatibility aliases."""
 
 from __future__ import annotations
 
@@ -9,22 +9,33 @@ from argparse import Namespace
 from collections.abc import Mapping, Sequence
 
 from scripts.gar_lib.api import Gar
+from scripts.gar_lib.commands.action_surface import (
+    add_action_parser,
+    hide_compatibility_parsers,
+    validate_action_options,
+)
+from scripts.gar_lib.commands.capabilities import add_capability_options
 from scripts.gar_lib.commands.infra import run_sim_infra_command
 from scripts.gar_lib.commands.recovery import report_access_failure
+from scripts.gar_lib.commands.result import render_observation
 from scripts.gar_lib.commands.terminal import run_terminal_run_command
 from scripts.gar_lib.commands.workspace_resolver import resolve_workspace
 from scripts.gar_lib.core.artifact import Artifact
 from scripts.gar_lib.core.command import GarCommand
+from scripts.gar_lib.core.command_surface import SIM_ACTION_SURFACE
 from scripts.gar_lib.core.errors import AccessConnectionError, GarDomainError
+from scripts.gar_lib.core.output import emit_json
+from scripts.gar_lib.simulation.deployment import SimulationDeploymentError, placement_payload
 from scripts.gar_lib.simulation.diagnostics.model import SimulationDiagnosticReport
 from scripts.gar_lib.simulation.hardware.control import HardwareControlResult
 from scripts.gar_lib.simulation.host.contract import (
     SimulationHostStartResult,
     SimulationHostState,
 )
+from scripts.gar_lib.simulation.host.prepare import prepare_simulation_host
 
-# This is the single definition of the public parser surface. Execution below
-# deliberately uses explicit ``match`` statements instead of method-name lookup.
+# Subject capabilities also define compatibility parsers and their shared options.
+# The public action-first vocabulary lives in core.command_surface.
 SIM_ACTIONS: dict[str, dict[str, str]] = {
     "app": {
         "build": "product の simulation build hook を実行します",
@@ -106,7 +117,7 @@ def add_sim_parser(
 
     workspace_option = _shared_option(
         "--workspace",
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="NAME",
         help="gar config で登録した workspace 名。登録が1件なら省略できます",
     )
@@ -114,6 +125,7 @@ def add_sim_parser(
         "--json",
         dest="json_output",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="結果を機械可読な JSON で出力します（AI / CI 向け）",
     )
     workspace_json = (workspace_option, json_option)
@@ -122,17 +134,24 @@ def add_sim_parser(
         "sim", help="simulation の host / runtime / application / virtual H/W を操作します"
     )
     sim_parser.set_defaults(help_target="sim")
-    sim_subparsers = sim_parser.add_subparsers(dest="sim_subject", metavar="subject")
+    sim_subparsers = sim_parser.add_subparsers(dest="sim_subject", metavar="action")
+    sim_parser.epilog = "互換: gar sim <app|runtime|host> <action> も引き続き利用できます。"
+    add_capability_options(sim_parser, group="sim")
+
+    prepare_parser = sim_subparsers.add_parser(
+        "prepare", help=SIM_ACTION_SURFACE["prepare"].description, parents=[workspace_option, json_option]
+    )
+    prepare_parser.set_defaults(gar_command=GarCommand("sim", None, "prepare"))
 
     sim_app_parser = sim_subparsers.add_parser(
         "app", help="product application を simulation 向けに build / deploy します"
     )
     sim_app_parser.set_defaults(help_target="sim_app")
-    _add_actions(
+    sim_app_actions = _add_actions(
         sim_app_parser.add_subparsers(dest="action", metavar="action"),
         "app",
         SIM_ACTIONS["app"],
-        parents=(workspace_option,),
+        parents=workspace_json,
     )
 
     sim_runtime_parser = sim_subparsers.add_parser(
@@ -144,13 +163,15 @@ def add_sim_parser(
         sim_runtime_subparsers,
         "runtime",
         _selected_actions("runtime", "build", "deploy", "start", "stop", "status", "log"),
-        parents=(workspace_option,),
-    )
-    _add_actions(
-        sim_runtime_subparsers,
-        "runtime",
-        _selected_actions("runtime", "diag"),
         parents=workspace_json,
+    )
+    sim_runtime_actions.update(
+        _add_actions(
+            sim_runtime_subparsers,
+            "runtime",
+            _selected_actions("runtime", "diag"),
+            parents=workspace_json,
+        )
     )
     sim_runtime_actions["start"].add_argument("--settings", default=None, help="VS Code settings.json path")
     sim_runtime_actions["start"].add_argument("--profile-name", default=None, help="VS Code terminal profile 名")
@@ -173,6 +194,16 @@ def add_sim_parser(
         help="Hardware Panel 用の port forward を停止しません",
     )
 
+    for action in ("stop", "status"):
+        sim_runtime_actions[action].add_argument(
+            "--panel-port",
+            type=int,
+            default=8080,
+            choices=range(1, 65536),
+            metavar="PORT",
+            help="対象のローカルport forward（既定: 8080）",
+        )
+
     sim_host_parser = sim_subparsers.add_parser(
         "host",
         help="simulationを載せるhost（VirtualBox / AWS / container）を操作します",
@@ -183,13 +214,15 @@ def add_sim_parser(
         sim_host_subparsers,
         "host",
         _selected_actions("host", "start", "stop"),
-        parents=(workspace_option,),
-    )
-    _add_actions(
-        sim_host_subparsers,
-        "host",
-        _selected_actions("host", "status"),
         parents=workspace_json,
+    )
+    sim_host_actions.update(
+        _add_actions(
+            sim_host_subparsers,
+            "host",
+            _selected_actions("host", "status"),
+            parents=workspace_json,
+        )
     )
     sim_host_actions["start"].add_argument(
         "--no-update-ssh",
@@ -201,6 +234,19 @@ def add_sim_parser(
         action="store_true",
         help="起動後に repo_dir で git pull を実行します",
     )
+
+    subject_actions = {"app": sim_app_actions, "runtime": sim_runtime_actions, "host": sim_host_actions}
+    for action, spec in SIM_ACTION_SURFACE.items():
+        if action == "prepare":
+            continue
+        add_action_parser(
+            sim_subparsers,
+            group="sim",
+            action=action,
+            spec=spec,
+            subjects={subject: subject_actions[subject][action] for subject in spec.subjects},
+        )
+    hide_compatibility_parsers(sim_subparsers, ("app", "runtime", "host"))
 
     sim_gpio_parser = sim_subparsers.add_parser(
         "gpio",
@@ -302,6 +348,8 @@ def run_sim_command(
     """Resolve and run every command below ``gar sim``."""
 
     if getattr(args, "sim_subject", None) == "infra":
+        if getattr(args, "json_output", False):
+            raise GarDomainError("sim infraは--jsonに未対応です")
         if args.infra_action is None:
             _print_help(subcommand_parsers, "sim_infra")
             return 1
@@ -326,17 +374,26 @@ def run_sim_command(
 
     workspace_selector = getattr(args, "workspace", None)
     try:
+        validate_action_options(args)
         workspace = resolve_workspace(workspace_selector)
+        args._gar_workspace = workspace
     except GarDomainError as error:
         print(f"gar: {error}", file=sys.stderr)
         return 1
 
     try:
+        if command.action == "prepare":
+            prepare_simulation_host(workspace)
+            print("Simulation host preparation completed.")
+            return 0
         subject_name = command.subject
-        if subject_name is None or command.action not in SIM_ACTIONS.get(subject_name, {}):
+        actions = {"build", "deploy", "status", "diag"} if subject_name is None else SIM_ACTIONS.get(subject_name, {})
+        if command.action not in actions:
             raise GarDomainError(f"未対応の simulation command: {subject_name or '(none)'} {command.action}")
         return _run_simulation_action(Gar(workspace), command, args)
     except AccessConnectionError as error:
+        if getattr(args, "json_output", False):
+            raise
         device = getattr(args, "device", None)
         return report_access_failure(
             error,
@@ -348,6 +405,13 @@ def run_sim_command(
             purpose="simulation",
             run_terminal=run_terminal_run_command,
         )
+    except SimulationDeploymentError as error:
+        if getattr(args, "json_output", False):
+            raise
+        print(f"gar: {error}", file=sys.stderr)
+        print(f"配置済みartifact: {error.details['placed_artifacts']}", file=sys.stderr)
+        print("失敗したartifactも一部配置済みの可能性があります。稼働確認・rollbackは未実行です。", file=sys.stderr)
+        return 1
     except GarDomainError as error:
         print(f"gar: {error}", file=sys.stderr)
         return 1
@@ -357,6 +421,28 @@ def _run_simulation_action(gar: Gar, command: GarCommand, args: Namespace) -> in
     """Call the public API explicitly so signatures remain visible to readers and type checkers."""
 
     match command.subject:
+        case None:
+            match command.action:
+                case "status":
+                    return render_observation(gar.sim.status(), json_output=getattr(args, "json_output", False))
+                case "diag":
+                    return render_observation(gar.sim.diag(), json_output=getattr(args, "json_output", False))
+                case "build":
+                    artifacts = gar.sim.build()
+                case "deploy":
+                    artifacts = gar.sim.deploy()
+                case _:
+                    raise GarDomainError(f"未対応の simulation action: {command.action}")
+            if getattr(args, "json_output", False) and command.action == "deploy":
+                emit_json({"ok": True, "placed": True, "partial": False, **placement_payload(artifacts)})
+                return 0
+            for artifact in artifacts:
+                _render_artifact(artifact)
+            if command.action == "deploy":
+                print(
+                    "Placement completed. Running/health: not checked. 次に gar sim start / diag を実行してください。"
+                )
+            return 0
         case "app":
             return _run_app_action(gar, command.action)
         case "runtime":
@@ -399,9 +485,14 @@ def _run_runtime_action(gar: Gar, action: str, args: Namespace) -> int:
                 panel_port=getattr(args, "panel_port", 8080),
             )
         case "stop":
-            return gar.sim.runtime.stop(keep_port_forward=getattr(args, "keep_port_forward", False))
+            options = {"panel_port": args.panel_port} if getattr(args, "panel_port", 8080) != 8080 else {}
+            return gar.sim.runtime.stop(keep_port_forward=getattr(args, "keep_port_forward", False), **options)
         case "status":
-            return gar.sim.runtime.status()
+            return (
+                gar.sim.runtime.status(panel_port=args.panel_port)
+                if getattr(args, "panel_port", 8080) != 8080
+                else gar.sim.runtime.status()
+            )
         case "log":
             return gar.sim.runtime.log()
         case "diag":
@@ -524,7 +615,7 @@ def _render_host_start(result: SimulationHostStartResult) -> None:
 
 def _render_host_status(state: SimulationHostState, *, json_output: bool) -> None:
     if json_output:
-        print(json.dumps(state.to_payload(), ensure_ascii=False, indent=2))
+        emit_json(state.to_payload())
         return
     print(f"backend : {state.backend}")
     print(f"id      : {state.id}")
@@ -536,7 +627,7 @@ def _render_host_status(state: SimulationHostState, *, json_output: bool) -> Non
 
 def _render_hardware_result(result: HardwareControlResult, *, json_output: bool) -> None:
     if json_output and result.payload is not None:
-        print(json.dumps(result.payload, ensure_ascii=False, indent=2))
+        emit_json(result.payload)
         return
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
@@ -555,7 +646,7 @@ def _render_diagnostic(
 ) -> None:
     payload = report.to_payload(host=host)
     if json_output:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        emit_json(payload)
         return
     print(f"status: {'ok' if payload.get('ok') is True else 'error'}")
     if payload.get("host"):

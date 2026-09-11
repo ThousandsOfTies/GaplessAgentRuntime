@@ -27,6 +27,7 @@ class GarSimulationLifecycleTest(unittest.TestCase):
             name="Local/Product",
             branch="Product",
             connection={"type": "local", "path": "/tmp/product"},
+            selected_environments={"simulator": "ssh_remote"},
             ec2={"region": "ap-northeast-1", "host": "sim-host"},
         )
 
@@ -205,7 +206,7 @@ class GarSimulationLifecycleTest(unittest.TestCase):
             exit_code = Gar(workspace).sim.runtime.start()
 
         self.assertEqual(0, exit_code)
-        load_hardware.assert_called_once_with(hw_dir="/product/hardware")
+        load_hardware.assert_called_once_with(hw_dir=str(workspace.hardware_dir))
 
 
 if __name__ == "__main__":

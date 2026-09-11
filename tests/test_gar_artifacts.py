@@ -12,6 +12,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+from support.filesystem import symlink_or_skip
+
 from scripts.gar_lib.artifacts.manifest import parse_artifact_manifest, resolve_artifact_src
 from scripts.gar_lib.artifacts.metadata import (
     CURRENT_SCHEMA_VERSION,
@@ -151,7 +153,7 @@ class ArtifactManifestTest(unittest.TestCase):
             files = bundle / "files"
             files.mkdir()
             (files / "real").write_text("content", encoding="utf-8")
-            (files / "linked").symlink_to("real")
+            symlink_or_skip(files / "linked", "real")
 
             with contextlib.redirect_stderr(io.StringIO()):
                 resolved = resolve_artifact_src(bundle, "files/linked")
@@ -164,7 +166,7 @@ class ArtifactManifestTest(unittest.TestCase):
             directory = bundle / "files" / "application"
             directory.mkdir(parents=True)
             (directory / "real").write_text("content", encoding="utf-8")
-            (directory / "linked").symlink_to("real")
+            symlink_or_skip(directory / "linked", "real")
 
             with contextlib.redirect_stderr(io.StringIO()):
                 resolved = resolve_artifact_src(bundle, "files/application")
@@ -193,7 +195,8 @@ class ArtifactMetadataTest(unittest.TestCase):
             mode = stat.S_IMODE(path.stat().st_mode)
             temporary_files = list(root.glob(".artifact-info-*.json"))
 
-        self.assertEqual(0o644, mode)
+        if os.name == "posix":
+            self.assertEqual(0o644, mode)
         self.assertEqual([], temporary_files)
 
     def test_loader_accepts_the_legacy_metadata_filename(self) -> None:
@@ -396,7 +399,7 @@ class LocalArtifactStoreTest(unittest.TestCase):
             outside = root / "outside"
             outside.write_text("must not be captured", encoding="utf-8")
             (staging / "files" / "app").unlink()
-            (staging / "files" / "app").symlink_to(outside)
+            symlink_or_skip(staging / "files" / "app", outside)
 
             with self.assertRaisesRegex(GarDomainError, "symlink"):
                 store.capture(ArtifactKind.SIM_APP, workspace)
@@ -504,11 +507,11 @@ class LocalArtifactStoreTest(unittest.TestCase):
                 injected = artifact.bundle_path / f"injected-{node_type}"
                 if node_type == "file":
                     outside.write_text("outside\n", encoding="utf-8")
-                    injected.symlink_to(outside)
+                    symlink_or_skip(injected, outside)
                 else:
                     outside.mkdir()
                     (outside / "payload").write_text("outside\n", encoding="utf-8")
-                    injected.symlink_to(outside, target_is_directory=True)
+                    symlink_or_skip(injected, outside, target_is_directory=True)
 
                 with self.assertRaisesRegex(GarDomainError, "bundle contains symlink"):
                     store.latest(ArtifactKind.SIM_APP, workspace)

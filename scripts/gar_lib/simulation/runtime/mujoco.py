@@ -13,8 +13,11 @@ from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifa
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.config import PROJECT_ROOT
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.core.observation import component, unavailable
 from scripts.gar_lib.simulation.diagnostics.model import PayloadSimulationDiagnostic
 from scripts.gar_lib.simulation.hardware.mujoco import DEFAULT_BRIDGE_URL, bridge_state
+from scripts.gar_lib.simulation.runtime.deployment import deployment_record
+from scripts.gar_lib.simulation.runtime.local_identity import LocalApplicationIdentity
 from scripts.gar_lib.simulation.runtime.process import (
     LocalProcessChannel,
     ManagedProcess,
@@ -38,19 +41,27 @@ class MujocoSimulationEnvironment:
         process_channel: ProcessChannel | None = None,
     ):
         configured = os.environ.get("GAR_MUJOCO_WORKSPACE")
-        self.workspace_dir = workspace_dir or Path(configured or DEFAULT_WORKSPACE_DIR).expanduser().resolve()
+        selected_dir = workspace_dir or Path(configured or DEFAULT_WORKSPACE_DIR)
+        self.workspace_dir = Path(os.path.abspath(selected_dir.expanduser()))
         self.process_channel = process_channel or LocalProcessChannel()
         self.state_path = self.workspace_dir / "state.json"
         self.state_store = ProcessStateStore(self.state_path)
         self.log_path = self.workspace_dir / "mujoco.log"
+        self.identity = LocalApplicationIdentity(self.workspace_dir)
 
     def deploy(self, artifact: Artifact) -> None:
+        with self.state_store.locked():
+            self._deploy(artifact)
+
+    def _deploy(self, artifact: Artifact) -> None:
         if artifact.kind is not ArtifactKind.SIM_APP:
             raise GarDomainError(f"MuJoCoへ配置できないartifactです: {artifact.kind.value}")
         loaded = load_deploy_files(artifact.bundle_path, "app")
         if loaded is None:
             raise GarDomainError(f"MuJoCo artifact manifestを読み込めません: {artifact.bundle_path}")
         bundle_root, files = loaded
+        receipt = deployment_record(bundle_root, files, self._workspace_destination)
+        self.identity.begin(receipt)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         for entry in files:
             source = resolve_artifact_src(bundle_root, entry["src"])
@@ -66,6 +77,7 @@ class MujocoSimulationEnvironment:
             if isinstance(mode, str):
                 destination.chmod(int(mode, 8))
         self._validate_model_or_raise()
+        self.identity.finish(receipt)
 
     def start(self, hardware: dict[str, list[dict[str, str]]]) -> int:
         del hardware
@@ -80,12 +92,22 @@ class MujocoSimulationEnvironment:
             if runner is not None and not runner.is_file():
                 raise GarDomainError(f"MuJoCo runnerが見つかりません: {runner}")
 
+            required = (self._model_path(),) + ((runner,) if runner else ())
+            before = self.identity.capture(required)
+            launch_dir = self.identity.stage(before, self.workspace_dir)
+            model = self._model_path()
+            if launch_dir is not None:
+                model = launch_dir / model.relative_to(self.workspace_dir.resolve())
+                if runner:
+                    runner = launch_dir / runner.relative_to(self.workspace_dir.resolve())
+            else:
+                before = {}
             if runner:
                 command = (
                     sys.executable,
                     str(runner),
                     "--mjcf",
-                    str(self._model_path()),
+                    str(model),
                     "--bridge-url",
                     self._bridge_url(),
                 )
@@ -97,7 +119,7 @@ class MujocoSimulationEnvironment:
                     sys.executable,
                     str(PROJECT_ROOT / "examples" / "mujoco" / "bridge.py"),
                     "--mjcf",
-                    str(self._model_path()),
+                    str(model),
                     "--host",
                     bridge.hostname,
                     "--port",
@@ -115,6 +137,7 @@ class MujocoSimulationEnvironment:
                     {
                         **launched.to_state(),
                         "bridge_url": self._bridge_url(),
+                        "app_build": self.identity.launched(before, required),
                     }
                 )
             except Exception:
@@ -173,6 +196,28 @@ class MujocoSimulationEnvironment:
             raise GarDomainError(f"MuJoCo logが見つかりません: {self.log_path}")
         print(self.log_path.read_text(encoding="utf-8"), end="")
         return 0
+
+    def observe(self, hardware, *, diagnostic: bool) -> dict[str, dict[str, object]]:
+        state = self._state()
+        process = ManagedProcess.from_state(state)
+        running = process is not None and self.process_channel.owns(process)
+        app_identity = self.identity.observe(state, self.process_channel)
+        runtime = component("running" if running else "stopped", running)
+        if diagnostic:
+            report = self.diag(hardware)
+            runtime["diagnostic"] = report.to_payload()
+            runtime["ok"] = running and report.exit_code == 0
+            if running and not runtime["ok"]:
+                runtime["state"] = "degraded"
+        return {
+            "connection": unavailable("local process; remote connectionなし"),
+            "runtime": runtime,
+            "app": component(
+                "running" if running else "stopped",
+                running and app_identity["build_id_match"],
+                **app_identity,
+            ),
+        }
 
     def _model_path(self) -> Path:
         return Path(os.environ.get("GAR_MUJOCO_MODEL", DEFAULT_MODEL_PATH)).expanduser().resolve()

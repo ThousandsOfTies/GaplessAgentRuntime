@@ -135,7 +135,12 @@ class GarDiscoveryTest(unittest.TestCase):
 
             self.assertEqual(12345, json.loads((workspace / "state.json").read_text(encoding="utf-8"))["pid"])
             channel.start.assert_called_once()
-            self.assertTrue(any(part.endswith("examples/mujoco/bridge.py") for part in channel.start.call_args.args[0]))
+            self.assertTrue(
+                any(
+                    Path(part).parts[-3:] == ("examples", "mujoco", "bridge.py")
+                    for part in channel.start.call_args.args[0]
+                )
+            )
 
     def test_wokwi_installer_runs_official_install_script(self) -> None:
         with (

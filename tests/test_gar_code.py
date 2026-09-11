@@ -80,7 +80,8 @@ class GarCodeTest(unittest.TestCase):
             expected.write(state_path)
 
             self.assertEqual(expected, CodespaceConnectionState.load(state_path))
-            self.assertEqual(0o600, state_path.stat().st_mode & 0o777)
+            if os.name == "posix":
+                self.assertEqual(0o600, state_path.stat().st_mode & 0o777)
             self.assertEqual(
                 "/workspaces/O'Brien app",
                 json.loads(state_path.read_text(encoding="utf-8"))["remote_path"],
@@ -180,11 +181,12 @@ class GarCodeTest(unittest.TestCase):
                 ],
             )
 
-    def test_start_does_not_commit_state_when_mount_fails(self) -> None:
+    def test_start_does_not_commit_state_when_posix_mount_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             settings = home / "settings.json"
             with (
+                mock.patch("scripts.gar_lib.commands.code._is_windows_host", return_value=False),
                 mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
                 mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
                 mock.patch(
@@ -210,7 +212,7 @@ class GarCodeTest(unittest.TestCase):
             self.assertFalse((home / ".config" / "codespace-dev" / "state.json").exists())
             configure_vscode.assert_not_called()
 
-    def test_start_steps_run_in_mount_state_vscode_report_order(self) -> None:
+    def test_start_steps_run_in_mount_state_vscode_report_order_on_posix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             events: list[str] = []
@@ -229,6 +231,7 @@ class GarCodeTest(unittest.TestCase):
                 events.append("report")
 
             with (
+                mock.patch("scripts.gar_lib.commands.code._is_windows_host", return_value=False),
                 mock.patch("scripts.gar_lib.commands.code.Path.home", return_value=home),
                 mock.patch("scripts.gar_lib.commands.code.shutil.which", return_value="/usr/bin/tool"),
                 mock.patch(

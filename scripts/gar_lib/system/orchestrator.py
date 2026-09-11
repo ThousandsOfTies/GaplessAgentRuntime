@@ -114,11 +114,12 @@ class SystemOrchestrator:
         bridge_overrides: Mapping[str, str] | None = None,
         scenario_adapter: BridgeScenarioAdapter | None = None,
     ) -> SystemReport:
-        if command not in {"build", "deploy", "start", "status", "diag", "test"}:
+        if command not in {"build", "deploy", "start", "stop", "status", "diag", "test"}:
             raise GarDomainError(f"未対応の system action: {command}")
         workspaces, failures = self._resolve_workspaces()
         nodes: list[dict[str, object]] = []
-        for node_id in self.topology.order:
+        node_order = reversed(self.topology.order) if command == "stop" else self.topology.order
+        for node_id in node_order:
             node = self.topology.nodes[node_id]
             workspace = workspaces.get(node_id)
             if workspace is None:
@@ -242,27 +243,40 @@ class SystemOrchestrator:
             gar = self.gar_factory(workspace)
             if command == "build":
                 if node.environment == "sim":
-                    gar.sim.app.build()
-                    gar.sim.runtime.build()
+                    gar.sim.build()
                 else:
                     gar.target.build()
             elif command == "deploy":
                 result["deployment"] = self._deploy(gar, node, workspaces)
             elif command == "start":
                 self._start(gar, node, workspaces)
+            elif command == "stop":
+                code = (
+                    gar.sim.runtime.stop(keep_port_forward=True)
+                    if node.environment == "sim"
+                    else gar.target.stop(app=node.app).exit_code
+                )
+                if code:
+                    raise GarDomainError(f"stop failed (exit {code})")
             elif command == "status":
-                status = self._status(gar, node)
+                observation = self._status(gar, node)
+                status = observation.exit_code
                 result["status"] = status
+                result["observation"] = self._report_payload(observation)
                 if status:
                     raise GarDomainError(f"status failed (exit {status})")
             else:  # diag and test collect health plus artifact provenance.
                 result["diagnostic"] = self._diag(gar, node)
                 result["health"] = bool(result["diagnostic"].get("ok"))
                 result["artifacts"] = self._artifact_observation(gar, node, workspace)
+                if not result["health"]:
+                    raise GarDomainError("diagnostic failed")
             return result
         except Exception as error:
             result["ok"] = False
             result["error"] = str(error)
+            if details := getattr(error, "details", None):
+                result["details"] = details
             return result
 
     def _deploy(self, gar: Gar, node: SystemNode, workspaces: dict[str, Workspace]) -> dict[str, object]:
@@ -271,8 +285,7 @@ class SystemOrchestrator:
         # runtime configuration.
         values = self._runtime_env(node, workspaces)
         if node.environment == "sim":
-            gar.sim.runtime.deploy()
-            gar.sim.app.deploy()
+            gar.sim.deploy()
             destination = gar.sim.runtime.configure_system_env(node.app, values)
             return {"system_env": destination}
         else:
@@ -295,13 +308,17 @@ class SystemOrchestrator:
             # lifecycle convergence, so an address cannot become stale.
             gar.target.start(app=node.app, system_env=values)
 
-    def _status(self, gar: Gar, node: SystemNode) -> int:
+    def _status(self, gar: Gar, node: SystemNode):
         if node.environment == "sim":
-            return gar.sim.runtime.status()
-        return gar.target.status(app=node.app).exit_code
+            return gar.sim.status()
+        return gar.target.status(app=node.app)
 
     def _diag(self, gar: Gar, node: SystemNode) -> dict[str, object]:
-        report = gar.sim.runtime.diag() if node.environment == "sim" else gar.target.diag(app=node.app)
+        report = gar.sim.diag() if node.environment == "sim" else gar.target.diag(app=node.app)
+        return self._report_payload(report)
+
+    @staticmethod
+    def _report_payload(report) -> dict[str, object]:
         if callable(getattr(report, "as_dict", None)):
             payload = report.as_dict()
         elif callable(getattr(report, "to_payload", None)):
@@ -309,7 +326,7 @@ class SystemOrchestrator:
         else:
             payload = {"exit_code": report.exit_code}
         if report.exit_code:
-            raise GarDomainError(f"diagnostic failed (exit {report.exit_code})")
+            payload["ok"] = False
         return payload
 
     @staticmethod

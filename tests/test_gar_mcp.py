@@ -85,7 +85,7 @@ class GarMcpTest(unittest.TestCase):
 
     def test_run_in_visible_terminal_creates_request_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
+            tmp_path = Path(tmp).resolve()
             with (
                 mock.patch.object(server, "ROOT", tmp_path),
                 mock.patch.object(server, "GAR_DIR", tmp_path / ".gar"),

@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from support.filesystem import symlink_or_skip
+
 from scripts.gar_lib.api import Gar
 from scripts.gar_lib.artifacts.provenance import TargetToolsProvenance
 from scripts.gar_lib.artifacts.store import LocalArtifactStore
@@ -37,7 +39,7 @@ def workspace(root: Path, *, target: str = "adb_usb") -> Workspace:
 class GarTargetArchitectureTest(unittest.TestCase):
     def test_target_manifest_prefers_the_local_product_tools_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            product_root = Path(tmp) / "product"
+            product_root = Path(tmp).resolve() / "product"
             tools_root = product_root / "sources" / "gar-tools"
             (tools_root / "targets").mkdir(parents=True)
             selected_workspace = Workspace(
@@ -131,7 +133,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
             source = Path(tmp) / "source.env"
             source.write_text("PORT=5000\n", encoding="utf-8")
             link = Path(tmp) / "linked.env"
-            link.symlink_to(source)
+            symlink_or_skip(link, source)
             with (
                 mock.patch("scripts.gar_lib.commands.target.resolve_workspace", return_value=selected_workspace),
                 mock.patch("scripts.gar_lib.api.target_environment_for") as environment_for,
@@ -238,7 +240,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
 
     def test_legacy_native_target_build_runs_product_hook(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             hook = root / "scripts" / "product-target-build.sh"
             hook.parent.mkdir()
             hook.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
@@ -339,7 +341,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
 
     def test_file_target_transfers_manifest_and_applies_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             source = root / "files" / "app"
             source.parent.mkdir()
             source.write_text("app", encoding="utf-8")
@@ -369,7 +371,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
 
     def test_ssh_file_target_stages_and_uses_limited_installer_for_system_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             source = root / "files" / "app"
             source.parent.mkdir()
             source.write_text("app", encoding="utf-8")
@@ -465,7 +467,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
                 environment.deploy(artifact)
 
         self.assertEqual(
-            ("adb", "-s", "device-1", "push", "/tmp/app", "/data/local/tmp/app"),
+            ("adb", "-s", "device-1", "push", str(Path("/tmp/app")), "/data/local/tmp/app"),
             run.call_args_list[-1].args[0],
         )
 
@@ -559,7 +561,7 @@ class GarTargetArchitectureTest(unittest.TestCase):
 
     def test_esp32_environment_resolves_firmware_directory_from_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             firmware = root / "files" / "firmware"
             firmware.mkdir(parents=True)
             for name in ("bootloader.bin", "partitions.bin", "boot_app0.bin", "firmware.bin"):

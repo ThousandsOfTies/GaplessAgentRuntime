@@ -25,7 +25,7 @@ class TargetPrepareTests(TestCase):
                 nonlocal staged_identity
                 stdout = "user\n" if argv[-1] == "id -un" else ""
                 if argv[0] == "scp":
-                    identity_path = next(Path(item) for item in argv if item.endswith("/recipe-version"))
+                    identity_path = next(Path(item) for item in argv if Path(item).name == "recipe-version")
                     staged_identity = identity_path.read_text(encoding="utf-8")
                 return subprocess.CompletedProcess(argv, 0, stdout, "")
 
@@ -44,7 +44,7 @@ class TargetPrepareTests(TestCase):
         self.assertIn(str(recipe / "prepare.sh"), scp_command)
         self.assertIn(str(recipe / "gar-target-install"), scp_command)
         self.assertIn(str(recipe / "gar-app@.service"), scp_command)
-        self.assertTrue(any(item.endswith("/recipe-version") for item in scp_command))
+        self.assertTrue(any(Path(item).name == "recipe-version" for item in scp_command))
         self.assertEqual(
             "target_id=raspberry-pi-5\n" "recipe_version=7\n" f"gar_tools_commit={'a' * 40}\n",
             staged_identity,

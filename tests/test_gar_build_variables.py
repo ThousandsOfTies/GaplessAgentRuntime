@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import platform
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.gar_lib.build.spec import ProductBuildSpecResolver
 from scripts.gar_lib.core.artifact import ArtifactKind
@@ -32,11 +32,12 @@ class BuildSpecVariablesTest(unittest.TestCase):
         self.assertEqual({"GAR_TARGET": "raspberry-pi-5"}, spec.variables)
 
     def test_local_docker_builds_for_the_host_architecture(self) -> None:
-        spec = self.specs.for_artifact(ArtifactKind.SIM_RUNTIME, workspace_with("local_docker"))
-
-        self.assertEqual("local_docker", spec.variables["GAR_SIM_ENVIRONMENT"])
-        self.assertEqual(platform.machine(), spec.variables["GAR_SIM_ARCH"])
-        self.assertEqual("gcc", spec.variables["CC"])
+        for machine, architecture in (("x86_64", "x86_64"), ("AMD64", "x86_64"), ("arm64", "aarch64")):
+            with self.subTest(machine=machine), mock.patch("platform.machine", return_value=machine):
+                spec = self.specs.for_artifact(ArtifactKind.SIM_RUNTIME, workspace_with("local_docker"))
+            self.assertEqual("local_docker", spec.variables["GAR_SIM_ENVIRONMENT"])
+            self.assertEqual(architecture, spec.variables["GAR_SIM_ARCH"])
+            self.assertEqual("gcc", spec.variables["CC"])
 
     def test_ssh_remote_cross_compiles_for_aarch64_by_default(self) -> None:
         spec = self.specs.for_artifact(ArtifactKind.SIM_RUNTIME, workspace_with("ssh_remote"))
@@ -86,13 +87,16 @@ class LocalBuildEnvironmentVariablesTest(unittest.TestCase):
             )
             artifacts = mock.Mock()
             completed = mock.Mock(returncode=0)
-            with mock.patch("scripts.gar_lib.build.local.subprocess.run", return_value=completed) as run:
+            with (
+                mock.patch("platform.machine", return_value="AMD64"),
+                mock.patch("scripts.gar_lib.build.local.subprocess.run", return_value=completed) as run,
+            ):
                 LocalBuildEnvironment(artifacts).build(ArtifactKind.SIM_RUNTIME, workspace)
 
         env = run.call_args.kwargs["env"]
         self.assertEqual("gcc", env["CC"])
         self.assertEqual("local_docker", env["GAR_SIM_ENVIRONMENT"])
-        self.assertEqual(platform.machine(), env["GAR_SIM_ARCH"])
+        self.assertEqual("x86_64", env["GAR_SIM_ARCH"])
 
 
 class CodespacesBuildEnvironmentVariablesTest(unittest.TestCase):

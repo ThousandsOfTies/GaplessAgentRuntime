@@ -95,12 +95,10 @@ Peripheral adapter、bindingへ置きます。
 Simulation:
 
 ```bash
-gar sim runtime build --workspace Local/Product
-gar sim runtime deploy --workspace Local/Product
-gar sim app build --workspace Local/Product
-gar sim app deploy --workspace Local/Product
-gar sim runtime start --workspace Local/Product
-gar sim runtime diag --workspace Local/Product --json
+gar sim build --workspace Local/Product
+gar sim deploy --workspace Local/Product
+gar sim start --workspace Local/Product
+gar sim diag --workspace Local/Product --json
 ```
 
 Physical Target:

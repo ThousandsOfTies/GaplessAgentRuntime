@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import shlex
 import textwrap
 from collections.abc import Sequence
@@ -11,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from scripts.gar_lib.simulation.hardware import io_actions
+from scripts.gar_lib.simulation.runtime.deployment import remote_identity_command
 
 # Linux constants
 SIM_DIAG_DEVICES = ("/dev/i2c-1", "/dev/gpiochip0", "/dev/spidev0.0")
@@ -662,7 +664,8 @@ class LinuxSystemdCommandBuilder:
         )
 
     def build_sim_start(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
-        return self.build_systemd_start(hw_definition)
+        command = self.build_systemd_start(hw_definition)
+        return remote_identity_command(f"raise SystemExit(start_service({command!r}))", sudo=True)
 
     def build_sim_stop(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
         return self.build_systemd_stop(hw_definition)
@@ -679,6 +682,18 @@ class LinuxSystemdCommandBuilder:
             'echo "--- api ---"; '
             f"curl {CURL_OPTIONS} http://127.0.0.1:8080/api/state || true"
         )
+
+    def build_component_status(self, hw_definition: dict[str, list[dict[str, str]]]) -> str:
+        services = json.dumps(_runtime_services(hw_definition))
+        script = f"""
+services = {services}
+result = {{}}
+for service in services:
+    result[service] = service_state(service)
+result[SERVICE]['identity'] = observe_service(result[SERVICE])
+print(json.dumps(result))
+"""
+        return remote_identity_command(script)
 
     def build_sim_log(self) -> str:
         return (

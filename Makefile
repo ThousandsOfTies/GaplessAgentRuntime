@@ -32,8 +32,8 @@ help:
 check:
 	@test -x $(PYTHON) || { echo "Run 'make init' first."; exit 1; }
 	@test -x $(RUFF) || { echo "Ruff is missing from .venv; run 'make init' first."; exit 1; }
-	$(RUFF) check scripts tests tools/*.py tools/gar-mcp/server.py
-	$(RUFF) format --check scripts tests tools/*.py tools/gar-mcp/server.py
+	$(RUFF) check scripts scripts/gar_lib/build tests tools/*.py tools/gar-mcp/server.py
+	$(RUFF) format --check scripts scripts/gar_lib/build tests tools/*.py tools/gar-mcp/server.py
 	$(PYTHON) -m unittest discover -s tests -v
 	bash -n tools/forward_sim_ports.sh tools/forward_ec2_ports.sh tools/setup_codespace_wsl.sh scripts/create-product-devspace.sh
 	node --check tools/vscode-gar/extension.js
@@ -108,8 +108,8 @@ endif
 	@sleep 1
 	scripts/gar sim io set --device rfid --uid $(UID) --workspace $(WORKSPACE)
 	@sleep 1
-	scripts/gar sim runtime status --workspace $(WORKSPACE)
-	scripts/gar sim runtime log --workspace $(WORKSPACE)
+	scripts/gar sim status --workspace $(WORKSPACE)
+	scripts/gar sim log --workspace $(WORKSPACE)
 
 sim-scenario:
 ifndef SIM_HOST

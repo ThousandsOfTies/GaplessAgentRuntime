@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -14,7 +15,9 @@ from scripts.gar_lib.access.channel import CommandChannel, FileChannel
 from scripts.gar_lib.artifacts.manifest import load_deploy_files, resolve_artifact_src
 from scripts.gar_lib.core.artifact import Artifact, ArtifactKind
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.core.observation import component
 from scripts.gar_lib.simulation.diagnostics.model import SimulationDiagnostic
+from scripts.gar_lib.simulation.runtime.deployment import deployment_record, remote_deployment_command
 from scripts.gar_lib.simulation.runtime.linux_commands import LinuxSystemdCommandBuilder
 
 
@@ -53,6 +56,10 @@ class LinuxSystemdSimulationEnvironment:
         if loaded is None:
             raise GarDomainError(f"artifact manifestを読み込めません: {artifact.bundle_path}")
         bundle_root, files = loaded
+        receipt = None
+        if artifact.kind is ArtifactKind.SIM_APP:
+            receipt = deployment_record(bundle_root, files, self._destination)
+            self._write_deployment({**receipt, "state": "deploying"})
 
         if artifact.kind is ArtifactKind.SIM_RUNTIME:
             # Linux refuses to replace an executing CUSE binary (ETXTBSY).
@@ -86,6 +93,14 @@ class LinuxSystemdSimulationEnvironment:
                 detail = (installed.stderr or installed.stdout).strip()
                 suffix = f": {detail}" if detail else ""
                 raise GarDomainError(f"artifact配置に失敗しました (exit {installed.returncode}){suffix}")
+
+        if receipt is not None:
+            self._write_deployment(receipt)
+
+    def _write_deployment(self, record: dict) -> None:
+        result = self.command_channel.run(remote_deployment_command(record))
+        if result.returncode:
+            raise GarDomainError(f"Simulation deployment receiptの更新に失敗しました (exit {result.returncode})")
 
     def configure_system_env(self, application: str, values: Mapping[str, str]) -> str:
         """Atomically install a runtime-owned system environment file."""
@@ -121,6 +136,57 @@ class LinuxSystemdSimulationEnvironment:
     def diag(self, hardware: dict[str, list[dict[str, str]]]) -> SimulationDiagnostic:
         result = self.command_channel.run(self.command_builder.build_sim_diag_json(hardware))
         return SimulationDiagnostic.from_command(result)
+
+    def observe(self, hardware, *, diagnostic: bool) -> dict[str, dict[str, object]]:
+        result = self.command_channel.run(self.command_builder.build_component_status(hardware))
+        connection = component("reachable", True)
+        if result.returncode:
+            error = result.stderr.strip() or f"service observation failed (exit {result.returncode})"
+            return {
+                "connection": connection,
+                "runtime": component("unknown", False, error=error),
+                "app": component("unknown", False, error=error),
+            }
+        try:
+            services = json.loads(result.stdout)
+            if (
+                not isinstance(services, dict)
+                or "gar-sim-app.service" not in services
+                or any(not isinstance(value, dict) for value in services.values())
+            ):
+                raise ValueError("service observationの形式が不正です")
+        except ValueError as error:
+            return {
+                "connection": connection,
+                "runtime": component("unknown", False, error=str(error)),
+                "app": component("unknown", False, error=str(error)),
+            }
+        app = services.pop("gar-sim-app.service")
+        running = bool(services) and all(
+            value.get("loaded") is True and value.get("active") is True and value.get("exit_code") == 0
+            for value in services.values()
+        )
+        runtime = component("running" if running else "stopped", running, services=services)
+        if diagnostic:
+            report = self.diag(hardware)
+            runtime["diagnostic"] = report.to_payload()
+            runtime["ok"] = running and report.exit_code == 0
+            if running and not runtime["ok"]:
+                runtime["state"] = "degraded"
+        application_running = (
+            app.get("loaded") is True
+            and app.get("active") is True
+            and app.get("exit_code") == 0
+            and app.get("placeholder") is False
+        )
+        application = component(
+            "running" if application_running else "not_deployed" if app.get("placeholder") else "stopped",
+            application_running,
+            verification="service_state",
+        )
+        application.update(app.get("identity", {"build_id_verification": "unknown", "build_id_match": False}))
+        application["ok"] = application_running and application.get("build_id_match") is True
+        return {"connection": connection, "runtime": runtime, "app": application}
 
     def log(self) -> int:
         return self._run(self.command_builder.build_sim_log())

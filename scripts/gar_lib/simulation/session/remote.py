@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.core.config import PROJECT_ROOT, is_valid_runtime_host
 from scripts.gar_lib.core.errors import GarDomainError
 from scripts.gar_lib.vscode.profile_manage import write_vscode_terminal_profile
@@ -17,12 +18,12 @@ def start_sim_port_forward(host: str, *, panel_port: int = 8080) -> int:
     return _port_forward(host, panel_port=panel_port)
 
 
-def stop_sim_port_forward(host: str) -> int:
-    return _port_forward(host, "--stop")
+def stop_sim_port_forward(host: str, *, panel_port: int = 8080) -> int:
+    return _port_forward(host, "--stop", panel_port=panel_port)
 
 
-def status_sim_port_forward(host: str) -> int:
-    return _port_forward(host, "--status")
+def status_sim_port_forward(host: str, *, panel_port: int = 8080) -> int:
+    return _port_forward(host, "--status", panel_port=panel_port)
 
 
 def _port_forward(host: str, action: str | None = None, *, panel_port: int = 8080) -> int:
@@ -30,7 +31,7 @@ def _port_forward(host: str, action: str | None = None, *, panel_port: int = 808
     command.extend(("--http", str(panel_port)))
     if action:
         command.append(action)
-    return subprocess.run(command, check=False).returncode
+    return run_displayed(command, runner=subprocess.run, check=False).returncode
 
 
 def write_sim_terminal_profile(

@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from scripts.gar_lib.access.display import run_displayed
+
 DEFAULT_GH_TIMEOUT_SECONDS = 60
 SSH_CONFIG_INCLUDE = "Include ~/.ssh/codespaces"
 
@@ -143,8 +145,9 @@ def run_codespace_remote(
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment.setdefault("GH_PROMPT_DISABLED", "1")
-    return subprocess.run(
+    return run_displayed(
         ["gh", "codespace", "ssh", "-c", codespace, "--", command],
+        runner=subprocess.run,
         check=False,
         capture_output=capture_output,
         text=True,
@@ -158,7 +161,7 @@ def mount_codespace_code(*, host: str, remote_path: str, mount_dir: Path) -> int
 
     mount_dir.mkdir(parents=True, exist_ok=True)
     expected_source = f"{host}:{remote_path}"
-    mountpoint_result = subprocess.run(["mountpoint", "-q", str(mount_dir)], check=False)
+    mountpoint_result = run_displayed(["mountpoint", "-q", str(mount_dir)], runner=subprocess.run, check=False)
 
     if mountpoint_result.returncode == 0:
         source_result = subprocess.run(
@@ -177,7 +180,7 @@ def mount_codespace_code(*, host: str, remote_path: str, mount_dir: Path) -> int
         if unmount_result != 0:
             return unmount_result
 
-    result = subprocess.run(
+    result = run_displayed(
         [
             "sshfs",
             expected_source,
@@ -189,6 +192,7 @@ def mount_codespace_code(*, host: str, remote_path: str, mount_dir: Path) -> int
             "-o",
             "ServerAliveCountMax=3",
         ],
+        runner=subprocess.run,
         check=False,
     )
     if result.returncode == 0:
@@ -207,7 +211,7 @@ def unmount_codespace_code(*, mount_dir: Path, expected_source: str | None) -> i
         print("gar code stop: missing required command: mountpoint", file=sys.stderr)
         return 1
 
-    mountpoint_result = subprocess.run(["mountpoint", "-q", str(mount_dir)], check=False)
+    mountpoint_result = run_displayed(["mountpoint", "-q", str(mount_dir)], runner=subprocess.run, check=False)
     if mountpoint_result.returncode != 0:
         print(f"sshfs: not mounted at {mount_dir}")
         return 0
@@ -294,4 +298,4 @@ def _run_fusermount(mount_dir: Path, *, command_name: str) -> int:
             file=sys.stderr,
         )
         return 1
-    return subprocess.run([fusermount, "-u", str(mount_dir)], check=False).returncode
+    return run_displayed([fusermount, "-u", str(mount_dir)], runner=subprocess.run, check=False).returncode

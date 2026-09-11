@@ -321,7 +321,7 @@ class CommandTargetLifecycleTests(unittest.TestCase):
 
     def test_normal_deploy_ignores_persistent_configuration_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve()
             app = root / "files" / "demo"
             app.mkdir(parents=True)
             (app / "run").write_text("#!/bin/sh\n", encoding="utf-8")
@@ -916,7 +916,8 @@ class TargetLifecycleCliTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual("ssh", payload["channel"])
         self.assertEqual("target_prepare_required", payload["reason"])
-        self.assertEqual(255, payload["exit_code"])
+        self.assertEqual(1, payload["exit_code"])
+        self.assertEqual(255, payload["backend_exit_code"])
         self.assertEqual("", errors.getvalue())
         report_failure.assert_not_called()
         run_terminal.assert_not_called()

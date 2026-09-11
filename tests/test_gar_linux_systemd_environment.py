@@ -79,7 +79,7 @@ class GarLinuxSystemdEnvironmentTest(unittest.TestCase):
             LinuxSystemdSimulationEnvironment(commands, files, builder).deploy(artifact)
 
         files.push.assert_called_once()
-        install = commands.run.call_args.args[0]
+        install = commands.run.call_args_list[1].args[0]
         self.assertIn('mkdir -p $(dirname "${HOME}"/', install)
         self.assertNotIn("sudo", install)
         self.assertIn("chmod 0755", install)
