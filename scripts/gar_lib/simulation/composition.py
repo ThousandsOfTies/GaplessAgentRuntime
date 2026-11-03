@@ -51,7 +51,7 @@ from scripts.gar_lib.target.manifest import discover_target_manifests, target_by
 
 LOCAL_DOCKER = "local_docker"
 SSH_HOST_SIMULATORS = ("ssh_remote", "aws_ssm")
-HOSTLESS_SIMULATORS = ("wokwi", "mujoco", "renode_mcu", "esp32_qemu_firmware")
+HOSTLESS_SIMULATORS = ("wokwi", "mujoco", "renode_mcu", "esp32_qemu_firmware", "product_hook")
 AWS_EC2_HOST = "aws_ec2"
 VIRTUALBOX_HOST = "virtualbox"
 
@@ -64,6 +64,10 @@ def simulation_environment_for(workspace: Workspace) -> SimulationEnvironment:
     """simulation runtime（stub / bridge）を操作するオブジェクトを作る。"""
 
     backend = selected_simulator(workspace)
+
+    if backend == 'product_hook':
+        from scripts.gar_lib.simulation.runtime.product_hook import ProductSimulatorHook
+        return ProductSimulatorHook(workspace)
 
     if backend == LOCAL_DOCKER:
         container = _container_name(workspace)

@@ -8,7 +8,7 @@ from scripts.gar_lib.target.composition import _selected_target_manifest
 
 COMMON_ACTIONS = ("prepare", "build", "deploy", "start", "stop", "status", "log", "diag")
 BUILD_BACKENDS = {"local", "native", "docker", "github_codespaces"}
-SIM_BACKENDS = {"ssh_remote", "local_docker", "wokwi", "mujoco"}
+SIM_BACKENDS = {"ssh_remote", "local_docker", "wokwi", "mujoco", "product_hook"}
 
 
 def simulation_actions(workspace: Workspace) -> dict[str, bool]:
