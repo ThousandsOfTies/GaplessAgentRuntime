@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.artifacts.store import BuildArtifactStore
@@ -18,13 +19,21 @@ class LocalBuildEnvironment:
         self.artifacts = artifacts
         self.specs = specs or ProductBuildSpecResolver()
 
+    @staticmethod
+    def _command(script):
+        # Portable Product hooks can opt into Python without a shell/WSL.
+        python_hook = script.with_suffix(".py")
+        if python_hook.is_file():
+            return [sys.executable, str(python_hook)]
+        if not script.is_file():
+            raise GarDomainError(f"product build hook が見つかりません: {script}")
+        return [str(script)]
+
     def build(self, kind: ArtifactKind, workspace: Workspace) -> Artifact:
         spec = self.specs.for_artifact(kind, workspace)
         script = workspace.local_root / spec.script
-        if not script.is_file():
-            raise GarDomainError(f"product build hook が見つかりません: {script}")
         result = run_displayed(
-            [str(script)],
+            self._command(script),
             cwd=workspace.local_root,
             env={**os.environ, **spec.variables},
             runner=subprocess.run,
@@ -37,10 +46,8 @@ class LocalBuildEnvironment:
     def clean(self, kind: ArtifactKind, workspace: Workspace) -> None:
         spec = self.specs.for_artifact(kind, workspace)
         script = workspace.local_root / spec.script
-        if not script.is_file():
-            raise GarDomainError(f"product build hook が見つかりません: {script}")
         result = run_displayed(
-            [str(script), "clean"],
+            [*self._command(script), "clean"],
             cwd=workspace.local_root,
             env={**os.environ, **spec.variables},
             runner=subprocess.run,

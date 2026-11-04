@@ -15,6 +15,7 @@ from pathlib import Path
 from scripts.gar_lib.access.display import run_displayed
 from scripts.gar_lib.target.esp32_firmware import (
     FLASH_LAYOUT,
+    flash_profile,
     resolve_esp32_artifact_dir,
 )
 
@@ -157,7 +158,7 @@ def run_esp32_flash_command(
     artifact_dir: str | None = None,
     port: str | None = None,
     baud: int = 921600,
-    chip: str = "esp32",
+    chip: str | None = None,
     verify: bool = True,
     install_esptool: bool = True,
 ) -> int:
@@ -176,6 +177,14 @@ def run_esp32_flash_command(
         )
         return 1
     if not validate_esp32_artifact(resolved_artifact_dir):
+        return 1
+    try:
+        profile_chip, layout = flash_profile(resolved_artifact_dir)
+        if chip is not None and chip != profile_chip:
+            raise ValueError(f"Requested chip {chip} does not match artifact chip {profile_chip}")
+        chip = profile_chip
+    except (OSError, ValueError) as error:
+        print(f"gar target deploy: {error}", file=sys.stderr)
         return 1
     port_error = esp32_serial_port_access_error(resolved_port)
     if port_error:
@@ -209,7 +218,7 @@ def run_esp32_flash_command(
         "write-flash",
         "-z",
     ]
-    for offset, filename in FLASH_LAYOUT:
+    for offset, filename in layout:
         args.extend([offset, str(resolved_artifact_dir / filename)])
 
     print(f"Artifact: {resolved_artifact_dir}")
