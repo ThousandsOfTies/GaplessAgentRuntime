@@ -57,6 +57,26 @@ restart as applicable. Keep physical interoperability tests for what the
 substitute cannot establish. When hardware is unavailable, leave those checks
 explicitly unverified rather than implying that simulation covered them.
 
+## Required simulation checks
+
+Before editing simulator behavior, record the physical and simulated paths as
+`input -> application -> transport -> external endpoint -> response`. Name the
+shared implementation and exact substituted driver/SDK boundary at each step.
+Check existing read-only restrictions, demo peers and adapters against the user's
+purpose; existing code is subject to correction, not authority to narrow it.
+Do not replace production inputs/endpoints or remove the return path merely
+because doing so seems safer or easier. Apply the actual authorization boundary
+to the common path instead. Keep explicitly requested test modes distinguishable.
+
+Define completion against that path before implementing. For a networked or
+interactive Product intended to exercise production integration, require evidence
+that the real input reaches the common application and a human's response reaches
+the original endpoint once, retaining identities and cancellation semantics.
+Isolated fixtures can test the same contract, but synthetic input, a local ACK,
+or a successful UI demonstration alone does not prove this integration. Verify
+unchanged/substituted/bypassed steps against the initial map before reporting
+completion; identify missing external verification as incomplete, not passed.
+
 ## Standard workflows
 
 For a simulated Product, use the existing lifecycle and retain evidence beyond
