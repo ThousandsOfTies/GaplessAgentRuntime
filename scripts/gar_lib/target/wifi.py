@@ -1,4 +1,4 @@
-"""Run a Product-bound interactive network provisioning recipe."""
+"""Run Product-bound interactive OS configuration recipes."""
 
 import json
 import subprocess
@@ -9,13 +9,21 @@ from scripts.gar_lib.core.errors import GarDomainError
 
 
 def configure_wifi(workspace, transport="ssh", check=False, repair_host=None):
+    return _configure(workspace, "gar-target-wifi.json", transport, check, repair_host)
+
+
+def configure_audio(workspace):
+    return _configure(workspace, "gar-target-audio.json", "ssh", False, None)
+
+
+def _configure(workspace, descriptor, transport, check, repair_host):
     if transport not in ("serial", "ssh"):
         raise GarDomainError("Unsupported Wi-Fi setup transport")
     if check and transport != "ssh":
         raise GarDomainError("Read-only Wi-Fi checks require --transport ssh")
     root = workspace.local_root.resolve()
     try:
-        spec = json.loads((root / "gar-target-wifi.json").read_text(encoding="utf-8"))
+        spec = json.loads((root / descriptor).read_text(encoding="utf-8"))
         relative = Path(spec["entrypoint"])
         entry = (root / relative).resolve()
         if (
@@ -29,7 +37,7 @@ def configure_wifi(workspace, transport="ssh", check=False, repair_host=None):
         ):
             raise ValueError("invalid entrypoint")
     except (OSError, ValueError, TypeError, KeyError) as error:
-        raise GarDomainError("Invalid gar-target-wifi.json descriptor") from error
+        raise GarDomainError(f"Invalid {descriptor} descriptor") from error
     try:
         result = subprocess.run(
             [
@@ -66,6 +74,11 @@ def configure_wifi(workspace, transport="ssh", check=False, repair_host=None):
             "usbManagementOnly",
             "error",
             "preflight",
+            "saved",
+            "restoreVerified",
+            "hotplugRule",
+            "card",
+            "playbackPercent",
         )
         if key in value
     }

@@ -7,10 +7,21 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.gar_lib.core.errors import GarDomainError
-from scripts.gar_lib.target.wifi import configure_wifi
+from scripts.gar_lib.target.wifi import configure_audio, configure_wifi
 
 
 class TargetWifiTests(unittest.TestCase):
+    @patch("scripts.gar_lib.target.wifi.subprocess.run")
+    def test_audio_recipe_uses_separate_descriptor_and_allowlisted_fields(self, run):
+        (self.root / "gar-target-audio.json").write_text(self.spec.read_text(), encoding="utf-8")
+        run.return_value = SimpleNamespace(
+            returncode=0, stdout=json.dumps({"ok": True, "saved": True, "restoreVerified": True, "password": "private"})
+        )
+        result = configure_audio(self.workspace)
+        self.assertTrue(result["saved"])
+        self.assertTrue(result["restoreVerified"])
+        self.assertNotIn("password", result)
+
     def test_serial_check_does_not_open_setup(self):
         with self.assertRaises(GarDomainError):
             configure_wifi(SimpleNamespace(), transport="serial", check=True)
