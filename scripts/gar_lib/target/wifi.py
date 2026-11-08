@@ -16,6 +16,10 @@ def configure_audio(workspace):
     return _configure(workspace, "gar-target-audio.json", "ssh", False, None)
 
 
+def trace_conversation(workspace):
+    return _configure(workspace, "gar-target-trace.json", "ssh", False, None)
+
+
 def _configure(workspace, descriptor, transport, check, repair_host):
     if transport not in ("serial", "ssh"):
         raise GarDomainError("Unsupported Wi-Fi setup transport")
@@ -79,6 +83,7 @@ def _configure(workspace, descriptor, transport, check, repair_host):
             "hotplugRule",
             "card",
             "playbackPercent",
+            "trace",
         )
         if key in value
     }

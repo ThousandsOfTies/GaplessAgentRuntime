@@ -7,10 +7,23 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.gar_lib.core.errors import GarDomainError
-from scripts.gar_lib.target.wifi import configure_audio, configure_wifi
+from scripts.gar_lib.target.wifi import configure_audio, configure_wifi, trace_conversation
 
 
 class TargetWifiTests(unittest.TestCase):
+    @patch("scripts.gar_lib.target.wifi.subprocess.run")
+    def test_conversation_trace_only_forwards_allowlisted_observations(self, run):
+        (self.root / "gar-target-trace.json").write_text(self.spec.read_text(), encoding="utf-8")
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {"ok": True, "trace": {"activeSessions": 1, "counts": {"modelTurns": 2}}, "password": "private"}
+            ),
+        )
+        result = trace_conversation(self.workspace)
+        self.assertEqual(result["trace"]["counts"]["modelTurns"], 2)
+        self.assertNotIn("password", result)
+
     @patch("scripts.gar_lib.target.wifi.subprocess.run")
     def test_audio_recipe_uses_separate_descriptor_and_allowlisted_fields(self, run):
         (self.root / "gar-target-audio.json").write_text(self.spec.read_text(), encoding="utf-8")

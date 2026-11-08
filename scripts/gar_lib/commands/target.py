@@ -26,6 +26,7 @@ from scripts.gar_lib.target.lifecycle import (
 )
 
 TARGET_ACTIONS = {
+    "trace": "実機の会話を止めずに音声入出力の順序を一時観測します",
     "audio": "専用の認証画面で実機音量の保存とUSB再接続時の復元を設定します",
     "wifi": "専用の認証画面で実機のWi-Fi自動接続を設定します",
     "probe": "Productで宣言した実機診断を実行します（build/deployやservice再起動なし）",
@@ -158,6 +159,12 @@ def _run_target_command(
             raise GarDomainError(f"未対応の target action: {command.action}")
         target_api = Gar(workspace).target
         match command.action:
+            case "trace":
+                from scripts.gar_lib.target.wifi import trace_conversation
+
+                report = trace_conversation(workspace)
+                emit_json(report)
+                return 0 if report["ok"] else 1
             case "audio":
                 from scripts.gar_lib.target.wifi import configure_audio
 
