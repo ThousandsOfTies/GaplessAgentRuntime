@@ -26,6 +26,7 @@ from scripts.gar_lib.target.lifecycle import (
 )
 
 TARGET_ACTIONS = {
+    "update": "Productが宣言したスクリプト更新を作成・検証・配置・診断します",
     "trace": "実機の会話を止めずに音声入出力の順序を一時観測します",
     "audio": "専用の認証画面で実機音量の保存とUSB再接続時の復元を設定します",
     "wifi": "専用の認証画面で実機のWi-Fi自動接続を設定します",
@@ -83,6 +84,8 @@ def add_target_parser(
             action_parser.add_argument("--file", required=True, metavar="PATH", help="配置するenv形式の設定ファイル")
         if action == "probe":
             action_parser.add_argument("--probe", default="status", help="Productが宣言する診断名（既定: status）")
+        if action == "update":
+            action_parser.add_argument("--phase", choices=("build", "preflight", "deploy", "diag"), required=True)
         if action == "wifi":
             action_parser.add_argument("--transport", choices=("serial", "ssh"), default="ssh", help="実機への設定経路")
             action_parser.add_argument("--check", action="store_true", help="設定を書き込まず管理経路を確認")
@@ -159,6 +162,12 @@ def _run_target_command(
             raise GarDomainError(f"未対応の target action: {command.action}")
         target_api = Gar(workspace).target
         match command.action:
+            case "update":
+                from scripts.gar_lib.target.wifi import update_runtime
+
+                report = update_runtime(workspace, args.phase)
+                emit_json(report)
+                return 0 if report["ok"] else 1
             case "trace":
                 from scripts.gar_lib.target.wifi import trace_conversation
 

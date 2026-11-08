@@ -180,6 +180,7 @@ action-first構文を使います。将来の削除は利用者への移行案�
 | `wifi` | 専用画面からProductの無線LAN設定recipeを実行 |
 | `audio` | 専用画面から実機音量の保存・USB再接続時の復元を設定 |
 | `trace` | 実機会話の音声入出力の順序を一時観測 |
+| `update` | Productのスクリプト更新を`--phase build/preflight/deploy/diag`で実行 |
 | `configure` | applicationの永続envを配置 |
 | `build` | TARGET_APP artifactをbuild |
 | `fetch` | BuildEnvironmentからartifactを取得 |

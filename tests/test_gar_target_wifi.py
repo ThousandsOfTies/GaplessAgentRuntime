@@ -7,10 +7,24 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.gar_lib.core.errors import GarDomainError
-from scripts.gar_lib.target.wifi import configure_audio, configure_wifi, trace_conversation
+from scripts.gar_lib.target.wifi import configure_audio, configure_wifi, trace_conversation, update_runtime
 
 
 class TargetWifiTests(unittest.TestCase):
+    @patch("scripts.gar_lib.target.wifi.subprocess.run")
+    def test_runtime_update_phases_and_result_allowlist(self, run):
+        (self.root / "gar-target-update.json").write_text(self.spec.read_text(), encoding="utf-8")
+        run.return_value = SimpleNamespace(
+            returncode=0, stdout=json.dumps({"ok": True, "deployment": {"matched": True}, "password": "private"})
+        )
+        for phase in ("build", "preflight", "deploy", "diag"):
+            result = update_runtime(self.workspace, phase)
+            self.assertTrue(result["deployment"]["matched"])
+            self.assertNotIn("password", result)
+            self.assertEqual(run.call_args.args[0][-2:], ["--phase", phase])
+        with self.assertRaises(GarDomainError):
+            update_runtime(self.workspace, "unrecognized")
+
     @patch("scripts.gar_lib.target.wifi.subprocess.run")
     def test_conversation_trace_only_forwards_allowlisted_observations(self, run):
         (self.root / "gar-target-trace.json").write_text(self.spec.read_text(), encoding="utf-8")

@@ -20,7 +20,13 @@ def trace_conversation(workspace):
     return _configure(workspace, "gar-target-trace.json", "ssh", False, None)
 
 
-def _configure(workspace, descriptor, transport, check, repair_host):
+def update_runtime(workspace, phase):
+    if phase not in ("build", "preflight", "deploy", "diag"):
+        raise GarDomainError("Invalid runtime update phase")
+    return _configure(workspace, "gar-target-update.json", "ssh", False, None, ("--phase", phase))
+
+
+def _configure(workspace, descriptor, transport, check, repair_host, extra_arguments=()):
     if transport not in ("serial", "ssh"):
         raise GarDomainError("Unsupported Wi-Fi setup transport")
     if check and transport != "ssh":
@@ -51,6 +57,7 @@ def _configure(workspace, descriptor, transport, check, repair_host):
                 transport,
                 *(["--check"] if check else []),
                 *(["--repair-host", repair_host] if repair_host else []),
+                *extra_arguments,
             ],
             cwd=root,
             capture_output=True,
@@ -84,6 +91,7 @@ def _configure(workspace, descriptor, transport, check, repair_host):
             "card",
             "playbackPercent",
             "trace",
+            "deployment",
         )
         if key in value
     }
