@@ -176,6 +176,8 @@ action-first構文を使います。将来の削除は利用者への移行案�
 | Action | 内容 |
 |---|---|
 | `prepare` | recipe-backed Targetを初期準備 |
+| `probe` | Productが宣言する実機診断を実行（[診断hook](TARGET_PROBE_HOOK.md)） |
+| `wifi` | 専用画面からProductの無線LAN設定recipeを実行 |
 | `configure` | applicationの永続envを配置 |
 | `build` | TARGET_APP artifactをbuild |
 | `fetch` | BuildEnvironmentからartifactを取得 |
