@@ -18,6 +18,7 @@ from scripts.gar_lib.commands.completion import completion_bash_script as comple
 from scripts.gar_lib.commands.completion import completion_powershell_script as completion_powershell_script
 from scripts.gar_lib.commands.completion import completion_zsh_script as completion_zsh_script
 from scripts.gar_lib.commands.result import json_boundary
+from scripts.gar_lib.console import configure_output
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ def _dispatch(args: argparse.Namespace, bundle: CliParserBundle) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_output()
     bundle = build_parser_bundle()
     enable_argcomplete(bundle.root)
     try:

@@ -65,8 +65,9 @@ def simulation_environment_for(workspace: Workspace) -> SimulationEnvironment:
 
     backend = selected_simulator(workspace)
 
-    if backend == 'product_hook':
+    if backend == "product_hook":
         from scripts.gar_lib.simulation.runtime.product_hook import ProductSimulatorHook
+
         return ProductSimulatorHook(workspace)
 
     if backend == LOCAL_DOCKER:
