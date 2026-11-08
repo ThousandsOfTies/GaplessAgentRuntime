@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # - このlauncherは定義済みのGAR CLI引数だけをそのままCLI本体へ渡す。
 def main() -> int:
     sys.path.insert(0, str(ROOT))
+    from scripts.gar_lib.console import configure_output
+
+    configure_output()
     from scripts.gar_lib.bootstrap import relaunch_in_venv
 
     relaunched = relaunch_in_venv(Path(__file__).resolve(), sys.argv[1:])
