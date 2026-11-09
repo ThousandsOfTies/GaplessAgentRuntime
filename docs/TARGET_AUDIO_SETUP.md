@@ -1,14 +1,15 @@
 # USB audio state setup
 
-`gar target audio --workspace Local/Product --json` invokes the local Product's
-`gar-target-audio.json` descriptor:
+Audio setup is a [Product operation](PRODUCT_OPERATIONS.md), declared in the
+local Product's `gar-operations.json`:
 
 ```json
-{"schema_version":1,"entrypoint":"tools/target-audio.py"}
+{"schema_version":1,"operations":{"audio":{"entrypoint":"tools/target-audio.py","timeout_seconds":900,"result_fields":["ok","state","error","saved","restoreVerified"]}},"aliases":{"target audio":"audio"}}
 ```
 
-GAR uses the same bounded private configuration hook as Wi-Fi, with a separate
-descriptor and an allowlisted result. The Product owns the expected card ID,
+Use `gar product run audio --workspace Local/Product --json`. The optional alias
+retains the previous `target audio` spelling; no audio command is in GAR core.
+GAR runs the generic operation contract with declared result fields. The Product owns the expected card ID,
 USB identity, verified playback level and Target connection. Reusable Linux
 ALSA save/restore and Windows masked authentication belong in gar-tools.
 

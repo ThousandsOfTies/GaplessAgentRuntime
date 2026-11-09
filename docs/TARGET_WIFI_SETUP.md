@@ -1,10 +1,10 @@
 # Interactive Target Wi-Fi configuration
 
-Run `gar target wifi --workspace Local/Product --transport ssh --json` for a
-Product-declared setup recipe. The local Product descriptor is:
+Run `gar product run wifi --workspace Local/Product --json -- --transport ssh`
+for a [Product-declared operation](PRODUCT_OPERATIONS.md). In `gar-operations.json`:
 
 ```json
-{"schema_version":1,"entrypoint":"tools/target-wifi.py"}
+{"schema_version":1,"operations":{"wifi":{"entrypoint":"tools/target-wifi.py","timeout_seconds":900,"result_fields":["ok","state","error","address","interface","internet"]}},"aliases":{"target wifi":"wifi"}}
 ```
 
 The Python entrypoint must stay inside the local workspace. GAR starts it with
@@ -14,7 +14,7 @@ input form. Do not put credentials in CLI options, descriptors, stdout or logs.
 Generic OS provisioning belongs in gar-tools; hardware/connection bindings
 belong in the Product. This does not build or deploy an App.
 
-`gar target wifi --workspace Local/Product --transport ssh --check --json`
+`gar product run wifi --workspace Local/Product --json -- --transport ssh --check`
 observes the existing connection and network tools without changing settings.
 The setup hook must not show an elevation prompt or repair IP settings in check
 mode. Serial check mode is rejected before launching the hook.

@@ -69,7 +69,7 @@ def check_reference(source: str, parser: argparse.ArgumentParser) -> list[str]:
             if supported == (cell == "対象外"):
                 errors.append(f"common actions: {group}.{action} availability differs from CLI")
 
-    for group in ("code", "target"):
+    for group in ("code", "target", "product"):
         entries = []
         for name, child in public_commands(groups[group]).items():
             subject = next((a for a in child._actions if a.dest == "code_subject"), None)

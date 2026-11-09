@@ -26,11 +26,6 @@ from scripts.gar_lib.target.lifecycle import (
 )
 
 TARGET_ACTIONS = {
-    "update": "Productが宣言したスクリプト更新を作成・検証・配置・診断します",
-    "trace": "実機の会話を止めずに音声入出力の順序を一時観測します",
-    "audio": "専用の認証画面で実機音量の保存とUSB再接続時の復元を設定します",
-    "wifi": "専用の認証画面で実機のWi-Fi自動接続を設定します",
-    "probe": "Productで宣言した実機診断を実行します（build/deployやservice再起動なし）",
     "configure": "applicationの永続設定ファイルを明示的に配置します",
     "prepare": "SSH実機の限定sudoデプロイ権限を初回だけ設定します",
     "build": "config済みtargetの実機用artifactをビルドします",
@@ -82,14 +77,6 @@ def add_target_parser(
         if action == "configure":
             action_parser.add_argument("--app", required=True, metavar="NAME", help="設定するapplication名")
             action_parser.add_argument("--file", required=True, metavar="PATH", help="配置するenv形式の設定ファイル")
-        if action == "probe":
-            action_parser.add_argument("--probe", default="status", help="Productが宣言する診断名（既定: status）")
-        if action == "update":
-            action_parser.add_argument("--phase", choices=("build", "preflight", "deploy", "diag"), required=True)
-        if action == "wifi":
-            action_parser.add_argument("--transport", choices=("serial", "ssh"), default="ssh", help="実機への設定経路")
-            action_parser.add_argument("--check", action="store_true", help="設定を書き込まず管理経路を確認")
-            action_parser.add_argument("--repair-host", help="既存のホスト鍵で照合するWi-Fi側の復旧アドレス")
         if action in {"preflight", "start", "stop", "status", "log", "diag"}:
             action_parser.add_argument(
                 "--app",
@@ -162,41 +149,6 @@ def _run_target_command(
             raise GarDomainError(f"未対応の target action: {command.action}")
         target_api = Gar(workspace).target
         match command.action:
-            case "update":
-                from scripts.gar_lib.target.wifi import update_runtime
-
-                report = update_runtime(workspace, args.phase)
-                emit_json(report)
-                return 0 if report["ok"] else 1
-            case "trace":
-                from scripts.gar_lib.target.wifi import trace_conversation
-
-                report = trace_conversation(workspace)
-                emit_json(report)
-                return 0 if report["ok"] else 1
-            case "audio":
-                from scripts.gar_lib.target.wifi import configure_audio
-
-                report = configure_audio(workspace)
-                emit_json(report)
-                return 0 if report["ok"] else 1
-            case "wifi":
-                from scripts.gar_lib.target.wifi import configure_wifi
-
-                report = configure_wifi(workspace, args.transport, args.check, args.repair_host)
-                emit_json(report)
-                return 0 if report["ok"] else 1
-            case "probe":
-                from scripts.gar_lib.target.probe import run_target_probe
-
-                report = run_target_probe(workspace, args.probe)
-                if json_output:
-                    emit_json(report)
-                else:
-                    import json
-
-                    print(json.dumps(report, ensure_ascii=False, indent=2))
-                return 0 if report["ok"] else 1
             case "configure":
                 report = target_api.configure(app=args.app, file=args.file)
                 _render_configuration(

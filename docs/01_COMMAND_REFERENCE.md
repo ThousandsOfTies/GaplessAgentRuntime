@@ -65,6 +65,7 @@ appの停止・未配置や診断失敗は全体も非成功となります。Si
 | `gar code` | Codespacesの起動と接続を管理 |
 | `gar sim` | simulationをbuild、deploy、操作、診断 |
 | `gar target` | 実機を準備、build、deploy、診断 |
+| `gar product` | Product定義の操作を一覧・検証・実行 |
 | `gar system` | 複数workspaceを一つのsystemとして操作 |
 | `gar hw` | hardware contractを作成、検証 |
 | `gar terminal` | VS Code terminalへの実行要求を管理 |
@@ -171,16 +172,29 @@ action-first構文を使います。将来の削除は利用者への移行案�
 
 `sim infra apply`と`destroy`はAWS resourceを変更します。対象と課金を確認してください。
 
+## `gar product`
+
+| Action | 内容 |
+|---|---|
+| `list` | 選択Productの操作とAliasを表示 |
+| `validate` | 定義・入口・Aliasを検証（操作は実行しない） |
+| `run` | Product定義の操作名と引数で処理を実行 |
+
+```bash
+gar product list --workspace Local/Product --json
+gar product validate --workspace Local/Product --json
+gar product run --workspace Local/Product --json camera -- --device usb0
+```
+
+操作名はProductの `gar-operations.json` から読み、引数は `--` 以降をそのまま渡します。
+Product固有のコマンドをGAR本体へ追加する必要はありません。
+定義形式・Alias・既存操作の移行は [Product操作](PRODUCT_OPERATIONS.md) を参照してください。
+
 ## `gar target`
 
 | Action | 内容 |
 |---|---|
 | `prepare` | recipe-backed Targetを初期準備 |
-| `probe` | Productが宣言する実機診断を実行（[診断hook](TARGET_PROBE_HOOK.md)） |
-| `wifi` | 専用画面からProductの無線LAN設定recipeを実行 |
-| `audio` | 専用画面から実機音量の保存・USB再接続時の復元を設定 |
-| `trace` | 実機会話の音声入出力の順序を一時観測 |
-| `update` | Productのスクリプト更新を`--phase build/preflight/deploy/diag`で実行 |
 | `configure` | applicationの永続envを配置 |
 | `build` | TARGET_APP artifactをbuild |
 | `fetch` | BuildEnvironmentからartifactを取得 |

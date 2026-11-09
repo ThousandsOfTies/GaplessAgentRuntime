@@ -12,12 +12,14 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from scripts.gar_lib.commands import code, completion, hw, setup, sim, system, target, terminal, usb
+from scripts.gar_lib.commands import code, completion, hw, product, setup, sim, system, target, terminal, usb
 from scripts.gar_lib.commands.capabilities import run_capabilities
 from scripts.gar_lib.commands.completion import completion_bash_script as completion_bash_script
 from scripts.gar_lib.commands.completion import completion_powershell_script as completion_powershell_script
 from scripts.gar_lib.commands.completion import completion_zsh_script as completion_zsh_script
 from scripts.gar_lib.commands.result import json_boundary
+from scripts.gar_lib.core.command import GarCommand
+from scripts.gar_lib.core.errors import GarDomainError
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,7 @@ def build_parser_bundle() -> CliParserBundle:
     help_parsers.update(target.add_target_parser(commands))
     help_parsers.update(usb.add_usb_parser(commands))
     help_parsers.update(hw.add_hw_parser(commands))
+    help_parsers.update(product.add_product_parser(commands))
 
     return CliParserBundle(root=root, help_parsers=help_parsers)
 
@@ -76,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_cli_command(args: argparse.Namespace, bundle: CliParserBundle) -> int:
     """Dispatch parsed arguments to one command module's explicit CLI adapter."""
 
-    if args.command in {"code", "sim", "target"} and getattr(args, "json_output", False):
+    if args.command in {"code", "sim", "target", "product"} and getattr(args, "json_output", False):
         return json_boundary(args, lambda: _dispatch(args, bundle))
     return _dispatch(args, bundle)
 
@@ -107,6 +110,8 @@ def _dispatch(args: argparse.Namespace, bundle: CliParserBundle) -> int:
         return usb.run_usb_cli(args, help_parser=bundle.help_parsers["usb"])
     if args.command == "hw":
         return hw.run_hw_cli(args, help_parser=bundle.help_parsers["hw"])
+    if args.command == "product":
+        return product.run_product_command(args, root_parser=bundle.root, help_parser=bundle.help_parsers["product"])
 
     bundle.root.print_help()
     return 0
@@ -116,7 +121,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     bundle = build_parser_bundle()
     enable_argcomplete(bundle.root)
     try:
-        args = bundle.root.parse_args(normalize_question_help(argv))
+        arguments, alias = product.normalize_product_arguments(normalize_question_help(argv), bundle.root)
+        args = bundle.root.parse_args(arguments)
+        args.product_alias = alias
+    except GarDomainError as error:
+        arguments = normalize_question_help(argv)
+        before_separator = arguments[: arguments.index("--")] if "--" in arguments else arguments
+        if "--json" in before_separator:
+            failure = argparse.Namespace(command="product", gar_command=GarCommand("product", None, "run"))
+
+            def fail(failure_error=error):
+                raise failure_error
+
+            return json_boundary(failure, fail)
+        print(f"gar: {error}", file=sys.stderr)
+        return 1
     except SystemExit as exc:
         if exc.code == 0:
             return 0
