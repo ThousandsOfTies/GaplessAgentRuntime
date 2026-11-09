@@ -18,13 +18,14 @@ def add_product_parser(commands):
     for name, help_text in (
         ("list", "操作とAliasを表示"),
         ("validate", "定義を検証（処理は実行しない）"),
+        ("help", "Product操作のヘルプを表示"),
         ("run", "定義済みの操作を実行"),
     ):
         child = actions.add_parser(name, help=help_text)
         child.add_argument("--workspace", metavar="NAME")
         child.add_argument("--json", dest="json_output", action="store_true")
         child.set_defaults(gar_command=GarCommand("product", None, name))
-        if name == "run":
+        if name in {"run", "help"}:
             child.add_argument("operation", help="gar product list に表示される操作名")
             child.add_argument("arguments", nargs=argparse.REMAINDER, help="-- 以降をProduct処理へ渡します")
     return {"product": parser}
@@ -77,9 +78,9 @@ def _controls(arguments):
 
 def normalize_product_arguments(arguments, parser):
     """Return canonical arguments and an optional Product-scoped alias name."""
-    if arguments[:2] == ["product", "run"]:
+    if len(arguments) >= 2 and arguments[0] == "product" and arguments[1] in {"run", "help"}:
         options, forwarded, _ = _controls(arguments[2:])
-        return ["product", "run", *options, *forwarded], None
+        return ["product", arguments[1], *options, *forwarded], None
     if not arguments or arguments[0].startswith("-"):
         return arguments, None
     # Standard commands never consult a Product manifest or change their route.
@@ -103,7 +104,6 @@ def normalize_product_arguments(arguments, parser):
     if not (workspace.local_root / MANIFEST).is_file():
         return arguments, None
     registry = load_operations(workspace.local_root)
-    validate_aliases(registry, parser)
     if selector is None:
         options.extend(("--workspace", workspace.name))
     for alias, operation in registry.aliases.items():
@@ -123,10 +123,17 @@ def run_product_command(args, *, root_parser, help_parser):
         workspace = resolve_workspace(args.workspace)
         args._gar_workspace = workspace
         registry = load_operations(workspace.local_root)
-        validate_aliases(registry, root_parser)
-        if args.product_action == "run":
+        if args.product_action == "validate":
+            validate_aliases(registry, root_parser)
+        if args.product_action in {"run", "help"}:
             arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
-            report = execute_operation(registry, args.operation, arguments, workspace.name)
+            report = execute_operation(
+                registry,
+                args.operation,
+                ["--help"] if args.product_action == "help" else arguments,
+                workspace.name,
+                help_mode=args.product_action == "help",
+            )
             if getattr(args, "product_alias", None):
                 report["alias"] = args.product_alias
         else:
@@ -147,7 +154,7 @@ def run_product_command(args, *, root_parser, help_parser):
             }
         if args.json_output:
             emit_json(report)
-        elif args.product_action == "run":
+        elif args.product_action in {"run", "help"}:
             result = report["result"]
             if set(result) == {"output"}:
                 print(result["output"], end="")

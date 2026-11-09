@@ -1,6 +1,6 @@
 # Productが定義する操作
 
-GAR本体は固定の `product list` / `product validate` / `product run` を提供します。
+GAR本体は固定の `product list` / `product validate` / `product help` / `product run` を提供します。
 新しい操作名、実行プログラム、引数、結果の項目はProductリポジトリに置きます。
 Productごとのparserやコマンドを生成・インストールする処理はありません。
 
@@ -36,7 +36,7 @@ Productルートの `gar-operations.json` の例です。
 gar product list --workspace Local/Product --json
 gar product validate --workspace Local/Product --json
 gar product run camera --workspace Local/Product --json -- --device usb0
-gar product run camera --workspace Local/Product -- --help
+gar product help camera --workspace Local/Product
 ```
 
 GARは選択したworkspace内だけから定義を読み、その時点のファイルを使います。
@@ -63,6 +63,7 @@ GARのparserに新コマンドを追加しません。
 Aliasは1または2語。既存の `target build` / `sim start` などの標準コマンド、
 そのグループ名を上書きできません。Alias同士の曖昧な前方一致も拒否します。
 標準コマンドはProduct定義を読まず、従来の経路を維持します。
+標準コマンドとの衝突は `validate` が報告します。正式な `product run` は衝突したAliasに影響されません。
 Aliasの一覧は `product list` で確認します。標準コマンドのhelpには追加されません。
 
 ## 結果と検証範囲
@@ -77,7 +78,8 @@ Alias経由では `alias` も入り、`--json` のcommandは一律 `product.run`
 終了値が非0、または結果の `ok` がfalseなら全体も失敗します。
 JSON不正・起動失敗・タイムアウト時に子プロセスの任意出力やstderrは表示しません。
 `result: "text"` は明示的にstdoutを受け取る契約です。出力に秘密情報を含めないでください。
-正常な `--help` / `-h` はJSON形式の操作でも通常のhelp文字列を表示できます。
+ヘルプは `gar product help 操作名` で表示します。この入口だけが `--help` を渡し、text応答を受け取ります。
+`run` は `-h` / `--help` が引数に含まれても結果形式を変更しません。
 
 実行環境に `GAR_PRODUCT_ROOT` / `GAR_PRODUCT_OPERATION` / `GAR_PRODUCT_WORKSPACE` を渡します。
 定義の一覧・検証は処理を実行しません。`run` はProductのコードを利用者の権限で実行します。
@@ -93,3 +95,9 @@ JSON不正・起動失敗・タイムアウト時に子プロセスの任意出�
 
 `gar-simulator.json` は既存のsimulator lifecycle backendの契約として維持しています。
 任意のProduct操作は本ファイルへ追加し、標準build/deploy/startの動作と分けて定義します。
+
+## 実行環境と制限
+
+Python操作は `"python": ".venv/Scripts/python.exe"`（Linuxは `.venv/bin/python`）でProduct専用の環境を指定できます。Product内の相対パスを使い、環境の作成と依存導入はProductが管理します。省略時はGARのPythonを使います。
+通信はUTF-8。JSONの `ok` は省略可能で、省略時は終了値に従い、指定する場合はbooleanが必要です。stdoutとstderrはそれぞれ1MiBまで読みながら制限します。
+タイムアウト・取消・終了時に、操作が起動したローカルのプロセス群を終了します。WindowsはJob Object、POSIXは専用process groupを使用します。通信先で始まった実機処理の取消はProduct側で別途管理します。

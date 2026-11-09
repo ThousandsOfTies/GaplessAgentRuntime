@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.gar_lib.core.errors import GarDomainError
+from scripts.gar_lib.operation_process import run_bounded
 
 MANIFEST = "gar-operations.json"
 _NAME = re.compile(r"[a-z][a-z0-9_.-]{0,63}\Z")
@@ -28,6 +29,7 @@ class Operation:
     timeout: int
     result_format: str
     result_fields: tuple[str, ...]
+    python: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,7 @@ def load_operations(root: Path) -> Operations:
             if not _NAME.fullmatch(name) or not isinstance(entry, dict):
                 raise ValueError("invalid operation")
             if set(entry) - {
+                "python",
                 "description",
                 "entrypoint",
                 "runtime",
@@ -95,6 +98,23 @@ def load_operations(root: Path) -> Operations:
                 or target.suffix not in extensions[runtime]
             ):
                 raise ValueError("invalid entrypoint")
+            python = None
+            if "python" in entry:
+                interpreter = entry["python"]
+                if not isinstance(interpreter, str) or runtime != "python":
+                    raise ValueError("invalid python environment")
+                relative_python = Path(interpreter)
+                python = (root / relative_python).absolute()
+                if (
+                    relative_python.is_absolute()
+                    or relative_python.drive
+                    or ".." in relative_python.parts
+                    or "\\" in interpreter
+                    or ":" in interpreter
+                    or not python.is_relative_to(root)
+                    or not python.is_file()
+                ):
+                    raise ValueError("invalid python environment")
             args = entry.get("args", [])
             if (
                 not isinstance(args, list)
@@ -117,7 +137,7 @@ def load_operations(root: Path) -> Operations:
             ):
                 raise ValueError("invalid result contract")
             operations[name] = Operation(
-                name, description, target, runtime, tuple(args), timeout, output, tuple(fields)
+                name, description, target, runtime, tuple(args), timeout, output, tuple(fields), python
             )
         raw_aliases = spec.get("aliases", {})
         if not isinstance(raw_aliases, dict) or len(raw_aliases) > 128:
@@ -139,30 +159,30 @@ def load_operations(root: Path) -> Operations:
         raise GarDomainError(f"{MANIFEST} の定義が不正です（操作・入口・Aliasを確認してください）") from error
 
 
-def execute_operation(registry: Operations, name: str, arguments: list[str], workspace: str) -> dict:
+def execute_operation(
+    registry: Operations, name: str, arguments: list[str], workspace: str, *, help_mode: bool = False
+) -> dict:
     if name not in registry.operations:
         raise GarDomainError(f"Productに操作がありません: {name}。gar product list で確認してください")
     operation = registry.operations[name]
-    executable = sys.executable if operation.runtime == "python" else shutil.which("node")
+    executable = str(operation.python or sys.executable) if operation.runtime == "python" else shutil.which("node")
     if not executable:
         raise GarDomainError("Product操作に必要なNode.jsがありません")
     if any("\0" in argument for argument in arguments):
         raise GarDomainError("Product操作の引数が不正です")
     environment = {
         **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
         "GAR_PRODUCT_ROOT": str(registry.root),
         "GAR_PRODUCT_OPERATION": name,
         "GAR_PRODUCT_WORKSPACE": workspace,
     }
     try:
-        result = subprocess.run(
+        result = run_bounded(
             [executable, str(operation.entrypoint), *operation.arguments, *arguments],
             cwd=registry.root,
             env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=operation.timeout,
         )
     except subprocess.TimeoutExpired as error:
@@ -173,12 +193,12 @@ def execute_operation(registry: Operations, name: str, arguments: list[str], wor
     # Only explicitly declared JSON fields cross the structured result boundary.
     if len(result.stdout.encode("utf-8")) > 1048576:
         raise GarDomainError(f"Product操作の出力が上限を超えました: {name}")
-    if operation.result_format == "text" or "--help" in arguments or "-h" in arguments:
+    if operation.result_format == "text" or help_mode:
         payload = {"output": result.stdout} if result.returncode == 0 else {"error": "Product operation failed"}
     else:
         try:
             value = json.loads(result.stdout)
-            if not isinstance(value, dict):
+            if not isinstance(value, dict) or ("ok" in value and type(value["ok"]) is not bool):
                 raise ValueError("expected object")
         except ValueError as error:
             raise GarDomainError(f"Product操作が有効なJSONを返しませんでした: {name}") from error

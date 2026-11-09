@@ -178,6 +178,7 @@ action-first構文を使います。将来の削除は利用者への移行案�
 |---|---|
 | `list` | 選択Productの操作とAliasを表示 |
 | `validate` | 定義・入口・Aliasを検証（操作は実行しない） |
+| `help` | Product操作のヘルプを表示 |
 | `run` | Product定義の操作名と引数で処理を実行 |
 
 ```bash

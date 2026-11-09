@@ -79,13 +79,13 @@ class ProductOperationsTests(unittest.TestCase):
         self.assertEqual(json.loads(output)["result"]["args"], ["--workspace", "child", "--json", "?"])
 
     def test_child_help_is_forwarded_without_requiring_json(self):
-        for arguments in (["target", "camera", "--help"], ["product", "run", "camera", "--", "--help"]):
+        for arguments in (["product", "help", "camera"],):
             code, output, _ = self.call(arguments)
             self.assertEqual(code, 0)
             self.assertEqual(output.strip(), "Product camera help")
 
     def test_list_and_validate_only_read_definitions(self):
-        with patch("scripts.gar_lib.product_operations.subprocess.run") as run:
+        with patch("scripts.gar_lib.product_operations.run_bounded") as run:
             for action in ("list", "validate"):
                 code, output, _ = self.call(["product", action, "--json"])
                 self.assertEqual(code, 0)
@@ -145,8 +145,8 @@ class ProductOperationsTests(unittest.TestCase):
     def test_invalid_manifest_and_alias_fail_as_single_json_without_execution(self):
         self.definition["aliases"]["target build"] = "camera"
         self.save()
-        with patch("scripts.gar_lib.product_operations.subprocess.run") as run:
-            code, output, errors = self.call(["target", "camera", "--json"])
+        with patch("scripts.gar_lib.product_operations.run_bounded") as run:
+            code, output, errors = self.call(["product", "validate", "--json"])
             self.assertEqual(code, 1)
             self.assertFalse(json.loads(output)["ok"])
             self.assertEqual(errors, "")
@@ -180,7 +180,7 @@ class ProductOperationsTests(unittest.TestCase):
         with self.assertRaises(GarDomainError):
             load_operations(self.root)
 
-    @patch("scripts.gar_lib.product_operations.subprocess.run")
+    @patch("scripts.gar_lib.product_operations.run_bounded")
     def test_timeout_and_invalid_json_do_not_expose_child_output(self, run):
         for result in (
             subprocess.TimeoutExpired("PRIVATE", 1),
@@ -208,6 +208,84 @@ class ProductOperationsTests(unittest.TestCase):
         code, output, _ = self.call(["product", "run", "camera", "--json"])
         self.assertEqual(code, 1)
         self.assertIn("1秒", json.loads(output)["error"])
+
+    def test_explicit_help_json_preserves_envelope(self):
+        code, output, _ = self.call(["product", "help", "camera", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["command"], "product.help")
+        self.assertIn("Product camera help", json.loads(output)["result"]["output"])
+
+    def test_nonboolean_ok_is_rejected(self):
+        (self.root / "camera.py").write_text('print(\'{"ok": "false"}\')\n')
+        code, output, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 1)
+        self.assertFalse(json.loads(output)["ok"])
+
+    def test_help_like_arguments_do_not_bypass_json_contract(self):
+        (self.root / "camera.py").write_text("import json\nprint(json.dumps({'ok':False,'password':'PRIVATE'}))\n")
+        for flag in ("-h", "--help"):
+            code, output, _ = self.call(["product", "run", "camera", "--json", "--", flag, "480"])
+            self.assertEqual(code, 1)
+            self.assertNotIn("PRIVATE", output)
+
+    def test_colliding_alias_does_not_block_canonical_execution(self):
+        self.definition["aliases"] = {"target build": "camera"}
+        self.save()
+        code, output, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 0, output)
+
+    def test_utf8_json_and_invalid_encoding(self):
+        (self.root / "camera.py").write_text(
+            "import json\nprint(json.dumps({'ok':True,'camera':'\\u65e5\\u672c'},ensure_ascii=False))\n"
+        )
+        code, output, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["result"]["camera"], "\u65e5\u672c")
+        (self.root / "camera.py").write_text("import sys\nsys.stdout.buffer.write(b'\\xff')\n")
+        code, output, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 1)
+        self.assertIn("UTF-8", output)
+
+    def test_timeout_kills_descendants(self):
+        import time
+
+        marker = self.root / "late.txt"
+        worker = "import time;from pathlib import Path;time.sleep(2);Path('late.txt').write_text('late')"
+        (self.root / "camera.py").write_text(
+            "import subprocess,sys,time\nsubprocess.Popen([sys.executable,'-c'," + repr(worker) + "])\ntime.sleep(10)\n"
+        )
+        self.definition["operations"]["camera"]["timeout_seconds"] = 1
+        self.save()
+        code, _, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 1)
+        time.sleep(1.5)
+        self.assertFalse(marker.exists())
+
+    def test_stdout_and_stderr_limits(self):
+        for stream in ("stdout", "stderr"):
+            (self.root / "camera.py").write_text(
+                "import sys,time\nsys."
+                + stream
+                + ".buffer.write(b'x'*1100000)\nsys."
+                + stream
+                + ".flush()\ntime.sleep(10)\n"
+            )
+            code, output, _ = self.call(["product", "run", "camera", "--json"])
+            self.assertEqual(code, 1)
+            self.assertIn("上限", output)
+
+    def test_product_python_environment(self):
+        import sys
+
+        environment = self.root / "python-env"
+        subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(environment)], check=True)
+        relative = "python-env/Scripts/python.exe" if __import__("os").name == "nt" else "python-env/bin/python"
+        self.definition["operations"]["camera"]["python"] = relative
+        self.save()
+        (self.root / "camera.py").write_text("import json,sys\nprint(json.dumps({'ok':True,'camera':sys.prefix}))\n")
+        code, output, _ = self.call(["product", "run", "camera", "--json"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(Path(json.loads(output)["result"]["camera"]), environment)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js unavailable")
     def test_node_handler_and_text_output_use_the_same_runner(self):
