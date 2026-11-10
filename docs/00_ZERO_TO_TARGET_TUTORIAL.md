@@ -1,7 +1,8 @@
 # 最短チュートリアル
 
 GARは、Productのbuild、simulation、実機deployを同じCLIから操作するための基盤です。
-WindowsではDocker Desktopをbuildに使い、USB／COM／UUUはWindowsから直接扱います。WSLは必須ではありません。
+WindowsではWSL Containers（WSLC）をbuildの第一候補にし、USB／COM／UUUはWindowsから直接扱います。
+Dockerも代替として選べます。[WSLCの導入・対応範囲](WSLC_BUILD.md)を参照してください。
 
 ## 1. GARを準備する
 
@@ -35,7 +36,7 @@ gar config --no-install
 gar target build --workspace Local/Product
 ```
 
-GARは選択されたLocal DockerまたはCodespacesでProductの`scripts/product-target-build.sh`を実行し、成果物を`.gar/artifacts/`へ保存します。
+GARは選択されたWSLC／Docker／CodespacesでProductの`scripts/product-target-build.sh`を実行し、成果物を`.gar/artifacts/`へ保存します。
 
 LinuxのSSH／SCP Targetでは、初回またはrecipe更新時に準備と事前確認を行います。
 

@@ -22,6 +22,8 @@ class GarAccessChannelsTest(unittest.TestCase):
         self.assertEqual("ssh", result.argv[0])
         self.assertIn("sim-host", result.argv)
         run.assert_called_once()
+        self.assertNotIn("encoding", run.call_args.kwargs)
+        self.assertNotIn("errors", run.call_args.kwargs)
 
     def test_ssh_connection_failure_is_not_rendered_by_channel(self) -> None:
         completed = subprocess.CompletedProcess([], 255, "", "Connection timed out")

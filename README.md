@@ -8,7 +8,7 @@ Gapless Agent Runtime（GAR）を用いることで、**ユーザーとAI** が�
 Product source
     │ product build hook
     ▼
-Docker BuildEnvironment / Codespaces
+WSLC / Docker / Codespaces BuildEnvironment
     │ schema-v2 artifact snapshot
     ▼
 Windows control surface (`gar`)
@@ -17,10 +17,11 @@ Windows control surface (`gar`)
     └─ Physical Target ── SSH / ADB / esptool / native UUU + COM
 ```
 
-Windowsは入口とUSB／serialの所有者、DockerはLinux build／test／toolの実行場所、UbuntuはLinux device simulationのSim Hostです。ローカルはVirtualBox、remoteはAWSという
+Windowsは入口とUSB／serialの所有者、WSLC／DockerはLinux build／test／toolの実行場所、UbuntuはLinux device simulationのSim Hostです。ローカルはVirtualBox、remoteはAWSという
 provider差だけを`gar config`で選び、日常操作はOSにかかわらず同じ`gar ...`を使います。
-WSLはGARの必須構成要素ではありません。Docker Desktopが内部実装でWSL2を利用する場合も、
-GARからはDocker Engineとして扱います。
+Windowsの新規build環境は **Local WSL Containers** を第一候補にします。
+Docker／Codespacesも選択でき、保存済みの明示設定は保持します。
+WSLCにはWSL 2.9.3以上が必要です。導入・対応範囲は[WSLC build](docs/WSLC_BUILD.md)を参照してください。
 
 ## 実装の中心
 
@@ -38,7 +39,7 @@ GARからはDocker Engineとして扱います。
 | 役割 | 実装・確認対象 |
 |---|---|
 | Control surface | Windows + VS Code + `gar` |
-| Build | Local Docker、GitHub Codespaces |
+| Build | WindowsはLocal WSL Containersを優先、Local Docker、GitHub Codespaces |
 | Local Linux simulation | VirtualBox Ubuntu Sim Host + CUSE／gpio-sim／Web Bridge |
 | Remote Linux simulation | AWS EC2 Ubuntu Sim Host + CUSE／gpio-sim／Web Bridge |
 | Physical Target | Raspberry Pi 5／Raspberry Pi OS、Luckfox Lyra Plus RK3506／Buildroot |
@@ -91,6 +92,12 @@ device要件、周辺部品、配線、menuやprotocolはTarget Packへ混ぜず
 Peripheral adapter、bindingへ置きます。
 
 ## 標準フロー
+
+Windows上でLinuxビルドツールの展開に時間がかかる場合は、対象workspaceへ
+`"build": {"cache": true}`を設定できます。GARはworkspace専用のWSLC／Docker volumeを
+`/gar-build-cache`へmountし、Product hookへ`GAR_BUILD_CACHE`で渡します。
+hookがこのパスを使うと、ツールや中間生成物をLinux領域で再利用できます。
+既定は無効で、成果物snapshotの保存・検証とは独立しています。
 
 Simulation:
 

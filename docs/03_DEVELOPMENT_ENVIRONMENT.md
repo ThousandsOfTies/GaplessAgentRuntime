@@ -5,21 +5,26 @@ GARは同じコマンドの背後で実行場所を切り替えます。
 | 環境 | 役割 |
 |---|---|
 | Windows | `gar`の操作面、workspace、artifact、USB／COM／UUU |
+| Local WSL Containers | Windowsで優先するProduct build hook、test、Linux tool |
 | Local Docker | Product build hook、test、Linux tool |
 | Codespaces | cloud BuildEnvironment |
 | VirtualBox Ubuntu | local Linux Sim Host |
 | AWS Ubuntu | remote Linux Sim Host |
 | Physical Target | 配置済みapplicationと実deviceの実行 |
 
-WSLは必須ではありません。Docker Desktopが内部でWSL2を使う場合も、GARからはDocker Engineとして扱います。
+WSLCを選ぶ場合はWSL 2.9.3以上が必要です。Docker Desktopが内部でWSL2を使う場合は、GARはDocker Engineとして操作します。
 
 ## BuildEnvironmentの選び方
 
-- 通常はLocal Docker
+- Windowsの新規設定は、1. Local WSL Containers、2. Local Docker、3. GitHub Codespaces
+- 未設定のbuild環境でEnterを押すとWSLCを選択。保存済みの明示選択は保持
+- Windows以外ではLocal Dockerを先頭にする
 - 大きなSDKや固定devcontainerが必要ならCodespaces
-- Product hookがDockerを呼ぶ場合だけDocker socketを渡す
+- Docker socketが必要なProductはDockerを選択する
 
-Local DockerはProduct workspaceを`/workspace`へbind mountし、`scripts/product-*-build.sh`を実行します。
+Local WSLC／DockerはProduct workspaceを`/workspace`へbind mountし、`scripts/product-*-build.sh`を実行します。
+
+導入・対応範囲は[WSLC build](WSLC_BUILD.md)を参照してください。
 
 ## Simulationの選び方
 
@@ -37,7 +42,7 @@ VirtualBoxとAWSは`ssh_remote` runtimeを載せるhost providerです。hostを
 | ESP32 | esptool |
 | NXP i.MX | Windows native UUU + optional COM verification |
 
-実機はbuild環境ではありません。toolchainはDocker／Codespaces側に置きます。
+実機はbuild環境ではありません。toolchainはWSLC／Docker／Codespaces側に置きます。
 
 ## Machine-local state
 
@@ -54,7 +59,7 @@ VirtualBoxとAWSは`ssh_remote` runtimeを載せるhost providerです。hostを
 
 - Product behaviorと配線はProduct側
 - Board、OS、toolchain、provisioningはTarget Pack側
-- build依存はDocker／Codespaces
+- build依存はWSLC／Docker／Codespaces
 - IP、VM名、COMなどはmachine-local設定
 - 実機flash前のBoard、boot mode、書込み先の確認は人間が担当
 

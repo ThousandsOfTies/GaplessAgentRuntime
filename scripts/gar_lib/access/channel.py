@@ -45,11 +45,15 @@ def run_cli(
     argv: Sequence[str],
     *,
     runner: CompletedProcessRunner = subprocess.run,
+    encoding: str | None = None,
 ) -> AccessResult:
     """Run a CLI command with the options shared by access adapters."""
 
     normalized_argv = tuple(argv)
-    completed = runner(normalized_argv, check=False, capture_output=True, text=True)
+    options: dict[str, object] = {"check": False, "capture_output": True, "text": True}
+    if encoding is not None:
+        options.update(encoding=encoding, errors="replace")
+    completed = runner(normalized_argv, **options)
     return AccessResult(
         normalized_argv,
         completed.returncode,

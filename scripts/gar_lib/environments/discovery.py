@@ -26,7 +26,7 @@ def discover_environments() -> list[type[EnvironmentSetupOption]]:
         ENVIRONMENT_OPTIONS,
         key=lambda cls: (
             cls.category_order,
-            cls.display_order,
+            cls.setup_priority(),
             cls.display_name.lower(),
         ),
     )

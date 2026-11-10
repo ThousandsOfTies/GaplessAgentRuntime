@@ -44,15 +44,18 @@ GAR coreを変更したらrepository rootで`make check`を実行する。
 | 環境 | 役割 |
 |---|---|
 | Windows | `gar`操作面、workspace／artifact store、USB／COM／UUU、deploy起点 |
+| Local WSL Containers | Windowsで優先するProduct build hook、test、Linux toolの実行 |
 | Local Docker | Product build hook、test、Linux toolの実行 |
 | Codespaces | reproducible cloud BuildEnvironment |
 | VirtualBox Ubuntu | local Sim Host。`gpio_sim`を含むLinux device simulation runtimeの実行 |
 | AWS Ubuntu | remote Sim Host。VirtualBoxと同じLinux runtimeのprovider variant |
 | Physical Target | 配布済みapplicationとreal deviceの実行 |
-| WSL | GARの必須要素ではない。Docker Desktopが内部で利用する場合もGARからはDockerとして扱う |
+| WSL | WSLC buildの基盤。Docker Desktopが内部で利用する場合もGARからはDockerとして扱う |
 
 Sim HostやPhysical Targetで場当たり的にcompileしない。buildは`gar config`で選択した
-Local Docker／Codespaces BuildEnvironmentとProduct hookで行う。VirtualBoxとAWSを別simulatorと
+WSLC／Docker／Codespaces BuildEnvironmentとProduct hookで行う。Windowsの新規build環境は
+WSLCを第一候補にし、Dockerを代替として選べるようにする。保存済みの明示選択は保持する。
+VirtualBoxとAWSを別simulatorと
 扱わず、`ssh_remote`に対するSim Host providerの差としてcomposition境界で吸収する。
 
 ## 標準操作

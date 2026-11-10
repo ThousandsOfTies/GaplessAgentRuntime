@@ -33,6 +33,11 @@ class EnvironmentSetupOption:
     required_commands: ClassVar[tuple[str, ...]] = ()
 
     @classmethod
+    def setup_priority(cls) -> int:
+        """Return the host-specific menu order; lower values are offered first."""
+        return cls.display_order
+
+    @classmethod
     def dependency_status(cls) -> list[DependencyStatus]:
         return [DependencyStatus(name=command, path=shutil.which(command)) for command in cls.required_commands]
 

@@ -64,6 +64,14 @@ class WorkspaceSettingsTest(unittest.TestCase):
     def test_build_does_not_expose_the_docker_daemon_by_default(self) -> None:
         self.assertFalse(BuildSettings.from_value({}).docker_socket)
 
+    def test_build_cache_requires_an_explicit_boolean_opt_in(self) -> None:
+        self.assertFalse(BuildSettings.from_value({}).cache)
+        self.assertTrue(BuildSettings.from_value({"cache": True}).cache)
+        self.assertFalse(BuildSettings.from_value({"cache": False}).cache)
+        for invalid in (None, "true", "false", 1, 0, [], {}):
+            with self.subTest(value=invalid):
+                self.assertFalse(BuildSettings.from_value({"cache": invalid}).cache)
+
     def test_typed_settings_keep_mapping_compatibility_at_legacy_boundaries(self) -> None:
         settings = DockerSettings(container="gar-sim", bridge_port=8080)
 

@@ -16,12 +16,22 @@ from scripts.gar_lib.core.workspace import Workspace
 
 DEFAULT_BUILD_IMAGE = "gar-build-env:ubuntu-24.04"
 CONTAINER_WORKSPACE = PurePosixPath("/workspace")
+BUILD_CACHE = PurePosixPath("/gar-build-cache")
 DOCKER_SOCKET = "/var/run/docker.sock"
 BUILD_SPEC_FINGERPRINT_LABEL = "io.gapless-agent-runtime.build-spec"
 
 
+def build_cache_volume_name(workspace_id: str) -> str:
+    """Keep cache names stable and safe without exposing workspace paths."""
+
+    identity = hashlib.sha256(workspace_id.encode("utf-8")).hexdigest()[:16]
+    return f"gar-build-cache-{identity}"
+
+
 class DockerBuildEnvironment:
     """Bind a Product workspace and execute its hook through container Bash."""
+
+    runtime_name = "Docker"
 
     def __init__(
         self,
@@ -71,6 +81,10 @@ class DockerBuildEnvironment:
             "--env",
             "HOME=/tmp/gar-home",
         ]
+        if workspace.build.cache:
+            cache_mount = f"type=volume,source={build_cache_volume_name(workspace.id)},target={BUILD_CACHE}"
+            self._prepare_cache_root(image, cache_mount)
+            arguments.extend(("--mount", cache_mount, "--env", f"GAR_BUILD_CACHE={BUILD_CACHE}"))
         if workspace.build.docker_socket:
             arguments.extend(
                 (
@@ -93,19 +107,36 @@ class DockerBuildEnvironment:
             suffix = f": {detail}" if detail else ""
             raise GarDomainError(f"{kind.value} {action or 'build'} が失敗しました (exit {result.returncode}){suffix}")
 
+    def _prepare_cache_root(self, image: str, cache_mount: str) -> None:
+        if os.name == "nt" or not hasattr(os, "getuid") or not hasattr(os, "getgid"):
+            return
+        # New named volumes are root-owned. Only change the fixed cache root,
+        # without mounting the Product or changing existing cache contents.
+        result = self.docker.run(
+            (
+                "run",
+                "--rm",
+                "--mount",
+                cache_mount,
+                "--user",
+                "0:0",
+                image,
+                "chown",
+                f"{os.getuid()}:{os.getgid()}",
+                str(BUILD_CACHE),
+            )
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise GarDomainError(
+                f"{self.runtime_name} build cacheを準備できませんでした (exit {result.returncode})"
+                + (f": {detail}" if detail else "")
+            )
+
     def _ensure_default_image(self, image: str) -> None:
         context = PROJECT_ROOT / "infra" / "build"
         fingerprint = hashlib.sha256((context / "Dockerfile").read_bytes()).hexdigest()
-        inspection = self.docker.run(
-            (
-                "image",
-                "inspect",
-                "--format",
-                f'{{{{ index .Config.Labels "{BUILD_SPEC_FINGERPRINT_LABEL}" }}}}',
-                image,
-            )
-        )
-        if inspection.returncode == 0 and inspection.stdout.strip() == fingerprint:
+        if self._image_fingerprint(image) == fingerprint:
             return
         result = self.docker.run(
             (
@@ -120,9 +151,21 @@ class DockerBuildEnvironment:
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             raise GarDomainError(
-                f"Docker build imageを作成できませんでした (exit {result.returncode})"
+                f"{self.runtime_name} build imageを作成できませんでした (exit {result.returncode})"
                 + (f": {detail}" if detail else "")
             )
+
+    def _image_fingerprint(self, image: str) -> str | None:
+        inspection = self.docker.run(
+            (
+                "image",
+                "inspect",
+                "--format",
+                f'{{{{ index .Config.Labels "{BUILD_SPEC_FINGERPRINT_LABEL}" }}}}',
+                image,
+            )
+        )
+        return inspection.stdout.strip() if inspection.returncode == 0 else None
 
     @staticmethod
     def _add_posix_identity(arguments: list[str], *, include_socket_group: bool) -> None:

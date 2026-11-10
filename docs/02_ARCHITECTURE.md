@@ -7,7 +7,7 @@ Human / AI
     │ gar ...
     ▼
 GAR CLI + workspace config
-    ├─ BuildEnvironment ── Docker / Codespaces
+    ├─ BuildEnvironment ── WSLC / Docker / Codespaces
     │       └─ immutable artifact
     ├─ Simulation ─────── VirtualBox / AWS / Wokwi / MuJoCo
     └─ Physical Target ── SSH / ADB / esptool / UUU

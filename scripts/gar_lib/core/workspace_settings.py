@@ -81,17 +81,20 @@ class SelectedEnvironments(SettingsMapping):
 class BuildSettings(SettingsMapping):
     image: str | None = None
     docker_socket: bool = False
+    cache: bool = False
 
-    field_names = ("image", "docker_socket")
+    field_names = ("image", "docker_socket", "cache")
 
     @classmethod
     def from_value(cls, value: BuildSettings | Mapping[str, Any]) -> Self:
         if isinstance(value, cls):
             return value
         raw_socket = value.get("docker_socket")
+        raw_cache = value.get("cache")
         return cls(
             image=_string(value, "image"),
             docker_socket=raw_socket if isinstance(raw_socket, bool) else False,
+            cache=raw_cache if isinstance(raw_cache, bool) else False,
         )
 
 
